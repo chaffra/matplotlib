@@ -3346,9 +3346,11 @@ class Axes(martist.Artist):
 
         .. plot:: mpl_examples/pylab_examples/annotation_demo2.py
         """
+        draggable = kwargs.pop('draggable',True)
         a = mtext.Annotation(*args, **kwargs)
         a.set_transform(mtransforms.IdentityTransform())
         self._set_artist_props(a)
+        a.draggable(draggable, False)
         if kwargs.has_key('clip_on'):  a.set_clip_path(self.patch)
         self.texts.append(a)
         a._remove_method = lambda h: self.texts.remove(h)
