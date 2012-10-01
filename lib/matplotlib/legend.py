@@ -162,6 +162,7 @@ class Legend(Artist):
                  bbox_transform = None, # transform for the bbox
                  frameon = None, # draw frame
                  handler_map = None,
+                 draggable = True,
                  ):
         """
         - *parent* : the artist that contains the legend
@@ -376,6 +377,7 @@ in the normalized axes coordinate.
         self._last_fontsize_points = self._fontsize
 
         self._draggable = None
+        self.draggable(draggable)
 
     def _set_artist_props(self, a):
         """

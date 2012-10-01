@@ -301,7 +301,7 @@ class HostAxesBase:
         #super(HostAxes, self).cla()
 
 
-    def twinx(self, axes_class=None):
+    def twinx(self, axes_class=None, y_transform=None):
         """
         call signature::
 
@@ -316,9 +316,15 @@ class HostAxesBase:
         if axes_class is None:
             axes_class = self._get_base_axes()
 
-        parasite_axes_class = parasite_axes_class_factory(axes_class)
-
-        ax2 = parasite_axes_class(self, sharex=self, frameon=False)
+        if y_transform is None:
+            parasite_axes_class = parasite_axes_class_factory(axes_class)
+            ax2 = parasite_axes_class(self, sharex=self, frameon=False)
+        else:
+            tr = mtransforms.blended_transform_factory(mtransforms.IdentityTransform(),y_transform)
+            parasite_axes_auxtrans_class = parasite_axes_auxtrans_class_factory(axes_class)
+            ax2 = parasite_axes_auxtrans_class(self, tr,
+                                               viewlim_mode="transform",
+                                               )
         self.parasites.append(ax2)
 
         # for normal axes

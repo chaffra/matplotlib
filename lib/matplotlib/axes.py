@@ -37,6 +37,8 @@ import matplotlib.ticker as mticker
 import matplotlib.transforms as mtransforms
 import matplotlib.tri as mtri
 from matplotlib.container import BarContainer, ErrorbarContainer, StemContainer
+from matplotlib.patches import Patch
+from matplotlib.text import Text
 
 iterable = cbook.iterable
 is_string_like = cbook.is_string_like
