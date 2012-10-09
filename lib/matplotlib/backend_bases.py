@@ -1599,11 +1599,13 @@ class FigureCanvasBase(object):
         try:
             event = CloseEvent(s, self, guiEvent=guiEvent)
             self.callbacks.process(s, event)
-        except TypeError:
+        except (TypeError, AttributeError):
             pass
             # Suppress the TypeError when the python session is being killed.
             # It may be that a better solution would be a mechanism to
             # disconnect all callbacks upon shutdown.
+            # AttributeError occurs on OSX with qt4agg upon exiting
+            # with an open window; 'callbacks' attribute no longer exists.
 
     def key_press_event(self, key, guiEvent=None):
         """
@@ -1807,6 +1809,7 @@ class FigureCanvasBase(object):
         'emf': 'Enhanced Metafile',
         'eps': 'Encapsulated Postscript',
         'pdf': 'Portable Document Format',
+        'pgf': 'LaTeX PGF Figure',
         'png': 'Portable Network Graphics',
         'ps' : 'Postscript',
         'raw': 'Raw RGBA bitmap',
@@ -1840,6 +1843,11 @@ class FigureCanvasBase(object):
         from backends.backend_pdf import FigureCanvasPdf # lazy import
         pdf = self.switch_backends(FigureCanvasPdf)
         return pdf.print_pdf(*args, **kwargs)
+
+    def print_pgf(self, *args, **kwargs):
+        from backends.backend_pgf import FigureCanvasPgf # lazy import
+        pgf = self.switch_backends(FigureCanvasPgf)
+        return pgf.print_pgf(*args, **kwargs)
 
     def print_png(self, *args, **kwargs):
         from backends.backend_agg import FigureCanvasAgg # lazy import
@@ -1902,7 +1910,9 @@ class FigureCanvasBase(object):
             buf, size = agg.print_to_buffer()
             if kwargs.pop("dryrun", False): return
             image = Image.frombuffer('RGBA', size, buf, 'raw', 'RGBA', 0, 1)
-            return image.save(filename_or_obj, format='tiff')
+            dpi = (self.figure.dpi, self.figure.dpi)
+            return image.save(filename_or_obj, format='tiff',
+                              dpi=dpi)
         print_tiff = print_tif
 
     def get_supported_filetypes(self):
@@ -2395,6 +2405,8 @@ def key_press_handler(event, canvas, toolbar=None):
                 else:
                     a.set_navigate(i==n)
 
+class NonGuiException(Exception):
+    pass
 
 class FigureManagerBase:
     """
@@ -2413,7 +2425,26 @@ class FigureManagerBase:
         canvas.manager = self  # store a pointer to parent
         self.num = num
 
-        self.canvas.mpl_connect('key_press_event', self.key_press)
+        self.key_press_handler_id = self.canvas.mpl_connect('key_press_event',
+                                                            self.key_press)
+        """
+        The returned id from connecting the default key handler via :meth:`FigureCanvasBase.mpl_connnect`.
+
+        To disable default key press handling::
+
+            manager, canvas = figure.canvas.manager, figure.canvas
+            canvas.mpl_disconnect(manager.key_press_handler_id)
+
+        """
+
+    def show(self):
+        """
+        For GUI backends, show the figure window and redraw.
+        For non-GUI backends, raise an exception to be caught
+        by :meth:`~matplotlib.figure.Figure.show`, for an
+        optional warning.
+        """
+        raise NonGuiException()
 
     def destroy(self):
         pass

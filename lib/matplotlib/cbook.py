@@ -4,44 +4,32 @@ from the Python Cookbook -- hence the name cbook
 """
 from __future__ import print_function
 
-import re, os, errno, sys, io, traceback, locale, threading, types
-import time, datetime
+import datetime
+import errno
+from functools import reduce
+import glob
+import gzip
+import io
+import locale
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+import traceback
 import warnings
+from weakref import ref, WeakKeyDictionary
+
+
 import numpy as np
 import numpy.ma as ma
-from weakref import ref, WeakKeyDictionary
-import cPickle
-import os.path
-import random
-from functools import reduce
 
-import matplotlib
 
-major, minor1, minor2, s, tmp = sys.version_info
-
-# Handle the transition from urllib2 in Python 2 to urllib in Python 3
-if major >= 3:
+if sys.version_info[0] >= 3:
     import types
-    import urllib.request, urllib.error, urllib.parse
-    def urllib_quote():
-        return urllib.parse.quote
-    def addinfourl(data, headers, url, code=None):
-        return urllib.request.addinfourl(io.BytesIO(data),
-                                         headers, url, code)
-    urllib_HTTPSHandler = urllib.request.HTTPSHandler
-    urllib_build_opener = urllib.request.build_opener
-    urllib_URLError = urllib.error.URLError
 else:
     import new
-    import urllib2
-    def urllib_quote():
-        return urllib2.quote
-    def addinfourl(data, headers, url, code=None):
-        return urllib2.addinfourl(io.BytesIO(data),
-                                  headers, url, code)
-    urllib_HTTPSHandler = urllib2.HTTPSHandler
-    urllib_build_opener = urllib2.build_opener
-    urllib_URLError = urllib2.URLError
 
 # On some systems, locale.getpreferredencoding returns None,
 # which can break unicode; and the sage project reports that
@@ -103,10 +91,12 @@ class converter:
     def is_missing(self, s):
         return not s.strip() or s==self.missing
 
+
 class tostr(converter):
     'convert to string or None'
     def __init__(self, missing='Null', missingval=''):
         converter.__init__(self, missing=missing, missingval=missingval)
+
 
 class todatetime(converter):
     'convert to a datetime or None'
@@ -121,7 +111,6 @@ class todatetime(converter):
         return datetime.datetime(*tup[:6])
 
 
-
 class todate(converter):
     'convert to a date or None'
     def __init__(self, fmt='%Y-%m-%d', missing='Null', missingval=None):
@@ -132,6 +121,7 @@ class todate(converter):
         if self.is_missing(s): return self.missingval
         tup = time.strptime(s, self.fmt)
         return datetime.date(*tup[:3])
+
 
 class tofloat(converter):
     'convert to a float or None'
@@ -152,29 +142,113 @@ class toint(converter):
         if self.is_missing(s): return self.missingval
         return int(s)
 
+
+class _BoundMethodProxy(object):
+    '''
+    Our own proxy object which enables weak references to bound and unbound
+    methods and arbitrary callables. Pulls information about the function,
+    class, and instance out of a bound method. Stores a weak reference to the
+    instance to support garbage collection.
+
+    @organization: IBM Corporation
+    @copyright: Copyright (c) 2005, 2006 IBM Corporation
+    @license: The BSD License
+
+    Minor bugfixes by Michael Droettboom
+    '''
+    def __init__(self, cb):
+        try:
+            try:
+                self.inst = ref(cb.im_self)
+            except TypeError:
+                self.inst = None
+            self.func = cb.im_func
+            self.klass = cb.im_class
+        except AttributeError:
+            self.inst = None
+            self.func = cb
+            self.klass = None
+
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        # de-weak reference inst
+        inst = d['inst']
+        if inst is not None:
+            d['inst'] = inst()
+        return d
+
+    def __setstate__(self, statedict):
+        self.__dict__ = statedict
+        inst = statedict['inst']
+        # turn inst back into a weakref
+        if inst is not None:
+            self.inst = ref(inst)
+
+    def __call__(self, *args, **kwargs):
+        '''
+        Proxy for a call to the weak referenced object. Take
+        arbitrary params to pass to the callable.
+
+        Raises `ReferenceError`: When the weak reference refers to
+        a dead object
+        '''
+        if self.inst is not None and self.inst() is None:
+            raise ReferenceError
+        elif self.inst is not None:
+            # build a new instance method with a strong reference to the instance
+            if sys.version_info[0] >= 3:
+                mtd = types.MethodType(self.func, self.inst())
+            else:
+                mtd = new.instancemethod(self.func, self.inst(), self.klass)
+        else:
+            # not a bound method, just return the func
+            mtd = self.func
+        # invoke the callable and return the result
+        return mtd(*args, **kwargs)
+
+    def __eq__(self, other):
+        '''
+        Compare the held function and instance with that held by
+        another proxy.
+        '''
+        try:
+            if self.inst is None:
+                return self.func == other.func and other.inst is None
+            else:
+                return self.func == other.func and self.inst() == other.inst()
+        except Exception:
+            return False
+
+    def __ne__(self, other):
+        '''
+        Inverse of __eq__.
+        '''
+        return not self.__eq__(other)
+
+
 class CallbackRegistry:
     """
     Handle registering and disconnecting for a set of signals and
-    callbacks::
+    callbacks:
 
-       def oneat(x):
-           print 'eat', x
+        >>> def oneat(x):
+        ...    print 'eat', x
+        >>> def ondrink(x):
+        ...    print 'drink', x
 
-       def ondrink(x):
-           print 'drink', x
+        >>> from matplotlib.cbook import CallbackRegistry 
+        >>> callbacks = CallbackRegistry()
 
-       callbacks = CallbackRegistry()
-
-       ideat = callbacks.connect('eat', oneat)
-       iddrink = callbacks.connect('drink', ondrink)
-
-       #tmp = callbacks.connect('drunk', ondrink) # this will raise a ValueError
-
-       callbacks.process('drink', 123)    # will call oneat
-       callbacks.process('eat', 456)      # will call ondrink
-       callbacks.process('be merry', 456) # nothing will be called
-       callbacks.disconnect(ideat)        # disconnect oneat
-       callbacks.process('eat', 456)      # nothing will be called
+        >>> id_eat = callbacks.connect('eat', oneat)
+        >>> id_drink = callbacks.connect('drink', ondrink)        
+        
+        >>> callbacks.process('drink', 123)
+        drink 123
+        >>> callbacks.process('eat', 456)
+        eat 456
+        >>> callbacks.process('be merry', 456) # nothing will be called
+        >>> callbacks.disconnect(id_eat)
+        >>> callbacks.process('eat', 456)      # nothing will be called
 
     In practice, one should always disconnect all callbacks when they
     are no longer needed to avoid dangling references (and thus memory
@@ -190,81 +264,24 @@ class CallbackRegistry:
     `"Mindtrove" blog
     <http://mindtrove.info/articles/python-weak-references/>`_.
     """
-    class BoundMethodProxy(object):
-        '''
-        Our own proxy object which enables weak references to bound and unbound
-        methods and arbitrary callables. Pulls information about the function,
-        class, and instance out of a bound method. Stores a weak reference to the
-        instance to support garbage collection.
-
-        @organization: IBM Corporation
-        @copyright: Copyright (c) 2005, 2006 IBM Corporation
-        @license: The BSD License
-
-        Minor bugfixes by Michael Droettboom
-        '''
-        def __init__(self, cb):
-            try:
-                try:
-                    self.inst = ref(cb.im_self)
-                except TypeError:
-                    self.inst = None
-                self.func = cb.im_func
-                self.klass = cb.im_class
-            except AttributeError:
-                self.inst = None
-                self.func = cb
-                self.klass = None
-
-        def __call__(self, *args, **kwargs):
-            '''
-            Proxy for a call to the weak referenced object. Take
-            arbitrary params to pass to the callable.
-
-            Raises `ReferenceError`: When the weak reference refers to
-            a dead object
-            '''
-            if self.inst is not None and self.inst() is None:
-                raise ReferenceError
-            elif self.inst is not None:
-                # build a new instance method with a strong reference to the instance
-                if sys.version_info[0] >= 3:
-                    mtd = types.MethodType(self.func, self.inst())
-                else:
-                    mtd = new.instancemethod(self.func, self.inst(), self.klass)
-            else:
-                # not a bound method, just return the func
-                mtd = self.func
-            # invoke the callable and return the result
-            return mtd(*args, **kwargs)
-
-        def __eq__(self, other):
-            '''
-            Compare the held function and instance with that held by
-            another proxy.
-            '''
-            try:
-                if self.inst is None:
-                    return self.func == other.func and other.inst is None
-                else:
-                    return self.func == other.func and self.inst() == other.inst()
-            except Exception:
-                return False
-
-        def __ne__(self, other):
-            '''
-            Inverse of __eq__.
-            '''
-            return not self.__eq__(other)
-
     def __init__(self, *args):
         if len(args):
             warnings.warn(
-                'CallbackRegistry no longer requires a list of callback types.  Ignoring arguments',
+                'CallbackRegistry no longer requires a list of callback types.' 
+                ' Ignoring arguments',
                 DeprecationWarning)
         self.callbacks = dict()
         self._cid = 0
         self._func_cid_map = {}
+
+    def __getstate__(self):
+        # We cannot currently pickle the callables in the registry, so
+        # return an empty dictionary.
+        return {}
+
+    def __setstate__(self, state):
+        # re-initialise an empty callback registry
+        self.__init__()
 
     def connect(self, s, func):
         """
@@ -279,7 +296,7 @@ class CallbackRegistry:
         cid = self._cid
         self._func_cid_map[s][func] = cid
         self.callbacks.setdefault(s, dict())
-        proxy = self.BoundMethodProxy(func)
+        proxy = _BoundMethodProxy(func)
         self.callbacks[s][cid] = proxy
         return cid
 
@@ -375,7 +392,7 @@ class silent_list(list):
     """
     override repr when returning a list of matplotlib artists to
     prevent long, meaningless output.  This is meant to be used for a
-    homogeneous list of a give type
+    homogeneous list of a given type
     """
     def __init__(self, type, seq=None):
         self.type = type
@@ -385,7 +402,15 @@ class silent_list(list):
         return '<a list of %d %s objects>' % (len(self), self.type)
 
     def __str__(self):
-        return '<a list of %d %s objects>' % (len(self), self.type)
+        return repr(self)
+
+    def __getstate__(self):
+        # store a dictionary of this SilentList's state
+        return {'type': self.type, 'seq': self[:]}
+
+    def __setstate__(self, state):
+        self.type = state['type']
+        self.extend(state['seq'])
 
 def strip_math(s):
     'remove latex formatting from mathtext'
@@ -399,7 +424,7 @@ class Bunch:
     Often we want to just collect a bunch of stuff together, naming each
     item of the bunch; a dictionary's OK for that, but a small do- nothing
     class is even handier, and prettier to use.  Whenever you want to
-    group a few variables:
+    group a few variables::
 
       >>> point = Bunch(datum=2, squared=4, coord=12)
       >>> point.datum
@@ -494,279 +519,64 @@ def to_filehandle(fname, flag='rU', return_opened=False):
         return fh, opened
     return fh
 
+
 def is_scalar_or_string(val):
+    """Return whether the given object is a scalar or string like."""
     return is_string_like(val) or not iterable(val)
-
-def _get_data_server(cache_dir, baseurl):
-    class ViewVCCachedServer(urllib_HTTPSHandler):
-        """
-        Urllib handler that takes care of caching files.
-        The file cache.pck holds the directory of files that have been cached.
-        """
-        def __init__(self, cache_dir, baseurl):
-            urllib_HTTPSHandler.__init__(self)
-            self.cache_dir = cache_dir
-            self.baseurl = baseurl
-            self.read_cache()
-            self.remove_stale_files()
-            self.opener = urllib_build_opener(self)
-
-        def in_cache_dir(self, fn):
-            # make sure the datadir exists
-            reldir, filename = os.path.split(fn)
-            datadir = os.path.join(self.cache_dir, reldir)
-            if not os.path.exists(datadir):
-                os.makedirs(datadir)
-
-            return os.path.join(datadir, filename)
-
-        def read_cache(self):
-            """
-            Read the cache file from the cache directory.
-            """
-            fn = self.in_cache_dir('cache.pck')
-            if not os.path.exists(fn):
-                self.cache = {}
-                return
-
-            with open(fn, 'rb') as f:
-                cache = cPickle.load(f)
-
-            # Earlier versions did not have the full paths in cache.pck
-            for url, (fn, x, y) in cache.items():
-                if not os.path.isabs(fn):
-                    cache[url] = (self.in_cache_dir(fn), x, y)
-
-            # If any files are deleted, drop them from the cache
-            for url, (fn, _, _) in cache.items():
-                if not os.path.exists(fn):
-                    del cache[url]
-
-            self.cache = cache
-
-        def remove_stale_files(self):
-            """
-            Remove files from the cache directory that are not listed in
-            cache.pck.
-            """
-            # TODO: remove empty subdirectories
-            listed = set(fn for (_, (fn, _, _)) in self.cache.items())
-            existing = reduce(set.union,
-                (set(os.path.join(dirpath, fn) for fn in filenames)
-                    for (dirpath, _, filenames) in os.walk(self.cache_dir)))
-            matplotlib.verbose.report(
-                'ViewVCCachedServer: files listed in cache.pck: %s' % listed,
-                'debug')
-            matplotlib.verbose.report(
-                'ViewVCCachedServer: files in cache directory: %s' % existing,
-                'debug')
-
-            for path in existing - listed - \
-                    set([self.in_cache_dir('cache.pck')]):
-                matplotlib.verbose.report(
-                    'ViewVCCachedServer:remove_stale_files: removing %s'%path,
-                    level='debug')
-                os.remove(path)
-
-        def write_cache(self):
-            """
-            Write the cache data structure into the cache directory.
-            """
-            fn = self.in_cache_dir('cache.pck')
-            with open(fn, 'wb') as f:
-                cPickle.dump(self.cache, f, -1)
-
-        def cache_file(self, url, data, headers):
-            """
-            Store a received file in the cache directory.
-            """
-            # Pick a filename
-            fn = url[len(self.baseurl):]
-            fullpath = self.in_cache_dir(fn)
-
-            with open(fullpath, 'wb') as f:
-                f.write(data)
-
-            # Update the cache
-            self.cache[url] = (fullpath, headers.get('ETag'),
-                               headers.get('Last-Modified'))
-            self.write_cache()
-
-        # These urllib entry points are used:
-        # http_request for preprocessing requests
-        # http_error_304 for handling 304 Not Modified responses
-        # http_response for postprocessing requests
-
-        def https_request(self, req):
-            """
-            Make the request conditional if we have a cached file.
-            """
-            url = req.get_full_url()
-            if url in self.cache:
-                _, etag, lastmod = self.cache[url]
-                if etag is not None:
-                    req.add_header("If-None-Match", etag)
-                if lastmod is not None:
-                    req.add_header("If-Modified-Since", lastmod)
-            matplotlib.verbose.report(
-                "ViewVCCachedServer: request headers %s" % req.header_items(),
-                "debug")
-            return req
-
-        def https_error_304(self, req, fp, code, msg, hdrs):
-            """
-            Read the file from the cache since the server has no newer version.
-            """
-            url = req.get_full_url()
-            fn, _, _ = self.cache[url]
-            matplotlib.verbose.report(
-                'ViewVCCachedServer: reading data file from cache file "%s"'
-                %fn, 'debug')
-            with open(fn, 'rb') as file:
-                handle = addinfourl(file, hdrs, url)
-            handle.code = 304
-            return handle
-
-        def https_response(self, req, response):
-            """
-            Update the cache with the returned file.
-            """
-            matplotlib.verbose.report(
-                'ViewVCCachedServer: received response %d: %s'
-                % (response.code, response.msg), 'debug')
-            if response.code != 200:
-                return response
-            else:
-                data = response.read()
-                self.cache_file(req.get_full_url(), data, response.headers)
-                result = addinfourl(data,
-                                    response.headers,
-                                    req.get_full_url())
-                result.code = response.code
-                result.msg = response.msg
-                return result
-
-        def get_sample_data(self, fname, asfileobj=True):
-            """
-            Check the cachedirectory for a sample_data file.  If it does
-            not exist, fetch it with urllib from the git repo and
-            store it in the cachedir.
-
-            If asfileobj is True, a file object will be returned.  Else the
-            path to the file as a string will be returned.
-            """
-            # TODO: time out if the connection takes forever
-            # (may not be possible with urllib only - spawn a helper process?)
-
-            quote = urllib_quote()
-
-            # retrieve the URL for the side effect of refreshing the cache
-            url = self.baseurl + quote(fname)
-            error = 'unknown error'
-            matplotlib.verbose.report('ViewVCCachedServer: retrieving %s'
-                                      % url, 'debug')
-            try:
-                response = self.opener.open(url)
-            except urllib_URLError as e:
-                # could be a missing network connection
-                error = str(e)
-
-            cached = self.cache.get(url)
-            if cached is None:
-                msg = 'file %s not in cache; received %s when trying to '\
-                      'retrieve' % (fname, error)
-                raise KeyError(msg)
-
-            fname = cached[0]
-
-            if asfileobj:
-                if (os.path.splitext(fname)[-1].lower() in
-                       ('.csv', '.xrc', '.txt')):
-                    mode = 'r'
-                else:
-                    mode = 'rb'
-                return open(fname, mode)
-            else:
-                return fname
-
-    return ViewVCCachedServer(cache_dir, baseurl)
 
 
 def get_sample_data(fname, asfileobj=True):
     """
-    Check the cachedirectory ~/.matplotlib/sample_data for a sample_data
-    file.  If it does not exist, fetch it with urllib from the mpl git repo
+    Return a sample data file.  *fname* is a path relative to the
+    `mpl-data/sample_data` directory.  If *asfileobj* is `True`
+    return a file object, otherwise just a file path.
 
-      https://raw.github.com/matplotlib/sample_data/master
-
-    and store it in the cachedir.
-
-    If asfileobj is True, a file object will be returned.  Else the
-    path to the file as a string will be returned
-
-    To add a datafile to this directory, you need to check out
-    sample_data from matplotlib git::
-
-      git clone git@github.com:matplotlib/sample_data
-
-    and git add the data file you want to support.  This is primarily
-    intended for use in mpl examples that need custom data.
-
-    To bypass all downloading, set the rc parameter examples.download to False
-    and examples.directory to the directory where we should look.
+    If the filename ends in .gz, the file is implicitly ungzipped.
     """
+    root = os.path.join(os.path.dirname(__file__), "mpl-data", "sample_data")
+    path = os.path.join(root, fname)
 
-    if not matplotlib.rcParams['examples.download']:
-        directory = matplotlib.rcParams['examples.directory']
-        f = os.path.join(directory, fname)
-        if asfileobj:
-            return open(f, 'rb')
+    if asfileobj:
+        if (os.path.splitext(fname)[-1].lower() in
+               ('.csv', '.xrc', '.txt')):
+            mode = 'r'
         else:
-            return f
+            mode = 'rb'
 
-    myserver = get_sample_data.myserver
-    if myserver is None:
-        configdir = matplotlib.get_configdir()
-        cachedir = os.path.join(configdir, 'sample_data')
-        baseurl = 'https://raw.github.com/matplotlib/sample_data/master/'
-        try:
-            myserver = _get_data_server(cachedir, baseurl)
-            get_sample_data.myserver = myserver
-        except ImportError:
-            raise ImportError(
-                'Python must be built with SSL support to fetch sample data '
-                'from the matplotlib repository')
+        base, ext = os.path.splitext(fname)
+        if ext == '.gz':
+            return gzip.open(path, mode)
+        else:
+            return open(path, mode)
+    else:
+        return path
 
-    return myserver.get_sample_data(fname, asfileobj=asfileobj)
-
-get_sample_data.myserver = None
 
 def flatten(seq, scalarp=is_scalar_or_string):
     """
-    this generator flattens nested containers such as
-
-    >>> l=( ('John', 'Hunter'), (1,23), [[[[42,(5,23)]]]])
-
-    so that
-
-    >>> for i in flatten(l): print i,
-    John Hunter 1 23 42 5 23
+    Returns a generator of flattened nested containers
+    
+    For example:
+    
+        >>> from matplotlib.cbook import flatten
+        >>> l = (('John', ['Hunter']), (1, 23), [[([42, (5, 23)], )]])
+        >>> print list(flatten(l)) 
+        ['John', 'Hunter', 1, 23, 42, 5, 23]
 
     By: Composite of Holger Krekel and Luther Blissett
     From: http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/121294
     and Recipe 1.12 in cookbook
     """
     for item in seq:
-        if scalarp(item): yield item
+        if scalarp(item):
+            yield item
         else:
             for subitem in flatten(item, scalarp):
                 yield subitem
 
 
-
 class Sorter:
     """
-
     Sort by attribute or item
 
     Example usage::
@@ -1480,25 +1290,27 @@ class Grouper(object):
 
     For example:
 
-    >>> class Foo:
-    ...     def __init__(self, s):
-    ...             self.s = s
-    ...     def __repr__(self):
-    ...             return self.s
-    ...
-    >>> a, b, c, d, e, f = [Foo(x) for x in 'abcdef']
-    >>> g = Grouper()
-    >>> g.join(a, b)
-    >>> g.join(b, c)
-    >>> g.join(d, e)
-    >>> list(g)
-    [[d, e], [a, b, c]]
-    >>> g.joined(a, b)
-    True
-    >>> g.joined(a, c)
-    True
-    >>> g.joined(a, d)
-    False
+        >>> from matplotlib.cbook import Grouper
+        >>> class Foo(object):
+        ...     def __init__(self, s):
+        ...         self.s = s
+        ...     def __repr__(self):
+        ...         return self.s
+        ...
+        >>> a, b, c, d, e, f = [Foo(x) for x in 'abcdef']
+        >>> grp = Grouper()
+        >>> grp.join(a, b)
+        >>> grp.join(b, c)
+        >>> grp.join(d, e)
+        >>> sorted(map(tuple, grp))
+        [(d, e), (a, b, c)]
+        >>> grp.joined(a, b)
+        True
+        >>> grp.joined(a, c)
+        True
+        >>> grp.joined(a, d)
+        False
+    
     """
     def __init__(self, init=[]):
         mapping = self._mapping = {}
@@ -1826,9 +1638,9 @@ def quad2cubic(q0x, q0y, q1x, q1y, q2x, q2y):
 def align_iterators(func, *iterables):
     """
     This generator takes a bunch of iterables that are ordered by func
-    It sends out ordered tuples:
+    It sends out ordered tuples::
 
-      (func(row), [rows from all iterators matching func(row)])
+       (func(row), [rows from all iterators matching func(row)])
 
     It is used by :func:`matplotlib.mlab.recs_join` to join record arrays
     """
@@ -1879,6 +1691,41 @@ def is_math_text(s):
 
     return even_dollars
 
+
+class _NestedClassGetter(object):
+    # recipe from http://stackoverflow.com/a/11493777/741316
+    """
+    When called with the containing class as the first argument,
+    and the name of the nested class as the second argument,
+    returns an instance of the nested class.
+    """
+    def __call__(self, containing_class, class_name):
+        nested_class = getattr(containing_class, class_name)
+
+        # make an instance of a simple object (this one will do), for which we
+        # can change the __class__ later on.
+        nested_instance = _NestedClassGetter()
+
+        # set the class of the instance, the __init__ will never be called on
+        # the class but the original state will be set later on by pickle.
+        nested_instance.__class__ = nested_class
+        return nested_instance
+
+
+class _InstanceMethodPickler(object):
+    """
+    Pickle cannot handle instancemethod saving. _InstanceMethodPickler
+    provides a solution to this.
+    """
+    def __init__(self, instancemethod):
+        """Takes an instancemethod as its only argument."""
+        self.parent_obj = instancemethod.im_self
+        self.instancemethod_name = instancemethod.im_func.__name__
+
+    def get_instancemethod(self):
+        return getattr(self.parent_obj, self.instancemethod_name)
+
+
 # Numpy > 1.6.x deprecates putmask in favor of the new copyto.
 # So long as we support versions 1.6.x and less, we need the
 # following local version of putmask.  We choose to make a
@@ -1895,6 +1742,48 @@ except AttributeError:
 else:
     def _putmask(a, mask, values):
         return np.copyto(a, values, where=mask)
+
+
+def _check_output(*popenargs, **kwargs):
+    r"""Run command with arguments and return its output as a byte
+    string.
+
+    If the exit code was non-zero it raises a CalledProcessError.  The
+    CalledProcessError object will have the return code in the
+    returncode
+    attribute and output in the output attribute.
+
+    The arguments are the same as for the Popen constructor.  Example::
+
+    >>> check_output(["ls", "-l", "/dev/null"])
+    'crw-rw-rw- 1 root root 1, 3 Oct 18  2007 /dev/null\n'
+
+    The stdout argument is not allowed as it is used internally.
+    To capture standard error in the result, use stderr=STDOUT.::
+
+    >>> check_output(["/bin/sh", "-c",
+    ...               "ls -l non_existent_file ; exit 0"],
+    ...              stderr=STDOUT)
+    'ls: non_existent_file: No such file or directory\n'
+    """
+    if 'stdout' in kwargs:
+        raise ValueError('stdout argument not allowed, it will be overridden.')
+    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+    output, unused_err = process.communicate()
+    retcode = process.poll()
+    if retcode:
+        cmd = kwargs.get("args")
+        if cmd is None:
+            cmd = popenargs[0]
+        raise subprocess.CalledProcessError(retcode, cmd, output=output)
+    return output
+
+
+# python2.7's subprocess provides a check_output method
+if hasattr(subprocess, 'check_output'):
+    check_output = subprocess.check_output
+else:
+    check_output = _check_output
 
 
 if __name__=='__main__':

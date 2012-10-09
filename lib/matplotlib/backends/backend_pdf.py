@@ -139,7 +139,7 @@ def pdfRepr(obj):
     # Floats. PDF does not have exponential notation (1.0e-10) so we
     # need to use %f with some precision.  Perhaps the precision
     # should adapt to the magnitude of the number?
-    elif isinstance(obj, float):
+    elif isinstance(obj, (float, np.floating)):
         if not np.isfinite(obj):
             raise ValueError("Can only output finite numbers in PDF")
         r = ("%.10f" % obj).encode('ascii')
@@ -151,7 +151,7 @@ def pdfRepr(obj):
         return [b'false', b'true'][obj]
 
     # Integers are written as such.
-    elif isinstance(obj, (int, long)):
+    elif isinstance(obj, (int, long, np.integer)):
         return ("%d" % obj).encode('ascii')
 
     # Unicode strings are encoded in UTF-16BE with byte-order mark.
@@ -394,11 +394,19 @@ class PdfFile(object):
         self.nextObject = 1     # next free object id
         self.xrefTable = [ [0, 65535, 'the zero object'] ]
         self.passed_in_file_object = False
+        self.original_file_like = None
+        self.tell_base = 0
         if is_string_like(filename):
             fh = open(filename, 'wb')
         elif is_writable_file_like(filename):
-            fh = filename
-            self.passed_in_file_object = True
+            try:
+                self.tell_base = filename.tell()
+            except IOError:
+                fh = BytesIO()
+                self.original_file_like = filename
+            else:
+                fh = filename
+                self.passed_in_file_object = True
         else:
             raise ValueError("filename must be a path or a file-like object")
 
@@ -524,6 +532,9 @@ class PdfFile(object):
         self.writeTrailer()
         if self.passed_in_file_object:
             self.fh.flush()
+        elif self.original_file_like is not None:
+            self.original_file_like.write(self.fh.getvalue())
+            self.fh.close()
         else:
             self.fh.close()
 
@@ -1351,7 +1362,7 @@ end"""
         return Reference(id)
 
     def recordXref(self, id):
-        self.xrefTable[id][0] = self.fh.tell()
+        self.xrefTable[id][0] = self.fh.tell() - self.tell_base
 
     def writeObject(self, object, contents):
         self.recordXref(object.id)
@@ -1360,7 +1371,7 @@ end"""
     def writeXref(self):
         """Write out the xref table."""
 
-        self.startxref = self.fh.tell()
+        self.startxref = self.fh.tell() - self.tell_base
         self.write(("xref\n0 %d\n" % self.nextObject).encode('ascii'))
         i = 0
         borken = False
@@ -2171,7 +2182,14 @@ def new_figure_manager(num, *args, **kwargs):
     # main-level app (egg backend_gtk, backend_gtkagg) for pylab
     FigureClass = kwargs.pop('FigureClass', Figure)
     thisFig = FigureClass(*args, **kwargs)
-    canvas = FigureCanvasPdf(thisFig)
+    return new_figure_manager_given_figure(num, thisFig)
+
+
+def new_figure_manager_given_figure(num, figure):
+    """
+    Create a new figure manager instance for the given figure.
+    """
+    canvas = FigureCanvasPdf(figure)
     manager = FigureManagerPdf(canvas, num)
     return manager
 

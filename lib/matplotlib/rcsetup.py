@@ -30,7 +30,7 @@ interactive_bk = ['GTK', 'GTKAgg', 'GTKCairo', 'FltkAgg', 'MacOSX',
 
 
 non_interactive_bk = ['agg', 'cairo', 'emf', 'gdk',
-                      'pdf', 'ps', 'svg', 'template']
+                      'pdf', 'pgf', 'ps', 'svg', 'template']
 all_backends = interactive_bk + non_interactive_bk
 
 
@@ -319,8 +319,12 @@ def validate_hinting(s):
         return s.lower()
     raise ValueError("hinting should be 'auto', 'native', 'either' or 'none'")
 
+validate_pgf_texsystem = ValidateInStrings('pgf.texsystem',
+                                           ['xelatex', 'lualatex', 'pdflatex'])
+
 validate_movie_writer = ValidateInStrings('animation.writer',
-    ['ffmpeg', 'ffmpeg_file', 'mencoder', 'mencoder_file'])
+    ['ffmpeg', 'ffmpeg_file', 'mencoder', 'mencoder_file',
+     'imagemagick', 'imagemagick_file'])
 
 validate_movie_frame_fmt = ValidateInStrings('animation.frame_format',
     ['png', 'jpeg', 'tiff', 'raw', 'rgba'])
@@ -536,6 +540,7 @@ defaultParams = {
     'grid.color'       : ['k', validate_color],       # grid color
     'grid.linestyle'   : [':', str],       # dotted
     'grid.linewidth'   : [0.5, validate_float],     # in points
+    'grid.alpha'       : [1.0, validate_float],
 
 
     # figure props
@@ -544,7 +549,7 @@ defaultParams = {
     'figure.dpi'        : [ 80, validate_float],   # DPI
     'figure.facecolor'  : [ '0.75', validate_color], # facecolor; scalar gray
     'figure.edgecolor'  : [ 'w', validate_color],  # edgecolor; white
-    'figure.autolayout' : [ False, validate_autolayout],
+    'figure.autolayout' : [ False, validate_bool],
 
     'figure.subplot.left'   : [0.125, ValidateInterval(0, 1, closedmin=True, closedmax=True)],
     'figure.subplot.right'  : [0.9, ValidateInterval(0, 1, closedmin=True, closedmax=True)],
@@ -574,6 +579,12 @@ defaultParams = {
     'pdf.use14corefonts' : [False, validate_bool],  # use only the 14 PDF core fonts
                                                     # embedded in every PDF viewing application
     'pdf.fonttype'      : [3, validate_fonttype],  # 3 (Type3) or 42 (Truetype)
+
+    'pgf.debug'         : [False, validate_bool],  # output debug information
+    'pgf.texsystem'     : ['xelatex', validate_pgf_texsystem], # choose latex application for creating pdf files (xelatex/lualatex)
+    'pgf.rcfonts'       : [True, validate_bool],   # use matplotlib rc settings for font configuration
+    'pgf.preamble'      : [[''], validate_stringlist], # provide a custom preamble for the latex process
+
     'svg.image_inline'  : [True, validate_bool],    # write raster image data directly into the svg file
     'svg.image_noscale' : [False, validate_bool],  # suppress scaling of raster data embedded in SVG
     'svg.embed_char_paths' : [True, deprecate_svg_embed_char_paths],  # True to save all characters as paths in the SVG
@@ -602,10 +613,6 @@ defaultParams = {
     'keymap.xscale' : [['k', 'L'], validate_stringlist],
     'keymap.all_axes' : ['a', validate_stringlist],
 
-    # sample data
-    'examples.download' : [True, validate_bool],
-    'examples.directory' : ['', str],
-
     # Animation settings
     'animation.writer' : ['ffmpeg', validate_movie_writer],
     'animation.codec' : ['mpeg4', str],
@@ -615,6 +622,8 @@ defaultParams = {
     'animation.ffmpeg_args' : ['', validate_stringlist], # Additional arguments for ffmpeg movie writer (using pipes)
     'animation.mencoder_path' : ['mencoder', str], # Path to FFMPEG binary. If just binary name, subprocess uses $PATH.
     'animation.mencoder_args' : ['', validate_stringlist], # Additional arguments for mencoder movie writer (using pipes)
+    'animation.convert_path' : ['convert', str], # Path to convert binary. If just binary name, subprocess uses $PATH
+    'animation.convert_args' : ['', validate_stringlist], # Additional arguments for mencoder movie writer (using pipes)
 }
 
 if __name__ == '__main__':

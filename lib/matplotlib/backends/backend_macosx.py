@@ -42,6 +42,7 @@ class RendererMac(RendererBase):
         self.width = width
         self.height = height
         self.gc = GraphicsContextMac()
+        self.gc.set_dpi(self.dpi)
         self.mathtext_parser = MathTextParser('MacOSX')
 
     def set_width_height (self, width, height):
@@ -233,9 +234,20 @@ def new_figure_manager(num, *args, **kwargs):
     """
     if not _macosx.verify_main_display():
         import warnings
-        warnings.warn("Python is not installed as a framework. The MacOSX backend may not work correctly if Python is not installed as a framework. Please see the Python documentation for more information on installing Python as a framework on Mac OS X")
+        warnings.warn("Python is not installed as a framework. The MacOSX "
+                      "backend may not work correctly if Python is not "
+                      "installed as a framework. Please see the Python "
+                      "documentation for more information on installing "
+                      "Python as a framework on Mac OS X")
     FigureClass = kwargs.pop('FigureClass', Figure)
     figure = FigureClass(*args, **kwargs)
+    return new_figure_manager_given_figure(num, figure)
+
+
+def new_figure_manager_given_figure(num, figure):
+    """
+    Create a new figure manager instance for the given figure.
+    """
     canvas = FigureCanvasMac(figure)
     manager = FigureManagerMac(canvas, num)
     return manager
@@ -304,7 +316,7 @@ class FigureCanvasMac(_macosx.FigureCanvas, FigureCanvasBase):
         width, height = self.figure.get_size_inches()
         width, height = width*dpi, height*dpi
         filename = unicode(filename)
-        self.write_bitmap(filename, width, height)
+        self.write_bitmap(filename, width, height, dpi)
         self.figure.dpi = old_dpi
 
     def print_bmp(self, filename, *args, **kwargs):
@@ -364,9 +376,6 @@ class FigureManagerMac(_macosx.FigureManager, FigureManagerBase):
             if self.toolbar != None: self.toolbar.update()
         self.canvas.figure.add_axobserver(notify_axes_change)
 
-        # This is ugly, but this is what tkagg and gtk are doing.
-        # It is needed to get ginput() working.
-        self.canvas.figure.show = lambda *args: self.show()
         if matplotlib.is_interactive():
             self.show()
 
@@ -477,6 +486,9 @@ class NavigationToolbar2Mac(_macosx.NavigationToolbar2, NavigationToolbar2):
 
     def set_message(self, message):
         _macosx.NavigationToolbar2.set_message(self, message.encode('utf-8'))
+
+    def dynamic_update(self):
+        self.canvas.draw_idle()
 
 ########################################################################
 #

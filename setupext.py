@@ -107,6 +107,7 @@ options = {'display_status': True,
            'verbose': False,
            'provide_pytz': 'auto',
            'provide_dateutil': 'auto',
+           'provide_six': 'auto',
            'build_agg': True,
            'build_gtk': 'auto',
            'build_gtkagg': 'auto',
@@ -142,6 +143,10 @@ if os.path.exists(setup_cfg):
     try: options['provide_dateutil'] = config.getboolean("provide_packages",
                                                          "dateutil")
     except: options['provide_dateutil'] = 'auto'
+
+    try: options['provide_six'] = config.getboolean("provide_packages",
+                                                    "six")
+    except: options['provide_six'] = 'auto'
 
     try: options['build_gtk'] = config.getboolean("gui_support", "gtk")
     except: options['build_gtk'] = 'auto'
@@ -431,24 +436,14 @@ def check_for_cairo():
         print_status("Cairo", cairo.version)
         return True
 
-def check_for_datetime():
-    try:
-        import datetime
-    except ImportError:
-        print_status("datetime", "no")
-        return False
-    else:
-        print_status("datetime", "present, version unknown")
-        return True
-
-def check_provide_pytz(hasdatetime=True):
-    if hasdatetime and (options['provide_pytz'] is True):
+def check_provide_pytz():
+    if options['provide_pytz'] is True:
         print_status("pytz", "matplotlib will provide")
         return True
     try:
         import pytz
     except ImportError:
-        if hasdatetime and options['provide_pytz']:
+        if options['provide_pytz']:
             print_status("pytz", "matplotlib will provide")
             return True
         else:
@@ -462,14 +457,14 @@ def check_provide_pytz(hasdatetime=True):
             print_status("pytz", pytz.__version__)
             return False
 
-def check_provide_dateutil(hasdatetime=True):
-    if hasdatetime and (options['provide_dateutil'] is True):
+def check_provide_dateutil():
+    if options['provide_dateutil'] is True:
         print_status("dateutil", "matplotlib will provide")
         return True
     try:
         import dateutil
     except ImportError:
-        if hasdatetime and options['provide_dateutil']:
+        if options['provide_dateutil']:
             print_status("dateutil", "matplotlib will provide")
             return True
         else:
@@ -486,6 +481,36 @@ def check_provide_dateutil(hasdatetime=True):
         except AttributeError:
             print_status("dateutil", "present, version unknown")
             return False
+
+def check_provide_six():
+    # We don't need six on Python 2.x
+    if sys.version_info[0] < 3:
+        return
+
+    if options['provide_six'] is True:
+        print_status("six", "matplotlib will provide")
+        return True
+    try:
+        import six
+    except ImportError:
+        if options['provide_six']:
+            print_status("six", "matplotlib will provide")
+            return True
+        else:
+            print_status("six", "no")
+            return False
+    else:
+        try:
+            if six.__version__.endswith('mpl'):
+                print_status("six", "matplotlib will provide")
+                return True
+            else:
+                print_status("six", six.__version__)
+                return False
+        except AttributeError:
+            print_status("six", "present, version unknown")
+            return False
+
 
 def check_for_dvipng():
     try:

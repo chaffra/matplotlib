@@ -29,7 +29,7 @@ class Container(tuple):
             c.remove()
 
         if self._remove_method:
-            self._remove_method()
+            self._remove_method(self)
 
     def get_label(self):
         """
@@ -41,9 +41,9 @@ class Container(tuple):
         """
         Set the label to *s* for auto legend.
 
-        ACCEPTS: any string
+        ACCEPTS: string or anything printable with '%s' conversion.
         """
-        self._label = s
+        self._label = '%s' % (s, )
         self.pchanged()
 
     def add_callback(self, func):

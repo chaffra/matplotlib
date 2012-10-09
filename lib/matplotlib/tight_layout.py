@@ -209,23 +209,65 @@ def get_renderer(fig):
     return renderer
 
 
-def get_tight_layout_figure(fig, axes_list, renderer,
+def get_subplotspec_list(axes_list, grid_spec=None):
+    """
+    Return a list of subplotspec from the given list of axes.  For an
+    instance of axes that does not support subplotspec, None is
+    inserted in the list.
+
+    If grid_spec is given, None is inserted for those not from
+    the given grid_spec.
+
+    """
+    subplotspec_list = []
+    for ax in axes_list:
+        axes_or_locator = ax.get_axes_locator()
+        if axes_or_locator is None:
+            axes_or_locator = ax
+
+        if hasattr(axes_or_locator, "get_subplotspec"):
+            subplotspec = axes_or_locator.get_subplotspec()
+            subplotspec = subplotspec.get_topmost_subplotspec()
+            gs = subplotspec.get_gridspec()
+            if grid_spec is not None:
+                if gs != grid_spec:
+                    subplotspec = None
+            elif gs.locally_modified_subplot_params():
+                subplotspec = None
+        else:
+            subplotspec = None
+
+
+        subplotspec_list.append(subplotspec)
+
+    return subplotspec_list
+
+
+def get_tight_layout_figure(fig, axes_list, subplotspec_list, renderer,
                             pad=1.08, h_pad=None, w_pad=None, rect=None):
     """
-    return subplot parameters for tigh-layouted- figure with
-    specified padding.
+    Return subplot parameters for tight-layouted-figure with specified
+    padding.
 
     Parameters:
 
       *fig* : figure instance
+
       *axes_list* : a list of axes
+
+      *subplotspec_list* : a list of subplotspec associated with each
+        axes in axes_list
+
       *renderer* : renderer instance
+
       *pad* : float
         padding between the figure edge and the edges of subplots,
         as a fraction of the font-size.
+
       *h_pad*, *w_pad* : float
         padding (height/width) between edges of adjacent subplots.
         Defaults to `pad_inches`.
+
       *rect* : if rect is given, it is interpreted as a rectangle
         (left, bottom, right, top) in the normalized figure
         coordinate that the whole subplots area (including
@@ -233,27 +275,20 @@ def get_tight_layout_figure(fig, axes_list, renderer,
     """
 
 
-    subplotspec_list = []
     subplot_list = []
     nrows_list = []
     ncols_list = []
     ax_bbox_list = []
 
-    subplot_dict = {} # for axes_grid1, multiple axes can share
-                      # same subplot_interface. Thus we need to
-                      # join them together.
+    subplot_dict = {} # multiple axes can share
+                      # same subplot_interface (e.g, axes_grid1). Thus
+                      # we need to join them together.
 
-    for ax in axes_list:
-        locator = ax.get_axes_locator()
-        if hasattr(locator, "get_subplotspec"):
-            subplotspec = locator.get_subplotspec().get_topmost_subplotspec()
-        elif hasattr(ax, "get_subplotspec"):
-            subplotspec = ax.get_subplotspec().get_topmost_subplotspec()
-        else:
-            continue
+    subplotspec_list2 = []
 
-        if (subplotspec is None) or \
-               subplotspec.get_gridspec().locally_modified_subplot_params():
+    for ax, subplotspec in zip(axes_list,
+                               subplotspec_list):
+        if subplotspec is None:
             continue
 
         subplots = subplot_dict.setdefault(subplotspec, [])
@@ -262,7 +297,7 @@ def get_tight_layout_figure(fig, axes_list, renderer,
             myrows, mycols, _, _ = subplotspec.get_geometry()
             nrows_list.append(myrows)
             ncols_list.append(mycols)
-            subplotspec_list.append(subplotspec)
+            subplotspec_list2.append(subplotspec)
             subplot_list.append(subplots)
             ax_bbox_list.append(subplotspec.get_position(fig))
 
@@ -272,7 +307,7 @@ def get_tight_layout_figure(fig, axes_list, renderer,
     max_ncols = max(ncols_list)
 
     num1num2_list = []
-    for subplotspec in subplotspec_list:
+    for subplotspec in subplotspec_list2:
         rows, cols, num1, num2 = subplotspec.get_geometry()
         div_row, mod_row = divmod(max_nrows, rows)
         div_col, mod_col = divmod(max_ncols, cols)
@@ -323,4 +358,3 @@ def get_tight_layout_figure(fig, axes_list, renderer,
                                          rect=(left, bottom, right, top))
 
     return kwargs
-

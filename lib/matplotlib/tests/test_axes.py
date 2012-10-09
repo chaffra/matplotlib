@@ -1,7 +1,7 @@
 import numpy as np
 from numpy import ma
 import matplotlib
-from matplotlib.testing.decorators import image_comparison, knownfailureif
+from matplotlib.testing.decorators import image_comparison, cleanup
 import matplotlib.pyplot as plt
 
 
@@ -61,6 +61,29 @@ def test_formatter_large_small():
     x = [0.500000001, 0.500000002]
     y = [500000001, 500000002]
     ax.plot(x, y)
+
+@image_comparison(baseline_images=["twin_axis_locaters_formatters"])
+def test_twin_axis_locaters_formatters():
+    vals = np.linspace(0, 1, num=5, endpoint=True)
+    locs = np.sin(np.pi * vals / 2.0)
+
+    majl = plt.FixedLocator(locs)
+    minl = plt.FixedLocator([0.1, 0.2, 0.3])
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(1, 1, 1)
+    ax1.plot([0.1, 100], [0, 1])
+    ax1.yaxis.set_major_locator(majl)
+    ax1.yaxis.set_minor_locator(minl)
+    ax1.yaxis.set_major_formatter(plt.FormatStrFormatter('%08.2lf'))
+    ax1.yaxis.set_minor_formatter(plt.FixedFormatter(['tricks', 'mind', 'jedi']))
+
+    ax1.xaxis.set_major_locator(plt.LinearLocator())
+    ax1.xaxis.set_minor_locator(plt.FixedLocator([15, 35, 55, 75]))
+    ax1.xaxis.set_major_formatter(plt.FormatStrFormatter('%05.2lf'))
+    ax1.xaxis.set_minor_formatter(plt.FixedFormatter(['c', '3', 'p', 'o']))
+    ax2 = ax1.twiny()
+    ax3 = ax1.twinx()
 
 @image_comparison(baseline_images=["autoscale_tiny_range"], remove_text=True)
 def test_autoscale_tiny_range():
@@ -733,6 +756,7 @@ def test_scatter_plot():
     ax = plt.axes()
     ax.scatter([3, 4, 2, 6], [2, 5, 2, 3], c=['r', 'y', 'b', 'lime'], s=[24, 15, 19, 29])
 
+@cleanup
 def test_as_mpl_axes_api():
     # tests the _as_mpl_axes api
     from matplotlib.projections.polar import PolarAxes
@@ -755,9 +779,7 @@ def test_as_mpl_axes_api():
     assert type(ax) == PolarAxes, \
            'Expected a PolarAxes, got %s' % type(ax)
     ax_via_gca = plt.gca(projection=prj)
-    # ideally, ax_via_gca is ax should be true. However, gca isn't
-    # plummed like that. (even with projection='polar').
-    assert ax_via_gca is not ax
+    assert ax_via_gca is ax
     plt.close()
 
     # testing axes creation with gca
@@ -800,6 +822,8 @@ def test_stackplot():
     y3 = 3.0 * x + 2
     ax = fig.add_subplot(1, 1, 1)
     ax.stackplot(x, y1, y2, y3)
+    ax.set_xlim((0, 10))
+    ax.set_ylim((0, 70))
 
 @image_comparison(baseline_images=['boxplot'])
 def test_boxplot():
@@ -812,6 +836,59 @@ def test_boxplot():
     ax.boxplot([x, x], bootstrap=10000, usermedians=[None, 1.0],
                conf_intervals=[None, (-1.0, 3.5)], notch=1)
     ax.set_ylim((-30, 30))
+
+@image_comparison(baseline_images=['errorbar_basic',
+                                   'errorbar_mixed'])
+def test_errorbar():
+    x = np.arange(0.1, 4, 0.5)
+    y = np.exp(-x)
+
+    yerr = 0.1 + 0.2*np.sqrt(x)
+    xerr = 0.1 + yerr
+
+    # First illustrate basic pyplot interface, using defaults where possible.
+    fig = plt.figure()
+    ax = fig.gca()
+    ax.errorbar(x, y, xerr=0.2, yerr=0.4)
+    ax.set_title("Simplest errorbars, 0.2 in x, 0.4 in y")
+
+    # Now switch to a more OO interface to exercise more features.
+    fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True)
+    ax = axs[0,0]
+    ax.errorbar(x, y, yerr=yerr, fmt='o')
+    ax.set_title('Vert. symmetric')
+
+    # With 4 subplots, reduce the number of axis ticks to avoid crowding.
+    ax.locator_params(nbins=4)
+
+    ax = axs[0,1]
+    ax.errorbar(x, y, xerr=xerr, fmt='o')
+    ax.set_title('Hor. symmetric')
+
+    ax = axs[1,0]
+    ax.errorbar(x, y, yerr=[yerr, 2*yerr], xerr=[xerr, 2*xerr], fmt='--o')
+    ax.set_title('H, V asymmetric')
+
+    ax = axs[1,1]
+    ax.set_yscale('log')
+    # Here we have to be careful to keep all y values positive:
+    ylower = np.maximum(1e-2, y - yerr)
+    yerr_lower = y - ylower
+
+    ax.errorbar(x, y, yerr=[yerr_lower, 2*yerr], xerr=xerr,
+                        fmt='o', ecolor='g', capthick=2)
+    ax.set_title('Mixed sym., log y')
+
+    fig.suptitle('Variable errorbars')
+
+@image_comparison(baseline_images=['hist_stacked'])
+def test_hist_stacked():
+    # make some data
+    d1 = np.linspace(0, 10, 50)
+    d2 = np.linspace(1, 3, 20)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.hist( (d1, d2), histtype="stepfilled", stacked=True)
 
 if __name__=='__main__':
     import nose

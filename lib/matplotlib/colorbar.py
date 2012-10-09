@@ -174,6 +174,19 @@ For more precise control, you can manually specify the positions of
 the axes objects in which the mappable and the colorbar are drawn.  In
 this case, do not use any of the axes properties kwargs.
 
+It is known that some vector graphics viewer (svg and pdf) renders white gaps
+between segments of the colorbar. This is due to bugs in the viewers not
+matplotlib. As a workaround the colorbar can be rendered with overlapping
+segments::
+
+    cbar = colorbar()
+    cbar.solids.set_edgecolor("face")
+    draw()
+
+However this has negative consequences in other circumstances. Particularly with
+semi transparent images (alpha < 1) and colorbar extensions and is not enabled
+by default see (issue #1188).
+
 returns:
     :class:`~matplotlib.colorbar.Colorbar` instance; see also its base class,
     :class:`~matplotlib.colorbar.ColorbarBase`.  Call the
@@ -183,6 +196,12 @@ returns:
 ''' % (make_axes_kw_doc, colormap_kw_doc)
 
 docstring.interpd.update(colorbar_doc=colorbar_doc)
+
+
+def _set_ticks_on_axis_warn(*args, **kw):
+    # a top level function which gets put in at the axes'
+    # set_xticks set_yticks by _patch_ax
+    warnings.warn("Use the colorbar set_ticks() method instead.")
 
 
 class ColorbarBase(cm.ScalarMappable):
@@ -212,7 +231,8 @@ class ColorbarBase(cm.ScalarMappable):
             the Axes instance in which the colorbar is drawn
 
         :attr:`lines`
-            a LineCollection if lines were drawn, otherwise None
+            a list of LineCollection if lines were drawn, otherwise
+            an empty list
 
         :attr:`dividers`
             a LineCollection if *drawedges* is True, otherwise None
@@ -286,11 +306,10 @@ class ColorbarBase(cm.ScalarMappable):
         return self.extend in ('both', 'max')
 
     def _patch_ax(self):
-        def _warn(*args, **kw):
-            warnings.warn("Use the colorbar set_ticks() method instead.")
-
-        self.ax.set_xticks = _warn
-        self.ax.set_yticks = _warn
+        # bind some methods to the axes to warn users
+        # against using those methods.
+        self.ax.set_xticks = _set_ticks_on_axis_warn
+        self.ax.set_yticks = _set_ticks_on_axis_warn
 
     def draw_all(self):
         '''
@@ -400,7 +419,7 @@ class ColorbarBase(cm.ScalarMappable):
         '''
         Label the long axis of the colorbar
         '''
-        self._label = label
+        self._label = '%s' % (label, )
         self._labelkw = kw
         self._set_label()
 
@@ -495,8 +514,9 @@ class ColorbarBase(cm.ScalarMappable):
         col = collections.LineCollection(xy, linewidths=linewidths)
 
         if erase and self.lines:
-            for lc in self.lines.pop():
+            for lc in self.lines:
                 lc.remove()
+            self.lines = []
         self.lines.append(col)
         col.set_color(colors)
         self.ax.add_collection(col)
@@ -529,16 +549,13 @@ class ColorbarBase(cm.ScalarMappable):
             intv = self._values[0], self._values[-1]
         else:
             intv = self.vmin, self.vmax
-        locator.create_dummy_axis()
-        formatter.create_dummy_axis()
+        locator.create_dummy_axis(minpos=intv[0])
+        formatter.create_dummy_axis(minpos=intv[0])
         locator.set_view_interval(*intv)
         locator.set_data_interval(*intv)
         formatter.set_view_interval(*intv)
         formatter.set_data_interval(*intv)
 
-        # the dummy axis is expecting a minpos
-        locator.axis.get_minpos = lambda : intv[0]
-        formatter.axis.get_minpos = lambda : intv[0]
         b = np.array(locator())
         ticks = self._locate(b)
         inrange = (ticks > -0.001) & (ticks < 1.001)

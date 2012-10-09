@@ -2,6 +2,7 @@
 Streamline plotting for 2D vector fields.
 
 """
+from __future__ import division
 import numpy as np
 import matplotlib
 import matplotlib.cm as cm
@@ -9,16 +10,15 @@ import matplotlib.colors as mcolors
 import matplotlib.collections as mcollections
 import matplotlib.patches as patches
 
+
 __all__ = ['streamplot']
 
 
 def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
                cmap=None, norm=None, arrowsize=1, arrowstyle='-|>',
-               minlength=0.1):
+               minlength=0.1, transform=None):
     """Draws streamlines of a vector flow.
 
-    Parameters
-    ----------
     *x*, *y* : 1d arrays
         an *evenly spaced* grid.
     *u*, *v* : 2d arrays
@@ -48,13 +48,17 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
     *minlength* : float
         Minimum length of streamline in axes coordinates.
 
-    Returns
-    -------
-    *streamlines* : :class:`~matplotlib.collections.LineCollection`
-        Line collection with all streamlines as a series of line segments.
-        Currently, there is no way to differentiate between line segments
-        on different streamlines (other than manually checking that segments
-        are connected).
+    Returns:
+    
+        *stream_container* : StreamplotSet
+            Container object with attributes
+                lines : `matplotlib.collections.LineCollection` of streamlines
+                arrows : collection of `matplotlib.patches.FancyArrowPatch` objects
+                    repesenting arrows half-way along stream lines.
+            This container will probably change in the future to allow changes to
+            the colormap, alpha, etc. for both lines and arrows, but these changes
+            should be backward compatible.
+    
     """
     grid = Grid(x, y)
     mask = StreamMask(density)
@@ -112,6 +116,7 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
             cmap = cm.get_cmap(cmap)
 
     streamlines = []
+    arrows = []
     for t in trajectories:
         tgx = np.array(t[0])
         tgy = np.array(t[1])
@@ -138,10 +143,16 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
             line_colors.extend(color_values)
             arrow_kw['color'] = cmap(norm(color_values[n]))
 
-        p = patches.FancyArrowPatch(arrow_tail, arrow_head, **arrow_kw)
+        p = patches.FancyArrowPatch(arrow_tail, 
+                                    arrow_head, 
+                                    transform=transform, 
+                                    **arrow_kw)
         axes.add_patch(p)
+        arrows.append(p)
 
-    lc = mcollections.LineCollection(streamlines, **line_kw)
+    lc = mcollections.LineCollection(streamlines, 
+                                     transform=transform, 
+                                     **line_kw)
     if use_multicolor_lines:
         lc.set_array(np.asarray(line_colors))
         lc.set_cmap(cmap)
@@ -150,7 +161,17 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
 
     axes.update_datalim(((x.min(), y.min()), (x.max(), y.max())))
     axes.autoscale_view(tight=True)
-    return lc
+
+    ac = matplotlib.collections.PatchCollection(arrows)
+    stream_container = StreamplotSet(lc, ac)
+    return stream_container
+
+
+class StreamplotSet(object):
+
+    def __init__(self, lines, arrows, **kwargs):
+        self.lines = lines
+        self.arrows = arrows
 
 
 # Coordinate definitions
@@ -324,7 +345,7 @@ def get_integrator(u, v, dmap, minlength):
     # speed (path length) will be in axes-coordinates
     u_ax = u / dmap.grid.nx
     v_ax = v / dmap.grid.ny
-    speed = np.sqrt(u_ax**2 + v_ax**2)
+    speed = np.ma.sqrt(u_ax**2 + v_ax**2)
 
     def forward_time(xi, yi):
         ds_dt = interpgrid(speed, xi, yi)
@@ -449,25 +470,32 @@ def _integrate_rk12(x0, y0, dmap, f):
             stotal += ds
 
         # recalculate stepsize based on step error
-        ds = min(maxds, 0.85 * ds * (maxerror/error)**0.5)
+        if error == 0:
+            ds = maxds
+        else:
+            ds = min(maxds, 0.85 * ds * (maxerror/error)**0.5)
 
     return stotal, xf_traj, yf_traj
 
 
 def _euler_step(xf_traj, yf_traj, dmap, f):
-    """Simple Euler integration step."""
+    """Simple Euler integration step that extends streamline to boundary."""
     ny, nx = dmap.grid.shape
     xi = xf_traj[-1]
     yi = yf_traj[-1]
     cx, cy = f(xi, yi)
-    if cx > 0:
-        dsx = (nx - 1 - xi) / cx
-    else:
+    if cx == 0:
+        dsx = np.inf
+    elif cx < 0:
         dsx = xi / -cx
-    if cy > 0:
-        dsy = (ny - 1 - yi) / cy
     else:
+        dsx = (nx - 1 - xi) / cx
+    if cy == 0:
+        dsy = np.inf
+    elif cy < 0:
         dsy = yi / -cy
+    else:
+        dsy = (ny - 1 - yi) / cy
     ds = min(dsx, dsy)
     xf_traj.append(xi + cx*ds)
     yf_traj.append(yi + cy*ds)
@@ -552,4 +580,3 @@ def _gen_starting_points(shape):
             if y <= yfirst:
                 yfirst +=1
                 direction = 'right'
-

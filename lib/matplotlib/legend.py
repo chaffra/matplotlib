@@ -107,8 +107,6 @@ class Legend(Artist):
     respect its parent.
 
     """
-
-
     codes = {'best'         : 0, # only implemented for axis legends
              'upper right'  : 1,
              'upper left'   : 2,
@@ -121,7 +119,6 @@ class Legend(Artist):
              'upper center' : 9,
              'center'       : 10,
              }
-
 
     zorder = 5
     def __str__(self):
@@ -196,20 +193,20 @@ class Legend(Artist):
         bbox_to_anchor     the bbox that the legend will be anchored.
         bbox_transform     the transform for the bbox. transAxes if None.
         ================   ==================================================================
-
-
-The pad and spacing parameters are measured in font-size units.  E.g.,
-a fontsize of 10 points and a handlelength=5 implies a handlelength of
-50 points.  Values from rcParams will be used if None.
-
-Users can specify any arbitrary location for the legend using the
-*bbox_to_anchor* keyword argument. bbox_to_anchor can be an instance
-of BboxBase(or its derivatives) or a tuple of 2 or 4 floats.
-See :meth:`set_bbox_to_anchor` for more detail.
-
-The legend location can be specified by setting *loc* with a tuple of
-2 floats, which is interpreted as the lower-left corner of the legend
-in the normalized axes coordinate.
+    
+    
+        The pad and spacing parameters are measured in font-size units.  E.g.,
+        a fontsize of 10 points and a handlelength=5 implies a handlelength of
+        50 points.  Values from rcParams will be used if None.
+        
+        Users can specify any arbitrary location for the legend using the
+        *bbox_to_anchor* keyword argument. bbox_to_anchor can be an instance
+        of BboxBase(or its derivatives) or a tuple of 2 or 4 floats.
+        See :meth:`set_bbox_to_anchor` for more detail.
+        
+        The legend location can be specified by setting *loc* with a tuple of
+        2 floats, which is interpreted as the lower-left corner of the legend
+        in the normalized axes coordinate.
         """
         from matplotlib.axes import Axes     # local import only to avoid circularity
         from matplotlib.figure import Figure # local import only to avoid circularity
@@ -236,7 +233,6 @@ in the normalized axes coordinate.
         self.texts = []
         self.legendHandles = []
         self._legend_title_box = None
-
 
         self._handler_map = handler_map
 
@@ -388,7 +384,6 @@ in the normalized axes coordinate.
             a.set_axes(self.axes)
         a.set_transform(self.get_transform())
 
-
     def _set_loc(self, loc):
         # find_offset function will be provided to _legend_box and
         # _legend_box will draw itself at the location of the return
@@ -417,7 +412,7 @@ in the normalized axes coordinate.
         return ox+xdescent, oy+ydescent
 
     def _findoffset_loc(self, width, height, xdescent, ydescent, renderer):
-        "Heper function to locate the legend using the location code"
+        "Helper function to locate the legend using the location code"
 
         if iterable(self._loc) and len(self._loc)==2:
             # when loc is a tuple of axes(or figure) coordinates.
@@ -435,9 +430,7 @@ in the normalized axes coordinate.
         "Draw everything that belongs to the legend"
         if not self.get_visible(): return
 
-
         renderer.open_group('legend')
-
 
         fontsize = renderer.points_to_pixels(self._fontsize)
 
@@ -464,7 +457,6 @@ in the normalized axes coordinate.
         self._legend_box.draw(renderer)
 
         renderer.close_group('legend')
-
 
     def _approx_text_height(self, renderer=None):
         """
@@ -579,7 +571,6 @@ in the normalized axes coordinate.
         # is an instance of offsetbox.TextArea which contains legend
         # text.
 
-
         text_list = []  # the list of text instances
         handle_list = []  # the list of text instances
 
@@ -591,21 +582,19 @@ in the normalized axes coordinate.
         labelboxes = []
         handleboxes = []
 
-
         # The approximate height and descent of text. These values are
         # only used for plotting the legend handle.
         descent = 0.35*self._approx_text_height()*(self.handleheight - 0.7)
         # 0.35 and 0.7 are just heuristic numbers. this may need to be improbed
         height = self._approx_text_height() * self.handleheight - descent
         # each handle needs to be drawn inside a box of (x, y, w, h) =
-        # (0, -descent, width, height).  And their corrdinates should
+        # (0, -descent, width, height).  And their coordinates should
         # be given in the display coordinates.
 
         # The transformation of each handle will be automatically set
         # to self.get_trasnform(). If the artist does not uses its
         # default trasnform (eg, Collections), you need to
         # manually set their transform to the self.get_transform().
-
 
         legend_handler_map = self.get_legend_handler_map()
 
@@ -632,18 +621,15 @@ in the normalized axes coordinate.
                              #xdescent, ydescent, width, height,
                              fontsize,
                              handlebox)
+
             handle_list.append(handle)
 
-
-
-
             handleboxes.append(handlebox)
-
 
         if len(handleboxes) > 0:
 
             # We calculate number of rows in each column. The first
-            # (num_largecol) columns will have (nrows+1) rows, and remaing
+            # (num_largecol) columns will have (nrows+1) rows, and remaining
             # (num_smallcol) columns will have (nrows) rows.
             ncol = min(self._ncol, len(handleboxes))
             nrows, num_largecol = divmod(len(handleboxes), ncol)
@@ -698,7 +684,6 @@ in the normalized axes coordinate.
 
         self.texts = text_list
         self.legendHandles = handle_list
-
 
     def _auto_legend_data(self):
         """
@@ -799,7 +784,6 @@ in the normalized axes coordinate.
         'return a extent of the the legend'
         return self.legendPatch.get_window_extent(*args, **kwargs)
 
-
     def get_frame_on(self):
         """
         Get whether the legend box patch is drawn
@@ -822,7 +806,6 @@ in the normalized axes coordinate.
             return self.parent.bbox
         else:
             return self._bbox_to_anchor
-
 
     def set_bbox_to_anchor(self, bbox, transform=None):
         """
@@ -854,8 +837,6 @@ in the normalized axes coordinate.
 
         self._bbox_to_anchor = TransformedBbox(self._bbox_to_anchor,
                                                transform)
-
-
 
     def _get_anchored_bbox(self, loc, bbox, parentbbox, renderer):
         """
@@ -934,7 +915,7 @@ in the normalized axes coordinate.
         for candidate in candidates:
             if candidate[0] < minCandidate[0]:
                 minCandidate = candidate
-
+        
         ox, oy = minCandidate[1]
 
         return ox, oy

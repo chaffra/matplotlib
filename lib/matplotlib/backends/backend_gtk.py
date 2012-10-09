@@ -90,10 +90,15 @@ def new_figure_manager(num, *args, **kwargs):
     """
     FigureClass = kwargs.pop('FigureClass', Figure)
     thisFig = FigureClass(*args, **kwargs)
-    canvas = FigureCanvasGTK(thisFig)
+    return new_figure_manager_given_figure(num, thisFig)
+
+
+def new_figure_manager_given_figure(num, figure):
+    """
+    Create a new figure manager instance for the given figure.
+    """
+    canvas = FigureCanvasGTK(figure)
     manager = FigureManagerGTK(canvas, num)
-    # equals:
-    #manager = FigureManagerGTK(FigureCanvasGTK(Figure(*args, **kwargs), num)
     return manager
 
 
@@ -330,14 +335,14 @@ class FigureCanvasGTK (gtk.DrawingArea, FigureCanvasBase):
             key = chr(event.keyval)
         else:
             key = None
-            
+
         for key_mask, prefix in (
                                  [gdk.MOD4_MASK, 'super'],
-                                 [gdk.MOD1_MASK, 'alt'], 
+                                 [gdk.MOD1_MASK, 'alt'],
                                  [gdk.CONTROL_MASK, 'ctrl'],):
             if event.state & key_mask:
                 key = '{}+{}'.format(prefix, key)
-        
+
         return key
 
     def configure_event(self, widget, event):
@@ -545,9 +550,6 @@ class FigureManagerGTK(FigureManagerBase):
         self.vbox.show()
 
         self.canvas.show()
-
-        # attach a show method to the figure  for pylab ease of use
-        self.canvas.figure.show = lambda *args: self.window.show()
 
         self.vbox.pack_start(self.canvas, True, True)
 

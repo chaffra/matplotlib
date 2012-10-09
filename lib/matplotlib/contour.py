@@ -20,6 +20,7 @@ import matplotlib.mlab as mlab
 import matplotlib.mathtext as mathtext
 import matplotlib.patches as mpatches
 import matplotlib.texmanager as texmanager
+import matplotlib.transforms as mtrans
 
 # Import needed for adding manual selection capability to clabel
 from matplotlib.blocking_input import BlockingContourLabeler
@@ -52,11 +53,13 @@ class ContourLabeler:
 
     def clabel(self, *args, **kwargs):
         """
+        Label a contour plot.
+
         Call signature::
 
           clabel(cs, **kwargs)
 
-        adds labels to line contours in *cs*, where *cs* is a
+        Adds labels to line contours in *cs*, where *cs* is a
         :class:`~matplotlib.contour.ContourSet` object returned by
         contour.
 
@@ -69,7 +72,7 @@ class ContourLabeler:
         Optional keyword arguments:
 
           *fontsize*:
-            See http://matplotlib.sf.net/fonts.html
+            size in points or relative size eg 'smaller', 'x-large'
 
           *colors*:
             - if *None*, the color of each label matches the color of
@@ -772,6 +775,8 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
             raise ValueError('Either colors or cmap must be None')
         if self.origin == 'image': self.origin = mpl.rcParams['image.origin']
 
+        self._transform = kwargs.get('transform', None)
+
         self._process_args(*args, **kwargs)
         self._process_levels()
 
@@ -820,6 +825,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                                      antialiaseds = (self.antialiased,),
                                      edgecolors= 'none',
                                      alpha=self.alpha,
+                                     transform=self.get_transform(),
                                      zorder=zorder)
                 self.ax.add_collection(col)
                 self.collections.append(col)
@@ -839,11 +845,31 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                                      linewidths = width,
                                      linestyle = lstyle,
                                      alpha=self.alpha,
+                                     transform=self.get_transform(),
                                      zorder=zorder)
                 col.set_label('_nolegend_')
                 self.ax.add_collection(col, False)
                 self.collections.append(col)
         self.changed() # set the colors
+    
+    def get_transform(self):
+        """
+        Return the :class:`~matplotlib.transforms.Transform`
+        instance used by this ContourSet.
+        """
+        if self._transform is None:
+            self._transform = self.ax.transData
+        elif (not isinstance(self._transform, mtrans.Transform)
+              and hasattr(self._transform, '_as_mpl_transform')):
+            self._transform = self._transform._as_mpl_transform(self.ax)
+        return self._transform
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # the C object Cntr cannot currently be pickled. This isn't a big issue
+        # as it is not actually used once the contour has been calculated
+        state['Cntr'] = None
+        return state
 
     def legend_elements(self, variable_name='x', str_format=str):
         """
@@ -933,6 +959,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                     min = seg.min(axis=0)
                     max = seg.max(axis=0)
                     havelimits = True
+        
         if havelimits:
             self.ax.update_datalim([min, max])
             self.ax.autoscale_view(tight=True)
@@ -999,11 +1026,9 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                 self.locator = ticker.LogLocator()
             else:
                 self.locator = ticker.MaxNLocator(N+1)
-        self.locator.create_dummy_axis()
         zmax = self.zmax
         zmin = self.zmin
-        self.locator.set_bounds(zmin, zmax)
-        lev = self.locator()
+        lev = self.locator.tick_values(zmin, zmax)
         self._auto = True
         if self.filled:
             return lev
@@ -1280,17 +1305,31 @@ class QuadContourSet(ContourSet):
             self.zmax = args[0].zmax
         else:
             x, y, z = self._contour_args(args, kwargs)
-
+            
+            _mask = ma.getmask(z)
+            if _mask is ma.nomask:
+                _mask = None
+            C = _cntr.Cntr(x, y, z.filled(), _mask)
+            
+            t = self.get_transform()
+            
+            # if the transform is not trans data, and some part of it
+            # contains transData, transform the xs and ys to data coordinates
+            if (t != self.ax.transData and
+                        any(t.contains_branch_seperately(self.ax.transData))):
+                trans_to_data = t - self.ax.transData
+                pts = (np.vstack([x.flat, y.flat]).T)
+                transformed_pts = trans_to_data.transform(pts)
+                x = transformed_pts[..., 0]
+                y = transformed_pts[..., 1]
+            
             x0 = ma.minimum(x)
             x1 = ma.maximum(x)
             y0 = ma.minimum(y)
             y1 = ma.maximum(y)
             self.ax.update_datalim([(x0,y0), (x1,y1)])
             self.ax.autoscale_view(tight=True)
-            _mask = ma.getmask(z)
-            if _mask is ma.nomask:
-                _mask = None
-            C = _cntr.Cntr(x, y, z.filled(), _mask)
+
         self.Cntr = C
 
     def _get_allsegs_and_allkinds(self):
@@ -1411,6 +1450,8 @@ class QuadContourSet(ContourSet):
         return np.meshgrid(x,y)
 
     contour_doc = """
+        Plot contours.
+
         :func:`~matplotlib.pyplot.contour` and
         :func:`~matplotlib.pyplot.contourf` draw contour lines and
         filled contours, respectively.  Except as noted, function
