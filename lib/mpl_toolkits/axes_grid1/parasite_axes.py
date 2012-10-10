@@ -109,6 +109,7 @@ class ParasiteAxesAuxTransBase:
 
 
     def update_viewlim(self):
+
         viewlim = self._parent_axes.viewLim.frozen()
         mode = self.get_viewlim_mode()
         if mode is None:
@@ -301,7 +302,7 @@ class HostAxesBase:
         #super(HostAxes, self).cla()
 
 
-    def twinx(self, axes_class=None, y_transform=None):
+    def twinx(self, y_transform=None, axes_class=None,):
         """
         call signature::
 
@@ -315,16 +316,28 @@ class HostAxesBase:
 
         if axes_class is None:
             axes_class = self._get_base_axes()
+            
+        parasite_axes_auxtrans_class = parasite_axes_auxtrans_class_factory(axes_class)
 
         if y_transform is None:
-            parasite_axes_class = parasite_axes_class_factory(axes_class)
-            ax2 = parasite_axes_class(self, sharex=self, frameon=False)
+            
+            ax2 = parasite_axes_auxtrans_class(self, mtransforms.IdentityTransform(),
+                                               viewlim_mode="equal",
+                                               )
+            
+            #parasite_axes_class = parasite_axes_class_factory(axes_class)
+            #ax2 = parasite_axes_class(self, sharex=self, frameon=False)
         else:
-            tr = mtransforms.blended_transform_factory(mtransforms.IdentityTransform(),y_transform)
-            parasite_axes_auxtrans_class = parasite_axes_auxtrans_class_factory(axes_class)
+            tr = mtransforms.blended_transform_factory(mtransforms.IdentityTransform(), y_transform)
             ax2 = parasite_axes_auxtrans_class(self, tr,
                                                viewlim_mode="transform",
                                                )
+            
+            #tr = mtransforms.blended_transform_factory(mtransforms.IdentityTransform(),y_transform)
+            #parasite_axes_auxtrans_class = parasite_axes_auxtrans_class_factory(axes_class)
+            #ax2 = parasite_axes_auxtrans_class(self, tr,
+            #                                   viewlim_mode="transform",
+            #                                   )
         self.parasites.append(ax2)
 
         # for normal axes
