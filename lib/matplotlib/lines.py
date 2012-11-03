@@ -217,6 +217,8 @@ class Line2D(Artist):
         self.update(kwargs)
         self.pickradius = pickradius
         self.ind_offset = 0
+        
+        #self.set_picker(pickradius)
         if is_numlike(self._picker):
             self.pickradius = self._picker
 

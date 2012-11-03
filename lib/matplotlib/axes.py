@@ -3995,6 +3995,7 @@ class Axes(martist.Artist):
         lines = []
 
         for line in self._get_lines(*args, **kwargs):
+            line.set_picker(line.get_pickradius())
             self.add_line(line)
             lines.append(line)
 
