@@ -1613,6 +1613,8 @@ class SubplotToolWX(wx.Frame):
 
 
 class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
+    
+    checktools = ['Pan', 'Zoom']
 
     def __init__(self, canvas):
         wx.ToolBar.__init__(self, canvas.GetParent(), -1)
@@ -1636,11 +1638,11 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
                 self.AddSeparator()
                 continue
             self.wx_ids[text] = wx.NewId()
-            if text in ['Pan', 'Zoom']:
-               self.AddCheckTool(self.wx_ids[text], _load_bitmap(image_file + '.png'),
+            if text in self.checktools:
+                self.AddCheckTool(self.wx_ids[text], _load_bitmap(image_file),
                                  shortHelp=text, longHelp=tooltip_text)
             else:
-               self.AddSimpleTool(self.wx_ids[text], _load_bitmap(image_file + '.png'),
+                self.AddSimpleTool(self.wx_ids[text], _load_bitmap(image_file),
                                   text, tooltip_text)
             bind(self, wx.EVT_TOOL, getattr(self, callback), id=self.wx_ids[text])
 
