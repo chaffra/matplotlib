@@ -120,8 +120,8 @@ def warn_deprecated(
     obj_type : str, optional
         The object type being deprecated.
 
-    Example
-    -------
+    Examples
+    --------
     # To warn of the deprecation of "matplotlib.name_of_module"
     warn_deprecated('1.4.0', name='matplotlib.name_of_module',
                     obj_type='module')
@@ -172,8 +172,8 @@ def deprecated(since, message='', name='', alternative='', pending=False,
         If True, uses a PendingDeprecationWarning instead of a
         DeprecationWarning.
 
-    Example
-    -------
+    Examples
+    --------
     @deprecated('1.4.0')
     def the_function_to_deprecate():
         pass
@@ -1737,7 +1737,7 @@ def simple_linear_interpolation(a, steps):
     if steps == 1:
         return a
 
-    steps = np.floor(steps)
+    steps = int(np.floor(steps))
     new_length = ((len(a) - 1) * steps) + 1
     new_shape = list(a.shape)
     new_shape[0] = new_length
@@ -1747,7 +1747,6 @@ def simple_linear_interpolation(a, steps):
     a0 = a[0:-1]
     a1 = a[1:]
     delta = ((a1 - a0) / steps)
-    steps = int(steps)
     for i in range(1, steps):
         result[i::steps] = delta * i + a0
     result[steps::steps] = a1
@@ -1882,7 +1881,8 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
 
     Returns
     -------
-    bxpstats : A list of dictionaries containing the results for each column
+    bxpstats : list of dict
+        A list of dictionaries containing the results for each column
         of data. Keys of each dictionary are the following:
 
         ========   ===================================
@@ -1948,7 +1948,7 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
 
     ncols = len(X)
     if labels is None:
-        labels = [str(i) for i in range(ncols)]
+        labels = [str(i) for i in range(1, ncols+1)]
     elif len(labels) != ncols:
         raise ValueError("Dimensions of labels and X must be compatible")
 
@@ -2167,6 +2167,8 @@ def _reshape_2D(X):
 
     if not hasattr(X[0], '__len__'):
         X = [X]
+    else:
+        X = [np.ravel(x) for x in X]
 
     return X
 

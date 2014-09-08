@@ -584,10 +584,10 @@ def stride_windows(x, n, noverlap=None, axis=0):
     step = n - noverlap
     if axis == 0:
         shape = (n, (x.shape[-1]-noverlap)//step)
-        strides = (x.itemsize, step*x.itemsize)
+        strides = (x.strides[0], step*x.strides[0])
     else:
         shape = ((x.shape[-1]-noverlap)//step, n)
-        strides = (step*x.itemsize, x.itemsize)
+        strides = (step*x.strides[0], x.strides[0])
     return np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
 
 
@@ -633,10 +633,10 @@ def stride_repeat(x, n, axis=0):
 
     if axis == 0:
         shape = (n, x.size)
-        strides = (0, x.itemsize)
+        strides = (0, x.strides[0])
     else:
         shape = (x.size, n)
-        strides = (x.itemsize, 0)
+        strides = (x.strides[0], 0)
 
     return np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
 
@@ -2631,8 +2631,11 @@ def rec_join(key, r1, r2, jointype='inner', defaults=None, r1postfix='1', r2post
         if dt1.type != np.string_:
             return (name, dt1.descr[0][1])
 
-        dt2 = r1.dtype[name]
-        assert dt2==dt1
+        dt2 = r2.dtype[name]
+        if dt1 != dt2:
+            msg = "The '{}' fields in arrays 'r1' and 'r2' must have the same"
+            msg += " dtype."
+            raise ValueError(msg.format(name))
         if dt1.num>dt2.num:
             return (name, dt1.descr[0][1])
         else:
@@ -3449,8 +3452,8 @@ def griddata(x, y, z, xi, yi, interp='nn'):
             yi = yi[:, 0]
 
         # Override default natgrid internal parameters.
-        _natgrid.seti('ext', 0)
-        _natgrid.setr('nul', np.nan)
+        _natgrid.seti(b'ext', 0)
+        _natgrid.setr(b'nul', np.nan)
 
         if np.min(np.diff(xi)) < 0 or np.min(np.diff(yi)) < 0:
             raise ValueError("Output grid defined by xi,yi must be monotone "

@@ -523,7 +523,7 @@ def test_nonfinite_limits():
         y = np.log(x)
     finally:
         np.seterr(**olderr)
-    x[len(x)/2] = np.nan
+    x[len(x)//2] = np.nan
     fig = plt.figure()
     ax = fig.add_subplot(111)
     ax.plot(x, y)
@@ -532,14 +532,14 @@ def test_nonfinite_limits():
 @image_comparison(baseline_images=['imshow'],
                   remove_text=True)
 def test_imshow():
-    #Create a NxN image
+    # Create a NxN image
     N = 100
     (x, y) = np.indices((N, N))
     x -= N//2
     y -= N//2
     r = np.sqrt(x**2+y**2-x*y)
 
-    #Create a contour plot at N/4 and extract both the clip path and transform
+    # Create a contour plot at N/4 and extract both the clip path and transform
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
@@ -550,14 +550,14 @@ def test_imshow():
 def test_imshow_clip():
     # As originally reported by Gellule Xg <gellule.xg@free.fr>
 
-    #Create a NxN image
+    # Create a NxN image
     N = 100
     (x, y) = np.indices((N, N))
     x -= N//2
     y -= N//2
     r = np.sqrt(x**2+y**2-x*y)
 
-    #Create a contour plot at N/4 and extract both the clip path and transform
+    # Create a contour plot at N/4 and extract both the clip path and transform
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
@@ -569,7 +569,7 @@ def test_imshow_clip():
     from matplotlib.transforms import TransformedPath
     clip_path = TransformedPath(clipPath, clipTransform)
 
-    #Plot the image clipped by the contour
+    # Plot the image clipped by the contour
     ax.imshow(r, clip_path=clip_path)
 
 
@@ -851,12 +851,12 @@ def test_markevery_line():
                   remove_text=True)
 def test_markevery_linear_scales():
     cases = [None,
-         8,
-         (30, 8),
-         [16, 24, 30], [0,-1],
-         slice(100, 200, 3),
-         0.1, 0.3, 1.5,
-         (0.0, 0.1), (0.45, 0.1)]
+             8,
+             (30, 8),
+             [16, 24, 30], [0, -1],
+             slice(100, 200, 3),
+             0.1, 0.3, 1.5,
+             (0.0, 0.1), (0.45, 0.1)]
 
     cols = 3
     gs = matplotlib.gridspec.GridSpec(len(cases) // cols + 1, cols)
@@ -872,16 +872,17 @@ def test_markevery_linear_scales():
         plt.title('markevery=%s' % str(case))
         plt.plot(x, y, 'o', ls='-', ms=4,  markevery=case)
 
+
 @image_comparison(baseline_images=['markevery_linear_scales_zoomed'],
                   remove_text=True)
 def test_markevery_linear_scales_zoomed():
     cases = [None,
-         8,
-         (30, 8),
-         [16, 24, 30], [0,-1],
-         slice(100, 200, 3),
-         0.1, 0.3, 1.5,
-         (0.0, 0.1), (0.45, 0.1)]
+             8,
+             (30, 8),
+             [16, 24, 30], [0, -1],
+             slice(100, 200, 3),
+             0.1, 0.3, 1.5,
+             (0.0, 0.1), (0.45, 0.1)]
 
     cols = 3
     gs = matplotlib.gridspec.GridSpec(len(cases) // cols + 1, cols)
@@ -904,12 +905,12 @@ def test_markevery_linear_scales_zoomed():
                   remove_text=True)
 def test_markevery_log_scales():
     cases = [None,
-         8,
-         (30, 8),
-         [16, 24, 30], [0,-1],
-         slice(100, 200, 3),
-         0.1, 0.3, 1.5,
-         (0.0, 0.1), (0.45, 0.1)]
+             8,
+             (30, 8),
+             [16, 24, 30], [0, -1],
+             slice(100, 200, 3),
+             0.1, 0.3, 1.5,
+             (0.0, 0.1), (0.45, 0.1)]
 
     cols = 3
     gs = matplotlib.gridspec.GridSpec(len(cases) // cols + 1, cols)
@@ -927,16 +928,17 @@ def test_markevery_log_scales():
         plt.yscale('log')
         plt.plot(x, y, 'o', ls='-', ms=4,  markevery=case)
 
+
 @image_comparison(baseline_images=['markevery_polar'],
                   remove_text=True)
 def test_markevery_polar():
     cases = [None,
-         8,
-         (30, 8),
-         [16, 24, 30], [0,-1],
-         slice(100, 200, 3),
-         0.1, 0.3, 1.5,
-         (0.0, 0.1), (0.45, 0.1)]
+             8,
+             (30, 8),
+             [16, 24, 30], [0, -1],
+             slice(100, 200, 3),
+             0.1, 0.3, 1.5,
+             (0.0, 0.1), (0.45, 0.1)]
 
     cols = 3
     gs = matplotlib.gridspec.GridSpec(len(cases) // cols + 1, cols)
@@ -947,7 +949,7 @@ def test_markevery_polar():
     for i, case in enumerate(cases):
         row = (i // cols)
         col = i % cols
-        plt.subplot(gs[row, col], polar = True)
+        plt.subplot(gs[row, col], polar=True)
         plt.title('markevery=%s' % str(case))
         plt.plot(theta, r, 'o', ls='-', ms=4,  markevery=case)
 
@@ -980,14 +982,18 @@ def test_hist_steplog():
     data += -2.0 - np.min(data)
     data_pos = data + 2.1
     data_big = data_pos + 30
+    weights = np.ones_like(data) * 1.e-5
 
-    ax = plt.subplot(3, 1, 1)
+    ax = plt.subplot(4, 1, 1)
     plt.hist(data, 100, histtype='stepfilled', log=True)
 
-    ax = plt.subplot(3, 1, 2)
+    ax = plt.subplot(4, 1, 2)
     plt.hist(data_pos, 100, histtype='stepfilled', log=True)
 
-    ax = plt.subplot(3, 1, 3)
+    ax = plt.subplot(4, 1, 3)
+    plt.hist(data, 100, weights=weights, histtype='stepfilled', log=True)
+
+    ax = plt.subplot(4, 1, 4)
     plt.hist(data_big, 100, histtype='stepfilled', log=True, orientation='horizontal')
 
 
@@ -1035,7 +1041,7 @@ def test_contour_colorbar():
 @image_comparison(baseline_images=['hist2d'])
 def test_hist2d():
     np.random.seed(0)
-    #make it not symetric in case we switch x and y axis
+    # make it not symetric in case we switch x and y axis
     x = np.random.randn(100)*2+5
     y = np.random.randn(100)-2
     fig = plt.figure()
@@ -1046,8 +1052,8 @@ def test_hist2d():
 @image_comparison(baseline_images=['hist2d_transpose'])
 def test_hist2d_transpose():
     np.random.seed(0)
-    #make sure the the output from np.histogram is transposed before
-    #passing to pcolorfast
+    # make sure the the output from np.histogram is transposed before
+    # passing to pcolorfast
     x = np.array([5]*100)
     y = np.random.randn(100)-2
     fig = plt.figure()
@@ -1348,6 +1354,36 @@ def test_bxp_custommedian():
     ax.bxp(logstats, medianprops=medianprops)
 
 
+@image_comparison(baseline_images=['bxp_customcap'],
+                  remove_text=True, extensions=['png'],
+                  savefig_kwarg={'dpi': 40})
+def test_bxp_customcap():
+    np.random.seed(937)
+    logstats = matplotlib.cbook.boxplot_stats(
+        np.random.lognormal(mean=1.25, sigma=1., size=(37, 4))
+    )
+
+    fig, ax = plt.subplots()
+    ax.set_yscale('log')
+    capprops = dict(linestyle='--', color='g', linewidth=3)
+    ax.bxp(logstats, capprops=capprops)
+
+
+@image_comparison(baseline_images=['bxp_customwhisker'],
+                  remove_text=True, extensions=['png'],
+                  savefig_kwarg={'dpi': 40})
+def test_bxp_customwhisker():
+    np.random.seed(937)
+    logstats = matplotlib.cbook.boxplot_stats(
+        np.random.lognormal(mean=1.25, sigma=1., size=(37, 4))
+    )
+
+    fig, ax = plt.subplots()
+    ax.set_yscale('log')
+    whiskerprops = dict(linestyle='-', color='m', linewidth=3)
+    ax.bxp(logstats, whiskerprops=whiskerprops)
+
+
 @image_comparison(baseline_images=['bxp_withnotch'],
                   remove_text=True, extensions=['png'],
                   savefig_kwarg={'dpi': 40})
@@ -1494,6 +1530,32 @@ def test_boxplot():
     ax.set_ylim((-30, 30))
 
 
+@image_comparison(baseline_images=['boxplot_sym2'],
+                  remove_text=True, extensions=['png'])
+def test_boxplot_sym2():
+    x = np.linspace(-7, 7, 140)
+    x = np.hstack([-25, x, 25])
+    fig, [ax1, ax2] = plt.subplots(1, 2)
+
+    ax1.boxplot([x, x], bootstrap=10000, sym='^')
+    ax1.set_ylim((-30, 30))
+
+    ax2.boxplot([x, x], bootstrap=10000, sym='g')
+    ax2.set_ylim((-30, 30))
+
+
+@image_comparison(baseline_images=['boxplot_sym'],
+                  remove_text=True, extensions=['png'],
+                  savefig_kwarg={'dpi': 40})
+def test_boxplot_sym():
+    x = np.linspace(-7, 7, 140)
+    x = np.hstack([-25, x, 25])
+    fig, ax = plt.subplots()
+
+    ax.boxplot([x, x], sym='gs')
+    ax.set_ylim((-30, 30))
+
+
 @image_comparison(baseline_images=['boxplot_autorange_whiskers'])
 def test_boxplot_autorange_whiskers():
     x = np.ones(140)
@@ -1539,6 +1601,7 @@ def test_boxplot_bad_medians_1():
     x = np.hstack([-25, x, 25])
     fig, ax = plt.subplots()
     assert_raises(ValueError, ax.boxplot, x,  usermedians=[1, 2])
+
 
 @cleanup
 def test_boxplot_bad_medians_2():
@@ -1747,7 +1810,7 @@ def test_manage_xticks():
     np.random.seed(0)
     y1 = np.random.normal(10, 3, 20)
     y2 = np.random.normal(3, 1, 20)
-    ax.boxplot([y1, y2], positions = [1,2],
+    ax.boxplot([y1, y2], positions=[1, 2],
                manage_xticks=False)
     new_xlim = ax.get_xlim()
     assert_array_equal(old_xlim, new_xlim)
@@ -2129,6 +2192,16 @@ def test_empty_eventplot():
     fig, ax = plt.subplots(1, 1)
     ax.eventplot([[]], colors=[(0.0, 0.0, 0.0, 0.0)])
     plt.draw()
+
+
+@image_comparison(baseline_images=['marker_styles'], extensions=['png'], remove_text=True)
+def test_marker_styles():
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for y, marker in enumerate(sorted(matplotlib.markers.MarkerStyle.markers.keys(),
+                                      key=lambda x: str(type(x))+str(x))):
+        ax.plot((y % 2)*5 + np.arange(10)*10, np.ones(10)*10*y, linestyle='', marker=marker,
+                markersize=10+y/5, label=marker)
 
 
 @image_comparison(baseline_images=['vertex_markers'], extensions=['png'],
@@ -3190,7 +3263,7 @@ def test_vline_limit():
 
 @cleanup
 def test_empty_shared_subplots():
-    #empty plots with shared axes inherit limits from populated plots
+    # empty plots with shared axes inherit limits from populated plots
     fig, axes = plt.subplots(nrows=1, ncols=2, sharex=True, sharey=True)
     axes[0].plot([1, 2, 3], [2, 4, 6])
     x0, x1 = axes[1].get_xlim()
@@ -3244,7 +3317,7 @@ def test_pie_linewidth_0():
     labels = 'Frogs', 'Hogs', 'Dogs', 'Logs'
     sizes = [15, 30, 45, 10]
     colors = ['yellowgreen', 'gold', 'lightskyblue', 'lightcoral']
-    explode = (0, 0.1, 0, 0) # only "explode" the 2nd slice (i.e. 'Hogs')
+    explode = (0, 0.1, 0, 0)  # only "explode" the 2nd slice (i.e. 'Hogs')
 
     plt.pie(sizes, explode=explode, labels=labels, colors=colors,
             autopct='%1.1f%%', shadow=True, startangle=90,
@@ -3259,7 +3332,7 @@ def test_pie_linewidth_2():
     labels = 'Frogs', 'Hogs', 'Dogs', 'Logs'
     sizes = [15, 30, 45, 10]
     colors = ['yellowgreen', 'gold', 'lightskyblue', 'lightcoral']
-    explode = (0, 0.1, 0, 0) # only "explode" the 2nd slice (i.e. 'Hogs')
+    explode = (0, 0.1, 0, 0)  # only "explode" the 2nd slice (i.e. 'Hogs')
 
     plt.pie(sizes, explode=explode, labels=labels, colors=colors,
             autopct='%1.1f%%', shadow=True, startangle=90,
@@ -3274,13 +3347,34 @@ def test_pie_ccw_true():
     labels = 'Frogs', 'Hogs', 'Dogs', 'Logs'
     sizes = [15, 30, 45, 10]
     colors = ['yellowgreen', 'gold', 'lightskyblue', 'lightcoral']
-    explode = (0, 0.1, 0, 0) # only "explode" the 2nd slice (i.e. 'Hogs')
+    explode = (0, 0.1, 0, 0)  # only "explode" the 2nd slice (i.e. 'Hogs')
 
     plt.pie(sizes, explode=explode, labels=labels, colors=colors,
             autopct='%1.1f%%', shadow=True, startangle=90,
             counterclock=True)
     # Set aspect ratio to be equal so that pie is drawn as a circle.
     plt.axis('equal')
+
+
+@cleanup
+def test_margins():
+    # test all ways margins can be called
+    data = [1, 10]
+
+    fig1, ax1 = plt.subplots(1, 1)
+    ax1.plot(data)
+    ax1.margins(1)
+    assert_equal(ax1.margins(), (1, 1))
+
+    fig2, ax2 = plt.subplots(1, 1)
+    ax2.plot(data)
+    ax2.margins(1, 0.5)
+    assert_equal(ax2.margins(), (1, 0.5))
+
+    fig3, ax3 = plt.subplots(1, 1)
+    ax3.plot(data)
+    ax3.margins(x=1, y=0.5)
+    assert_equal(ax3.margins(), (1, 0.5))
 
 
 @cleanup
