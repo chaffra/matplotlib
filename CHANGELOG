@@ -1,3 +1,12 @@
+2014-10-27 Allowed selection of the backend using the `MPLBACKEND` environment
+           variable. Added documentation on backend selection methods.
+
+2014-09-27 Overhauled `colors.LightSource`.  Added `LightSource.hillshade` to
+	   allow the independent generation of illumination maps. Added new
+	   types of blending for creating more visually appealing shaded relief
+	   plots (e.g.  `blend_mode="overlay"`, etc, in addition to the legacy
+	   "hsv" mode).
+
 2014-06-10 Added Colorbar.remove()
 
 2014-06-07 Fixed bug so radial plots can be saved as ps in py3k.
@@ -2730,7 +2739,7 @@
 2007-02-12 Moved data files into lib/matplotlib so that setuptools'
            develop mode works. Re-organized the mpl-data layout so
            that this source structure is maintained in the
-           installation. (I.e. the 'fonts' and 'images'
+           installation. (i.e., the 'fonts' and 'images'
            sub-directories are maintained in site-packages.)  Suggest
            removing site-packages/matplotlib/mpl-data and
            ~/.matplotlib/ttffont.cache before installing - ADS

@@ -653,12 +653,14 @@ class ColorbarBase(cm.ScalarMappable):
             self._values = v
             return
         else:
-            self.norm.vmin, self.norm.vmax = mtrans.nonsingular(self.norm.vmin,
-                                                                self.norm.vmax,
-                                                                expander=0.1)
             if not self.norm.scaled():
                 self.norm.vmin = 0
                 self.norm.vmax = 1
+
+            self.norm.vmin, self.norm.vmax = mtrans.nonsingular(self.norm.vmin,
+                                                                self.norm.vmax,
+                                                                expander=0.1)
+
             b = self.norm.inverse(self._uniform_y(self.cmap.N + 1))
             if self._extend_lower():
                 b[0] = b[0] - 1
@@ -1014,12 +1016,12 @@ def make_axes(parents, location=None, orientation=None, fraction=0.15,
 
     Keyword arguments may include the following (with defaults):
 
-        location : [`None`|'left'|'right'|'top'|'bottom']
+        location : [None|'left'|'right'|'top'|'bottom']
             The position, relative to **parents**, where the colorbar axes
             should be created. If None, the value will either come from the
             given ``orientation``, else it will default to 'right'.
 
-        orientation :  [`None`|'vertical'|'horizontal']
+        orientation :  [None|'vertical'|'horizontal']
             The orientation of the colorbar. Typically, this keyword shouldn't
             be used, as it can be derived from the ``location`` keyword.
 

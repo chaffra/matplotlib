@@ -24,6 +24,57 @@ revision, see the :ref:`github-stats`.
 .. contents:: Table of Contents
    :depth: 3
 
+.. _whats-new-1-5:
+
+new in matplotlib-1.5
+=====================
+
+Legend
+------
+Added ability to place the label before the marker in a legend box with
+``markerfirst`` keyword
+
+
+Widgets
+-------
+
+Active state of Selectors
+`````````````````````````
+
+All selectors now implement ``set_active`` and ``get_active`` methods (also
+called when accessing the ``active`` property) to properly update and query
+whether they are active.
+
+
+New plotting features
+---------------------
+
+Support for legend for PolyCollection and stackplot
+```````````````````````````````````````````````````
+Added a `legend_handler` for :class:`~matplotlib.collections.PolyCollection` as well as a `labels` argument to
+:func:`~matplotlib.axes.Axes.stackplot`.
+
+Support for alternate pivots in mplot3d quiver plot
+```````````````````````````````````````````````````
+Added a :code:`pivot` kwarg to :func:`~mpl_toolkits.mplot3d.Axes3D.quiver`
+that controls the pivot point around which the quiver line rotates. This also
+determines the placement of the arrow head along the quiver line.
+
+New backend selection
+---------------------
+
+The environment variable :envvar:`MPLBACKEND` can now be used to set the
+matplotlib backend.
+
+New ``close-figs`` argument for plot directive
+----------------------------------------------
+
+Matplotlib has a sphinx extension ``plot_directive`` that creates plots for
+inclusion in sphinx documents.  Matplotlib 1.5 adds a new option to the plot
+directive - ``close-figs`` - that closes any previous figure windows before
+creating the plots.  This can help avoid some surprising duplicates of plots
+when using ``plot_directive``.
+
 .. _whats-new-1-4:
 
 new in matplotlib-1.4
@@ -41,10 +92,28 @@ legibility through brightness variations. See
 `here <https://github.com/wistia/heatmap-palette>`_
 for more information.
 
-Documentation changes
----------------------
+The nbagg backend
+-----------------
+Phil Elson added a new backend, named "nbagg", which enables interactive
+figures in a live IPython notebook session. The backend makes use of the
+infrastructure developed for the webagg backend, which itself gives
+standalone server backed interactive figures in the browser, however nbagg
+does not require a dedicated matplotlib server as all communications are
+handled through the IPython Comm machinery.
 
-Phil Elson rewrote of the documentation and userguide for both Legend and PathEffects (links needed).
+As with other backends nbagg can be enabled inside the IPython notebook with::
+
+    import matplotlib
+    matplotlib.use('nbagg')
+
+Once figures are created and then subsequently shown, they will placed in an
+interactive widget inside the notebook allowing panning and zooming in the
+same way as any other matplotlib backend. Because figures require a connection
+to the IPython notebook server for their interactivity, once the notebook is
+saved, each figure will be rendered as a static image - thus allowing
+non-interactive viewing of figures on services such as
+`nbviewer <http://nbviewer.ipython.org/>`_.
+
 
 
 New plotting features
@@ -247,6 +316,7 @@ polar-plot r-tick locations
 Added the ability to control the angular position of the r-tick labels
 on a polar plot via :func:`~matplotlib.Axes.axes.set_rlabel_position`.
 
+
 Date handling
 -------------
 
@@ -269,6 +339,7 @@ Controls whether figures are saved with a transparent
 background by default.  Previously `savefig` always defaulted
 to a non-transparent background.
 
+
 ``axes.titleweight``
 ````````````````````
 Added rcParam to control the weight of the title
@@ -280,6 +351,12 @@ Controls the default value of `useOffset` in `ScalarFormatter`.  If
 an offset will be determined such that the tick labels are
 meaningful. If `False` then the full number will be formatted in all
 conditions.
+
+``nbagg.transparent`` added
+`````````````````````````````
+Controls whether nbagg figures have a transparent
+background. ``nbagg.transparent`` is ``True`` by default.
+
 
 XDG compliance
 ``````````````
@@ -386,6 +463,12 @@ Sphinx extension can now accept an optional ``reset`` setting, which will
 cause the context to be reset. This allows more than one distinct context to
 be present in documentation. To enable this option, use ``:context: reset``
 instead of ``:context:`` any time you want to reset the context.
+
+Legend and PathEffects documentation
+------------------------------------
+The :ref:`plotting-guide-legend` and :ref:`patheffects-guide` have both been
+updated to better reflect the full potential of each of these powerful
+features.
 
 Widgets
 -------
@@ -765,7 +848,7 @@ without closing them.
 matplotlib will now display a `RuntimeWarning` when too many figures
 have been opened at once.  By default, this is displayed for 20 or
 more figures, but the exact number may be controlled using the
-``figure.max_num_figures`` rcParam.
+``figure.max_open_warning`` rcParam.
 
 .. _whats-new-1-2-2:
 
@@ -1084,7 +1167,7 @@ legends for complex plots such as :meth:`~matplotlib.pyplot.stem` plots
 will now display correctly. Second, the 'best' placement of a legend has
 been improved in the presence of NANs.
 
-See :ref:`legend-complex-plots` for more detailed explanation and
+See the :ref:`plotting-guide-legend` for more detailed explanation and
 examples.
 
 .. plot:: mpl_examples/pylab_examples/legend_demo4.py
@@ -1470,7 +1553,7 @@ Here are the 0.98.4 notes from the CHANGELOG::
 
     Some of the changes Michael made to improve the output of the
     property tables in the rest docs broke of made difficult to use
-    some of the interactive doc helpers, eg setp and getp.  Having all
+    some of the interactive doc helpers, e.g., setp and getp.  Having all
     the rest markup in the ipython shell also confused the docstrings.
     I added a new rc param docstring.harcopy, to format the docstrings
     differently for hardcopy and other use.  The ArtistInspector

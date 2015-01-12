@@ -150,9 +150,6 @@ class RendererCairo(RendererBase):
 
 
     def draw_path(self, gc, path, transform, rgbFace=None):
-        if len(path.vertices) > 18980:
-            raise ValueError("The Cairo backend can not draw paths longer than 18980 points.")
-
         ctx = gc.ctx
 
         transform = transform + \
@@ -167,8 +164,6 @@ class RendererCairo(RendererBase):
         # bbox - not currently used
         if _debug: print('%s.%s()' % (self.__class__.__name__, _fn_name()))
 
-        im.flipud_out()
-
         rows, cols, buf = im.color_conv (BYTE_FORMAT)
         surface = cairo.ImageSurface.create_for_data (
                       buf, cairo.FORMAT_ARGB32, cols, rows, cols*4)
@@ -182,8 +177,6 @@ class RendererCairo(RendererBase):
         else:
             ctx.paint()
         ctx.restore()
-
-        im.flipud_out()
 
     def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
         # Note: x,y are device/display coords, not user-coords, unlike other
@@ -482,21 +475,14 @@ class FigureCanvasCairo (FigureCanvasBase):
                 raise RuntimeError ('cairo has not been compiled with SVG '
                                     'support enabled')
             if format == 'svgz':
-                filename = fo
                 if is_string_like(fo):
-                    fo = open(fo, 'wb')
-                    close = True
+                    fo = gzip.GzipFile(fo, 'wb')
                 else:
-                    close = False
-                try:
                     fo = gzip.GzipFile(None, 'wb', fileobj=fo)
-                finally:
-                    if close:
-                        fo.close()
             surface = cairo.SVGSurface (fo, width_in_points, height_in_points)
         else:
-           warnings.warn ("unknown format: %s" % format)
-           return
+            warnings.warn ("unknown format: %s" % format)
+            return
 
         # surface.set_dpi() can be used
         renderer = RendererCairo (self.figure.dpi)
@@ -530,6 +516,8 @@ class FigureCanvasCairo (FigureCanvasBase):
 
         ctx.show_page()
         surface.finish()
+        if format == 'svgz':
+            fo.close()
 
 
 FigureCanvas = FigureCanvasCairo

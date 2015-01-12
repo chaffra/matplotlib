@@ -4,6 +4,8 @@ from __future__ import (absolute_import, division, print_function,
 import six
 from six.moves import xrange
 
+import io
+
 from nose.tools import assert_equal, assert_raises
 import datetime
 
@@ -470,7 +472,7 @@ def test_hexbin_pickable():
     data = np.arange(200.)/200.
     data.shape = 2, 100
     x, y = data
-    hb = ax.hexbin(x, y, extent=[.1, .3, .6, .7], picker=1)
+    hb = ax.hexbin(x, y, extent=[.1, .3, .6, .7], picker=-1)
 
     assert hb.contains(FauxMouseEvent(400, 300))[0]
 
@@ -955,7 +957,7 @@ def test_markevery_polar():
 
 
 @image_comparison(baseline_images=['marker_edges'],
-                  remove_text=True)
+                  remove_text=True, tol=3)
 def test_marker_edges():
     x = np.linspace(0, 1, 10)
     fig = plt.figure()
@@ -1629,6 +1631,18 @@ def test_boxplot_bad_ci_2():
                   conf_intervals=[[1, 2], [1]])
 
 
+@image_comparison(baseline_images=['boxplot_mod_artists_after_plotting'],
+                  remove_text=True, extensions=['png'],
+                  savefig_kwarg={'dpi': 40})
+def test_boxplot_mod_artist_after_plotting():
+    x = [0.15, 0.11, 0.06, 0.06, 0.12, 0.56, -0.56]
+    fig, ax = plt.subplots()
+    bp = ax.boxplot(x, sym="o")
+    for key in bp:
+        for obj in bp[key]:
+            obj.set_color('green')
+
+
 @image_comparison(baseline_images=['violinplot_vert_baseline'],
                   extensions=['png'])
 def test_vert_violinplot_baseline():
@@ -2185,6 +2199,23 @@ def test_eventplot():
 
     num_collections = len(colls)
     np.testing.assert_equal(num_collections, num_datasets)
+
+
+@image_comparison(baseline_images=['test_eventplot_defaults'], extensions=['png'], remove_text=True)
+def test_eventplot_defaults():
+    '''
+    test that eventplot produces the correct output given the default params
+    (see bug #3728)
+    '''
+    np.random.seed(0)
+
+    data1 = np.random.random([32, 20]).tolist()
+    data2 = np.random.random([6, 20]).tolist()
+    data = data1 + data2
+
+    fig = plt.figure()
+    axobj = fig.add_subplot(111)
+    colls = axobj.eventplot(data)
 
 
 @cleanup
@@ -3326,6 +3357,25 @@ def test_pie_linewidth_0():
     plt.axis('equal')
 
 
+@image_comparison(baseline_images=['pie_center_radius'], extensions=['png'])
+def test_pie_center_radius():
+    # The slices will be ordered and plotted counter-clockwise.
+    labels = 'Frogs', 'Hogs', 'Dogs', 'Logs'
+    sizes = [15, 30, 45, 10]
+    colors = ['yellowgreen', 'gold', 'lightskyblue', 'lightcoral']
+    explode = (0, 0.1, 0, 0) # only "explode" the 2nd slice (i.e. 'Hogs')
+
+    plt.pie(sizes, explode=explode, labels=labels, colors=colors,
+            autopct='%1.1f%%', shadow=True, startangle=90,
+            wedgeprops={'linewidth': 0}, center=(1,2), radius=1.5)
+
+    plt.annotate("Center point", xy=(1,2), xytext=(1,1.5),
+                 arrowprops=dict(arrowstyle="->",
+                                 connectionstyle="arc3"))
+    # Set aspect ratio to be equal so that pie is drawn as a circle.
+    plt.axis('equal')
+
+
 @image_comparison(baseline_images=['pie_linewidth_2'], extensions=['png'])
 def test_pie_linewidth_2():
     # The slices will be ordered and plotted counter-clockwise.
@@ -3356,6 +3406,33 @@ def test_pie_ccw_true():
     plt.axis('equal')
 
 
+@image_comparison(baseline_images=['pie_frame_grid'], extensions=['png'])
+def test_pie_frame_grid():
+    # The slices will be ordered and plotted counter-clockwise.
+    labels = 'Frogs', 'Hogs', 'Dogs', 'Logs'
+    sizes = [15, 30, 45, 10]
+    colors = ['yellowgreen', 'gold', 'lightskyblue', 'lightcoral']
+    # only "explode" the 2nd slice (i.e. 'Hogs')
+    explode = (0, 0.1, 0, 0)
+
+    plt.pie(sizes, explode=explode, labels=labels, colors=colors,
+            autopct='%1.1f%%', shadow=True, startangle=90,
+            wedgeprops={'linewidth': 0},
+            frame=True, center=(2, 2))
+
+    plt.pie(sizes[::-1], explode=explode, labels=labels, colors=colors,
+            autopct='%1.1f%%', shadow=True, startangle=90,
+            wedgeprops={'linewidth': 0},
+            frame=True, center=(5, 2))
+
+    plt.pie(sizes, explode=explode[::-1], labels=labels, colors=colors,
+            autopct='%1.1f%%', shadow=True, startangle=90,
+            wedgeprops={'linewidth': 0},
+            frame=True, center=(3, 5))
+    # Set aspect ratio to be equal so that pie is drawn as a circle.
+    plt.axis('equal')
+
+
 @cleanup
 def test_margins():
     # test all ways margins can be called
@@ -3378,15 +3455,35 @@ def test_margins():
 
 
 @cleanup
+def test_length_one_hist():
+    fig, ax = plt.subplots()
+    ax.hist(1)
+    ax.hist([1])
+
+
+@cleanup
 def test_pathological_hexbin():
     # issue #2863
+    out = io.BytesIO()
+
     with warnings.catch_warnings(record=True) as w:
         mylist = [10] * 100
         fig, ax = plt.subplots(1, 1)
         ax.hexbin(mylist, mylist)
-        plt.show()
+        fig.savefig(out)
         assert_equal(len(w), 0)
 
+@cleanup
+def test_color_None():
+    # issue 3855
+    fig, ax = plt.subplots()
+    ax.plot([1,2], [1,2], color=None)
+    plt.show()
+
+@cleanup
+def test_numerical_hist_label():
+    fig, ax = plt.subplots()
+    ax.hist([range(15)] * 5, label=range(5))
 
 if __name__ == '__main__':
     import nose

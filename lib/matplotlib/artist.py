@@ -8,12 +8,13 @@ import warnings
 import inspect
 import matplotlib
 import matplotlib.cbook as cbook
+from matplotlib.cbook import mplDeprecation
 from matplotlib import docstring, rcParams
-from .transforms import Bbox, IdentityTransform, TransformedBbox, \
-                       TransformedPath, Transform
+from .transforms import (Bbox, IdentityTransform, TransformedBbox,
+                         TransformedPath, Transform)
 from .path import Path
 
-## Note, matplotlib artists use the doc strings for set and get
+# Note, matplotlib artists use the doc strings for set and get
 # methods to enable the introspection methods of setp and getp.  Every
 # set_* method should have a docstring containing the line
 #
@@ -77,6 +78,7 @@ class Artist(object):
     zorder = 0
 
     def __init__(self):
+        self._axes = None
         self.figure = None
 
         self._transform = None
@@ -158,7 +160,6 @@ class Artist(object):
         """
         ax = getattr(self, 'axes', None)
         if ax is None or ax.xaxis is None:
-            #print 'artist.convert_xunits no conversion: ax=%s'%ax
             return x
         return ax.xaxis.convert_units(x)
 
@@ -176,16 +177,42 @@ class Artist(object):
         Set the :class:`~matplotlib.axes.Axes` instance in which the
         artist resides, if any.
 
+        This has been deprecated in mpl 1.5, please use the
+        axes property.  Will be removed in 1.7 or 2.0.
+
         ACCEPTS: an :class:`~matplotlib.axes.Axes` instance
         """
+        warnings.warn(_get_axes_msg, mplDeprecation, stacklevel=1)
         self.axes = axes
 
     def get_axes(self):
         """
         Return the :class:`~matplotlib.axes.Axes` instance the artist
-        resides in, or *None*
+        resides in, or *None*.
+
+        This has been deprecated in mpl 1.5, please use the
+        axes property.  Will be removed in 1.7 or 2.0.
         """
+        warnings.warn(_get_axes_msg, mplDeprecation, stacklevel=1)
         return self.axes
+
+    @property
+    def axes(self):
+        """
+        The :class:`~matplotlib.axes.Axes` instance the artist
+        resides in, or *None*.
+        """
+        return self._axes
+
+    @axes.setter
+    def axes(self, new_axes):
+        if self._axes is not None and new_axes != self._axes:
+            raise ValueError("Can not reset the axes.  You are "
+                             "probably trying to re-use an artist "
+                             "in more than one Axes which is not "
+                             "supported")
+        self._axes = new_axes
+        return new_axes
 
     def get_window_extent(self, renderer):
         """
@@ -584,7 +611,7 @@ class Artist(object):
         if transform is None:
             if isinstance(path, Rectangle):
                 self.clipbox = TransformedBbox(Bbox.unit(),
-                                              path.get_transform())
+                                               path.get_transform())
                 self._clippath = None
                 success = True
             elif isinstance(path, Patch):
@@ -752,10 +779,13 @@ class Artist(object):
         changed = False
 
         for k, v in six.iteritems(props):
-            func = getattr(self, 'set_' + k, None)
-            if func is None or not six.callable(func):
-                raise AttributeError('Unknown property %s' % k)
-            func(v)
+            if k in ['axes']:
+                setattr(self, k, v)
+            else:
+                func = getattr(self, 'set_' + k, None)
+                if func is None or not six.callable(func):
+                    raise AttributeError('Unknown property %s' % k)
+                func(v)
             changed = True
         self.eventson = store
         if changed:
@@ -866,15 +896,15 @@ class Artist(object):
             if matchfunc(c):
                 artists.append(c)
             artists.extend([thisc for thisc in
-                                c.findobj(matchfunc, include_self=False)
-                                                     if matchfunc(thisc)])
+                            c.findobj(matchfunc, include_self=False)
+                            if matchfunc(thisc)])
 
         if include_self and matchfunc(self):
             artists.append(self)
         return artists
 
 
-class ArtistInspector:
+class ArtistInspector(object):
     """
     A helper class to inspect an :class:`~matplotlib.artist.Artist`
     and return information about it's settable properties and their
@@ -924,7 +954,8 @@ class ArtistInspector:
         return aliases
 
     _get_valid_values_regex = re.compile(
-                r"\n\s*ACCEPTS:\s*((?:.|\n)*?)(?:$|(?:\n\n))")
+        r"\n\s*ACCEPTS:\s*((?:.|\n)*?)(?:$|(?:\n\n))"
+    )
 
     def get_valid_values(self, attr):
         """
@@ -934,7 +965,8 @@ class ArtistInspector:
         for a line that begins with ACCEPTS:
 
         e.g., for a line linestyle, return
-        "[ ``'-'`` | ``'--'`` | ``'-.'`` | ``':'`` | ``'steps'`` | ``'None'`` ]"
+        "[ ``'-'`` | ``'--'`` | ``'-.'`` | ``':'`` | ``'steps'`` | ``'None'``
+        ]"
         """
 
         name = 'set_%s' % attr
@@ -1094,7 +1126,7 @@ class ArtistInspector:
 
         lines.append('')
         lines.append(table_formatstr)
-        lines.append(pad + 'Property'.ljust(col0_len + 3) + \
+        lines.append(pad + 'Property'.ljust(col0_len + 3) +
                      'Description'.ljust(col1_len))
         lines.append(table_formatstr)
 
@@ -1121,7 +1153,6 @@ class ArtistInspector:
         getters = [name for name in dir(o)
                    if name.startswith('get_')
                    and six.callable(getattr(o, name))]
-        #print getters
         getters.sort()
         d = dict()
         for name in getters:
@@ -1323,8 +1354,11 @@ def kwdoc(a):
     hardcopy = matplotlib.rcParams['docstring.hardcopy']
     if hardcopy:
         return '\n'.join(ArtistInspector(a).pprint_setters_rest(
-                                            leadingspace=2))
+                         leadingspace=2))
     else:
         return '\n'.join(ArtistInspector(a).pprint_setters(leadingspace=2))
 
 docstring.interpd.update(Artist=kwdoc(Artist))
+
+_get_axes_msg = """This has been deprecated in mpl 1.5, please use the
+axes property.  A removal date has not been set."""

@@ -6,7 +6,7 @@ import os
 import shutil
 import sys
 import re
-
+import argparse
 
 def copy_if_out_of_date(original, derived):
     if (not os.path.exists(derived) or
@@ -43,6 +43,8 @@ def html(buildername='html'):
         options = "-D plot_formats=\"[('png', 80)]\""
     else:
         options = ''
+    if warnings_as_errors:
+        options = options + ' -W'
     if os.system('sphinx-build %s -b %s -d build/doctrees . build/%s' % (options, buildername, buildername)):
         raise SystemExit("Building HTML failed.")
 
@@ -136,6 +138,7 @@ funcd = {
 
 
 small_docs = False
+warnings_as_errors = False
 
 # Change directory to the one containing this file
 current_dir = os.getcwd()
@@ -149,24 +152,53 @@ required_symlinks = [
     ('mpl_toolkits/axes_grid/examples', '../../../examples/axes_grid/')
     ]
 
+symlink_warnings = []
 for link, target in required_symlinks:
+    if sys.platform == 'win32' and os.path.isfile(link):
+        # This is special processing that applies on platforms that don't deal
+        # with git symlinks -- probably only MS windows.
+        delete = False
+        with open(link, 'r') as content:
+            delete = target == content.read()
+        if delete:
+            symlink_warnings.append('deleted:  doc/{}'.format(link))
+            os.unlink(link)
+        else:
+            raise RuntimeError("doc/{} should be a directory or symlink -- it isn't")
     if not os.path.exists(link):
         if hasattr(os, 'symlink'):
             os.symlink(target, link)
         else:
+            symlink_warnings.append('files copied to {}'.format(link))
             shutil.copytree(os.path.join(link, '..', target), link)
 
-if len(sys.argv)>1:
-    if '--small' in sys.argv[1:]:
-        small_docs = True
-        sys.argv.remove('--small')
-    for arg in sys.argv[1:]:
-        func = funcd.get(arg)
+if sys.platform == 'win32' and len(symlink_warnings) > 0:
+    print('The following items related to symlinks will show up '+ 
+            'as spurious changes in your \'git status\':\n\t{}' 
+                    .format('\n\t'.join(symlink_warnings)))
+
+parser = argparse.ArgumentParser(description='Build matplotlib docs')
+parser.add_argument("cmd", help=("Command to execute. Can be multiple. "
+                    "Valid options are: %s" % (funcd.keys())), nargs='*')
+parser.add_argument("--small",
+                    help="Smaller docs with only low res png figures",
+                    action="store_true")
+parser.add_argument("--warningsaserrors",
+                    help="Turn Sphinx warnings into errors",
+                    action="store_true")
+args = parser.parse_args()
+if args.small:
+    small_docs = True
+if args.warningsaserrors:
+    warnings_as_errors = True
+
+if args.cmd:
+    for command in args.cmd:
+        func = funcd.get(command)
         if func is None:
-            raise SystemExit('Do not know how to handle %s; valid args are %s'%(
-                    arg, funcd.keys()))
+            raise SystemExit(('Do not know how to handle %s; valid commands'
+                              ' are %s' % (command, funcd.keys())))
         func()
 else:
-    small_docs = False
     all()
 os.chdir(current_dir)

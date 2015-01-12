@@ -10,7 +10,8 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import six
-from six.moves import xrange
+from six.moves import xrange, zip
+from itertools import repeat
 
 import datetime
 import errno
@@ -122,9 +123,12 @@ def warn_deprecated(
 
     Examples
     --------
-    # To warn of the deprecation of "matplotlib.name_of_module"
-    warn_deprecated('1.4.0', name='matplotlib.name_of_module',
-                    obj_type='module')
+
+        Basic example::
+
+            # To warn of the deprecation of "matplotlib.name_of_module"
+            warn_deprecated('1.4.0', name='matplotlib.name_of_module',
+                            obj_type='module')
 
     """
     message = _generate_deprecation_message(
@@ -174,9 +178,12 @@ def deprecated(since, message='', name='', alternative='', pending=False,
 
     Examples
     --------
-    @deprecated('1.4.0')
-    def the_function_to_deprecate():
-        pass
+
+        Basic example::
+
+            @deprecated('1.4.0')
+            def the_function_to_deprecate():
+                pass
 
     """
     def deprecate(func, message=message, name=name, alternative=alternative,
@@ -427,7 +434,7 @@ class _BoundMethodProxy(object):
         return not self.__eq__(other)
 
 
-class CallbackRegistry:
+class CallbackRegistry(object):
     """
     Handle registering and disconnecting for a set of signals and
     callbacks:
@@ -465,13 +472,7 @@ class CallbackRegistry:
     `"Mindtrove" blog
     <http://mindtrove.info/articles/python-weak-references/>`_.
     """
-    def __init__(self, *args):
-        if len(args):
-            warn_deprecated(
-                '1.3',
-                message="CallbackRegistry no longer requires a list of "
-                        "callback types. Ignoring arguments. *args will "
-                        "be removed in 1.5")
+    def __init__(self):
         self.callbacks = dict()
         self._cid = 0
         self._func_cid_map = {}
@@ -634,7 +635,7 @@ def strip_math(s):
     return s
 
 
-class Bunch:
+class Bunch(object):
     """
     Often we want to just collect a bunch of stuff together, naming each
     item of the bunch; a dictionary's OK for that, but a small do- nothing
@@ -840,7 +841,7 @@ def flatten(seq, scalarp=is_scalar_or_string):
                 yield subitem
 
 
-class Sorter:
+class Sorter(object):
     """
     Sort by attribute or item
 
@@ -948,7 +949,7 @@ def soundex(name, len=4):
     return (sndx + (len * '0'))[:len]
 
 
-class Null:
+class Null(object):
     """ Null objects always and reliably "do nothing." """
 
     def __init__(self, *args, **kwargs):
@@ -1001,7 +1002,7 @@ def mkdirs(newdir, mode=0o777):
             raise
 
 
-class GetRealpathAndStat:
+class GetRealpathAndStat(object):
     def __init__(self):
         self._cache = {}
 
@@ -1029,7 +1030,7 @@ def dict_delall(d, keys):
             pass
 
 
-class RingBuffer:
+class RingBuffer(object):
     """ class that implements a not-yet-full buffer """
     def __init__(self, size_max):
         self.max = size_max
@@ -1492,7 +1493,7 @@ def safe_masked_invalid(x):
     return xm
 
 
-class MemoryMonitor:
+class MemoryMonitor(object):
     def __init__(self, nmax=20000):
         self._nmax = nmax
         self._mem = np.zeros((self._nmax,), np.int32)
@@ -1890,11 +1891,11 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
         ========   ===================================
         label      tick label for the boxplot
         mean       arithemetic mean value
-        median     50th percentile
+        med        50th percentile
         q1         first quartile (25th percentile)
         q3         third quartile (75th percentile)
         cilo       lower notch around the median
-        ciho       upper notch around the median
+        cihi       upper notch around the median
         whislo     end of the lower whisker
         whishi     end of the upper whisker
         fliers     outliers
@@ -1905,11 +1906,13 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
     Non-bootstrapping approach to confidence interval uses Gaussian-based
     asymptotic approximation:
 
-    .. math:: \mathrm{med} \pm 1.57 \times \frac{\mathrm{iqr}}{\sqrt{N}}
+    .. math::
+
+        \mathrm{med} \pm 1.57 \\times \\frac{\mathrm{iqr}}{\sqrt{N}}
 
     General approach from:
     McGill, R., Tukey, J.W., and Larsen, W.A. (1978) "Variations of
-        Boxplots", The American Statistician, 32:12-16.
+    Boxplots", The American Statistician, 32:12-16.
 
     '''
 
@@ -1948,14 +1951,40 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
 
     ncols = len(X)
     if labels is None:
-        labels = [str(i) for i in range(1, ncols+1)]
+        labels = repeat(None)
     elif len(labels) != ncols:
         raise ValueError("Dimensions of labels and X must be compatible")
 
+    input_whis = whis
     for ii, (x, label) in enumerate(zip(X, labels), start=0):
+
         # empty dict
         stats = {}
-        stats['label'] = label
+        if label is not None:
+            stats['label'] = label
+
+        # restore whis to the input values in case it got changed in the loop
+        whis = input_whis
+
+        # note tricksyness, append up here and then mutate below
+        bxpstats.append(stats)
+
+        # if empty, bail
+        if len(x) == 0:
+            stats['fliers'] = np.array([])
+            stats['mean'] = np.nan
+            stats['med'] = np.nan
+            stats['q1'] = np.nan
+            stats['q3'] = np.nan
+            stats['cilo'] = np.nan
+            stats['cihi'] = np.nan
+            stats['whislo'] = np.nan
+            stats['whishi'] = np.nan
+            stats['med'] = np.nan
+            continue
+
+        # up-convert to an array, just to be safe
+        x = np.asarray(x)
 
         # arithmetic mean
         stats['mean'] = np.mean(x)
@@ -2009,9 +2038,9 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
             np.compress(x > stats['whishi'], x)
         ])
 
-        # add in teh remaining stats and append to final output
+        # add in the remaining stats
         stats['q1'], stats['med'], stats['q3'] = q1, med, q3
-        bxpstats.append(stats)
+
 
     return bxpstats
 

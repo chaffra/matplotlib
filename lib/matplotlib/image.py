@@ -10,10 +10,8 @@ import six
 
 import os
 import warnings
-import math
 
 import numpy as np
-from numpy import ma
 
 from matplotlib import rcParams
 import matplotlib.artist as martist
@@ -113,6 +111,12 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
 
         self.update(kwargs)
 
+    def __getstate__(self):
+        state = super(_AxesImageBase, self).__getstate__()
+        # We can't pickle the C Image cached object.
+        state.pop('_imcache', None)
+        return state
+
     def get_size(self):
         """Get the numrows, numcols of the input image"""
         if self._A is None:
@@ -182,10 +186,7 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
             iy0 = max(0, int(y0 - self._filterrad))
             y1 = (viewlim.y1-ymin)/dyintv * numrows
             iy1 = min(numrows, int(y1 + self._filterrad))
-            if self.origin == 'upper':
-                yslice = slice(numrows-iy1, numrows-iy0)
-            else:
-                yslice = slice(iy0, iy1)
+            yslice = slice(iy0, iy1)
             ymin_old = ymin
             ymin = ymin_old + iy0*dyintv/numrows
             ymax = ymin_old + iy1*dyintv/numrows
@@ -200,15 +201,19 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
             self._oldyslice = yslice
 
         if self._imcache is None:
-            if self._A.dtype == np.uint8 and self._A.ndim == 3:
-                im = _image.frombyte(self._A[yslice, xslice, :], 0)
+            A = self._A
+            if self.origin == 'upper':
+                A = A[::-1]
+
+            if A.dtype == np.uint8 and A.ndim == 3:
+                im = _image.frombyte(A[yslice, xslice, :], 0)
                 im.is_grayscale = False
             else:
                 if self._rgbacache is None:
-                    x = self.to_rgba(self._A, bytes=False)
+                    x = self.to_rgba(A, bytes=False)
                     # Avoid side effects: to_rgba can return its argument
                     # unchanged.
-                    if np.may_share_memory(x, self._A):
+                    if np.may_share_memory(x, A):
                         x = x.copy()
                     # premultiply the colors
                     x[..., 0:3] *= x[..., 3:4]
@@ -222,9 +227,6 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
                 else:
                     im.is_grayscale = False
             self._imcache = im
-
-            if self.origin == 'upper':
-                im.flipud_in()
         else:
             im = self._imcache
 
@@ -409,9 +411,7 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
             im.reset_matrix()
             im.set_interpolation(0)
             im.resize(numcols, numrows)
-        im.flipud_out()
-        rows, cols, buffer = im.as_rgba_str()
-        _png.write_png(buffer, cols, rows, fname)
+        _png.write_png(im, fname)
 
     def set_data(self, A):
         """
@@ -571,6 +571,11 @@ class AxesImage(_AxesImageBase):
                                 **kwargs
                                 )
 
+    def get_window_extent(self, renderer=None):
+        x0, x1, y0, y1 = self._extent
+        bbox = Bbox.from_extents([x0, y0, x1, y1])
+        return bbox.transformed(self.axes.transData)
+
     def make_image(self, magnification=1.0):
         if self._A is None:
             raise RuntimeError('You must first set the image'
@@ -728,7 +733,7 @@ class NonUniformImage(AxesImage):
         width *= magnification
         height *= magnification
         im = _image.pcolor(self._Ax, self._Ay, A,
-                           height, width,
+                           int(height), int(width),
                            (x0, x0+v_width, y0, y0+v_height),
                            self._interpd[self._interpolation])
 
@@ -1001,7 +1006,11 @@ class FigureImage(martist.Artist, cm.ScalarMappable):
         if self._A is None:
             raise RuntimeError('You must first set the image array')
 
-        x = self.to_rgba(self._A, bytes=True)
+        A = self._A
+        if self.origin == 'upper':
+            A = A[::-1]
+
+        x = self.to_rgba(A, bytes=True)
         self.magnification = magnification
         # if magnification is not one, we need to resize
         ismag = magnification != 1
@@ -1014,7 +1023,7 @@ class FigureImage(martist.Artist, cm.ScalarMappable):
         fc = self.figure.get_facecolor()
         im.set_bg(*mcolors.colorConverter.to_rgba(fc, 0))
         im.is_grayscale = (self.cmap.name == "gray" and
-                           len(self._A.shape) == 2)
+                           len(A.shape) == 2)
 
         if ismag:
             numrows, numcols = self.get_size()
@@ -1022,8 +1031,6 @@ class FigureImage(martist.Artist, cm.ScalarMappable):
             numcols *= magnification
             im.set_interpolation(_image.NEAREST)
             im.resize(numcols, numrows)
-        if self.origin == 'upper':
-            im.flipud_out()
 
         return im
 
@@ -1043,8 +1050,7 @@ class FigureImage(martist.Artist, cm.ScalarMappable):
     def write_png(self, fname):
         """Write the image to png file with fname"""
         im = self.make_image()
-        rows, cols, buffer = im.as_rgba_str()
-        _png.write_png(buffer, cols, rows, fname)
+        _png.write_png(im, fname)
 
 
 class BboxImage(_AxesImageBase):
@@ -1127,24 +1133,24 @@ class BboxImage(_AxesImageBase):
                                'array or the image attribute')
 
         if self._imcache is None:
-            if self._A.dtype == np.uint8 and len(self._A.shape) == 3:
-                im = _image.frombyte(self._A, 0)
+            A = self._A
+            if self.origin == 'upper':
+                A = A[::-1]
+            if A.dtype == np.uint8 and len(A.shape) == 3:
+                im = _image.frombyte(A, 0)
                 im.is_grayscale = False
             else:
                 if self._rgbacache is None:
-                    x = self.to_rgba(self._A, bytes=True)
+                    x = self.to_rgba(A, bytes=True)
                     self._rgbacache = x
                 else:
                     x = self._rgbacache
                 im = _image.frombyte(x, 0)
-                if len(self._A.shape) == 2:
+                if len(A.shape) == 2:
                     im.is_grayscale = self.cmap.is_gray()
                 else:
                     im.is_grayscale = False
             self._imcache = im
-
-            if self.origin == 'upper':
-                im.flipud_in()
         else:
             im = self._imcache
 
@@ -1287,7 +1293,7 @@ def imsave(fname, arr, vmin=None, vmax=None, cmap=None, format=None,
         or *vmax* is None, that limit is determined from the *arr*
         min/max value.
       *cmap*:
-        cmap is a colors.Colormap instance, eg cm.jet.
+        cmap is a colors.Colormap instance, e.g., cm.jet.
         If None, default to the rc image.cmap value.
       *format*:
         One of the file extensions supported by the active

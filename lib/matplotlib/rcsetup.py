@@ -38,7 +38,7 @@ non_interactive_bk = ['agg', 'cairo', 'emf', 'gdk',
 all_backends = interactive_bk + non_interactive_bk
 
 
-class ValidateInStrings:
+class ValidateInStrings(object):
     def __init__(self, key, valid, ignorecase=False):
         'valid is a list of legal strings'
         self.key = key
@@ -66,6 +66,8 @@ def validate_any(s):
 
 def validate_path_exists(s):
     """If s is a path, return s, else False"""
+    if s is None:
+        return None
     if os.path.exists(s):
         return s
     else:
@@ -100,6 +102,16 @@ def validate_bool_maybe_none(b):
 
 def validate_float(s):
     """convert s to float or raise"""
+    try:
+        return float(s)
+    except ValueError:
+        raise ValueError('Could not convert "%s" to float' % s)
+
+
+def validate_float_or_None(s):
+    """convert s to float or raise"""
+    if s is None:
+        return None
     try:
         return float(s)
     except ValueError:
@@ -172,64 +184,69 @@ def validate_maskedarray(v):
                   ' please delete it from your matplotlibrc file')
 
 
-class validate_nseq_float:
+
+_seq_err_msg = ('You must supply exactly {n:d} values, you provided '
+                   '{num:d} values: {s}')
+
+_str_err_msg = ('You must supply exactly {n:d} comma-separated values, '
+                'you provided '
+                '{num:d} comma-separated values: {s}')
+
+
+class validate_nseq_float(object):
     def __init__(self, n):
         self.n = n
 
     def __call__(self, s):
         """return a seq of n floats or raise"""
         if isinstance(s, six.string_types):
-            ss = s.split(',')
-            if len(ss) != self.n:
-                raise ValueError(
-                    'You must supply exactly %d comma separated values' %
-                    self.n)
-            try:
-                return [float(val) for val in ss]
-            except ValueError:
-                raise ValueError('Could not convert all entries to floats')
+            s = s.split(',')
+            err_msg = _str_err_msg
         else:
-            assert type(s) in (list, tuple)
-            if len(s) != self.n:
-                raise ValueError('You must supply exactly %d values' % self.n)
+            err_msg = _seq_err_msg
+
+        if len(s) != self.n:
+            raise ValueError(err_msg.format(n=self.n, num=len(s), s=s))
+
+        try:
             return [float(val) for val in s]
+        except ValueError:
+            raise ValueError('Could not convert all entries to floats')
 
 
-class validate_nseq_int:
+class validate_nseq_int(object):
     def __init__(self, n):
         self.n = n
 
     def __call__(self, s):
         """return a seq of n ints or raise"""
         if isinstance(s, six.string_types):
-            ss = s.split(',')
-            if len(ss) != self.n:
-                raise ValueError(
-                    'You must supply exactly %d comma separated values' %
-                    self.n)
-            try:
-                return [int(val) for val in ss]
-            except ValueError:
-                raise ValueError('Could not convert all entries to ints')
+            s = s.split(',')
+            err_msg = _str_err_msg
         else:
-            assert type(s) in (list, tuple)
-            if len(s) != self.n:
-                raise ValueError('You must supply exactly %d values' % self.n)
+            err_msg = _seq_err_msg
+
+        if len(s) != self.n:
+            raise ValueError(err_msg.format(n=self.n, num=len(s), s=s))
+
+        try:
             return [int(val) for val in s]
+        except ValueError:
+            raise ValueError('Could not convert all entries to ints')
 
 
 def validate_color(s):
     'return a valid color arg'
-    try:
-        if s.lower() == 'none':
-            return 'None'
-    except AttributeError:
-        pass
+    if s in (None, 'none', 'None'):
+        return None
+
     if is_color_like(s):
         return s
+
     stmp = '#' + s
     if is_color_like(stmp):
         return stmp
+
     # If it is still valid, it must be a tuple.
     colorarg = s
     msg = ''
@@ -263,10 +280,10 @@ def validate_colorlist(s):
 def validate_stringlist(s):
     'return a list'
     if isinstance(s, six.string_types):
-        return [v.strip() for v in s.split(',')]
+        return [six.text_type(v.strip()) for v in s.split(',') if v.strip()]
     else:
         assert type(s) in [list, tuple]
-        return [six.text_type(v) for v in s]
+        return [six.text_type(v) for v in s if v]
 
 
 validate_orientation = ValidateInStrings(
@@ -443,7 +460,7 @@ def validate_sketch(s):
         raise ValueError("path.sketch must be a tuple (scale, length, randomness)")
     return result
 
-class ValidateInterval:
+class ValidateInterval(object):
     """
     Value must be in interval
     """
@@ -485,6 +502,7 @@ defaultParams = {
     'webagg.port':       [8988, validate_int],
     'webagg.open_in_browser': [True, validate_bool],
     'webagg.port_retries': [50, validate_int],
+    'nbagg.transparent':       [True, validate_bool],
     'toolbar':           ['toolbar2', validate_toolbar],
     'datapath':          [None, validate_path_exists],  # handled by
                                                         # _get_data_path_cached
@@ -516,7 +534,7 @@ defaultParams = {
 
 
     ## font props
-    'font.family':     ['sans-serif', validate_stringlist],  # used by text object
+    'font.family':     [['sans-serif'], validate_stringlist],  # used by text object
     'font.style':      ['normal', six.text_type],
     'font.variant':    ['normal', six.text_type],
     'font.stretch':    ['normal', six.text_type],
@@ -533,9 +551,11 @@ defaultParams = {
                          'Arial', 'Helvetica', 'Avant Garde', 'sans-serif'],
                         validate_stringlist],
     'font.cursive':    [['Apple Chancery', 'Textile', 'Zapf Chancery',
-                         'Sand', 'cursive'], validate_stringlist],
+                         'Sand', 'Script MT', 'Felipa', 'cursive'],
+                        validate_stringlist],
     'font.fantasy':    [['Comic Sans MS', 'Chicago', 'Charcoal', 'Impact'
-                         'Western', 'fantasy'], validate_stringlist],
+                         'Western', 'Humor Sans', 'fantasy'],
+                        validate_stringlist],
     'font.monospace':  [['Bitstream Vera Sans Mono', 'DejaVu Sans Mono',
                          'Andale Mono', 'Nimbus Mono L', 'Courier New',
                          'Courier', 'Fixed', 'Terminal', 'monospace'],
@@ -588,6 +608,7 @@ defaultParams = {
                                                                 # axis locator
     'axes.labelsize':        ['medium', validate_fontsize],  # fontsize of the
                                                              # x any y labels
+    'axes.labelpad':         [5.0, validate_float], # space between label and axis
     'axes.labelweight':      ['normal', six.text_type],  # fontsize of the x any y labels
     'axes.labelcolor':       ['k', validate_color],    # color of axis label
     'axes.formatter.limits': [[-7, 7], validate_nseq_int(2)],
@@ -632,7 +653,8 @@ defaultParams = {
     'legend.shadow': [False, validate_bool],
      # whether or not to draw a frame around legend
     'legend.frameon': [True, validate_bool],
-
+     # alpha value of the legend frame
+    'legend.framealpha': [None, validate_float_or_None],
 
     ## the following dimensions are in fraction of the font size
     'legend.borderpad': [0.4, validate_float],  # units are fontsize
@@ -651,6 +673,9 @@ defaultParams = {
     # the relative size of legend markers vs. original
     'legend.markerscale': [1.0, validate_float],
     'legend.shadow': [False, validate_bool],
+    'legend.facecolor': [None, validate_color], # background color; white
+    'legend.edgecolor': [None, validate_color], # edge color; black
+
 
     ## tick properties
     'xtick.major.size':  [4, validate_float],    # major xtick size in points
@@ -682,6 +707,10 @@ defaultParams = {
 
 
     ## figure props
+    # figure title
+    'figure.titlesize':   ['medium', validate_fontsize],
+    'figure.titleweight': ['normal', six.text_type],
+
     # figure size in inches: width by height
     'figure.figsize':    [[8.0, 6.0], validate_nseq_float(2)],
     'figure.dpi':        [80, validate_float],   # DPI
@@ -774,14 +803,14 @@ defaultParams = {
     'keymap.home':         [['h', 'r', 'home'], validate_stringlist],
     'keymap.back':         [['left', 'c', 'backspace'], validate_stringlist],
     'keymap.forward':      [['right', 'v'], validate_stringlist],
-    'keymap.pan':          ['p', validate_stringlist],
-    'keymap.zoom':         ['o', validate_stringlist],
-    'keymap.save':         [('s', 'ctrl+s'), validate_stringlist],
-    'keymap.quit':         [('ctrl+w', 'cmd+w'), validate_stringlist],
-    'keymap.grid':         ['g', validate_stringlist],
-    'keymap.yscale':       ['l', validate_stringlist],
+    'keymap.pan':          [['p'], validate_stringlist],
+    'keymap.zoom':         [['o'], validate_stringlist],
+    'keymap.save':         [['s', 'ctrl+s'], validate_stringlist],
+    'keymap.quit':         [['ctrl+w', 'cmd+w'], validate_stringlist],
+    'keymap.grid':         [['g'], validate_stringlist],
+    'keymap.yscale':       [['l'], validate_stringlist],
     'keymap.xscale':       [['k', 'L'], validate_stringlist],
-    'keymap.all_axes':     ['a', validate_stringlist],
+    'keymap.all_axes':     [['a'], validate_stringlist],
 
     # sample data
     'examples.directory': ['', six.text_type],
@@ -795,21 +824,21 @@ defaultParams = {
     # Path to FFMPEG binary. If just binary name, subprocess uses $PATH.
     'animation.ffmpeg_path':  ['ffmpeg', six.text_type],
 
-    ## Additional arguments for ffmpeg movie writer (using pipes)
-    'animation.ffmpeg_args':   ['', validate_stringlist],
+    # Additional arguments for ffmpeg movie writer (using pipes)
+    'animation.ffmpeg_args':   [[], validate_stringlist],
     # Path to AVConv binary. If just binary name, subprocess uses $PATH.
     'animation.avconv_path':   ['avconv', six.text_type],
     # Additional arguments for avconv movie writer (using pipes)
-    'animation.avconv_args':   ['', validate_stringlist],
+    'animation.avconv_args':   [[], validate_stringlist],
     # Path to MENCODER binary. If just binary name, subprocess uses $PATH.
     'animation.mencoder_path': ['mencoder', six.text_type],
     # Additional arguments for mencoder movie writer (using pipes)
-    'animation.mencoder_args': ['', validate_stringlist],
+    'animation.mencoder_args': [[], validate_stringlist],
      # Path to convert binary. If just binary name, subprocess uses $PATH
     'animation.convert_path':  ['convert', six.text_type],
      # Additional arguments for mencoder movie writer (using pipes)
 
-    'animation.convert_args':  ['', validate_stringlist]}
+    'animation.convert_args':  [[], validate_stringlist]}
 
 
 if __name__ == '__main__':

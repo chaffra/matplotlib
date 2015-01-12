@@ -30,6 +30,9 @@ from matplotlib import _path
 import matplotlib.mlab as mlab
 
 
+CIRCLE_AREA_FACTOR = 1.0 / np.sqrt(np.pi)
+
+
 class Collection(artist.Artist, cm.ScalarMappable):
     """
     Base class for Collections.  Must be subclassed to be usable.
@@ -70,7 +73,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
 
     The use of :class:`~matplotlib.cm.ScalarMappable` is optional.  If
     the :class:`~matplotlib.cm.ScalarMappable` matrix _A is not None
-    (ie a call to set_array has been made), at draw time a call to
+    (i.e., a call to set_array has been made), at draw time a call to
     scalar mappable will be made to set the face colors.
     """
     _offsets = np.array([], np.float_)
@@ -271,25 +274,41 @@ class Collection(artist.Artist, cm.ScalarMappable):
             from matplotlib.patheffects import PathEffectRenderer
             renderer = PathEffectRenderer(self.get_path_effects(), renderer)
 
+        # If the collection is made up of a single shape/color/stroke,
+        # it can be rendered once and blitted multiple times, using
+        # `draw_markers` rather than `draw_path_collection`.  This is
+        # *much* faster for Agg, and results in smaller file sizes in
+        # PDF/SVG/PS.
+
         trans = self.get_transforms()
         facecolors = self.get_facecolor()
         edgecolors = self.get_edgecolor()
+        do_single_path_optimization = False
         if (len(paths) == 1 and len(trans) <= 1 and
             len(facecolors) == 1 and len(edgecolors) == 1 and
             len(self._linewidths) == 1 and
             self._linestyles == [(None, None)] and
             len(self._antialiaseds) == 1 and len(self._urls) == 1 and
             self.get_hatch() is None):
+            if len(trans):
+                combined_transform = (transforms.Affine2D(trans[0]) +
+                                      transform)
+            else:
+                combined_transform = transform
+            extents = paths[0].get_extents(combined_transform)
+            width, height = renderer.get_canvas_width_height()
+            if (extents.width < width and
+                extents.height < height):
+                do_single_path_optimization = True
+
+        if do_single_path_optimization:
             gc.set_foreground(tuple(edgecolors[0]))
             gc.set_linewidth(self._linewidths[0])
             gc.set_linestyle(self._linestyles[0])
             gc.set_antialiased(self._antialiaseds[0])
             gc.set_url(self._urls[0])
-            if len(trans):
-                transform = (transforms.Affine2D(trans[0]) +
-                             transform)
             renderer.draw_markers(
-                gc, paths[0], transform.frozen(),
+                gc, paths[0], combined_transform.frozen(),
                 mpath.Path(offsets), transOffset, tuple(facecolors[0]))
         else:
             renderer.draw_path_collection(
@@ -658,6 +677,10 @@ class Collection(artist.Artist, cm.ScalarMappable):
         elif self._is_stroked:
             self._edgecolors = self.to_rgba(self._A, self._alpha)
 
+    def get_fill(self):
+        'return whether fill is set'
+        return self._is_filled
+
     def update_from(self, other):
         'copy properties from other to self'
 
@@ -709,6 +732,8 @@ class _CollectionWithSizes(Collection):
     """
     Base class for collections that have an array of sizes.
     """
+    _factor = 1.0
+
     def get_sizes(self):
         """
         Returns the sizes of the elements in the collection.  The
@@ -740,7 +765,7 @@ class _CollectionWithSizes(Collection):
         else:
             self._sizes = np.asarray(sizes)
             self._transforms = np.zeros((len(self._sizes), 3, 3))
-            scale = np.sqrt(self._sizes) * dpi / 72.0
+            scale = np.sqrt(self._sizes) * dpi / 72.0 * self._factor
             self._transforms[:, 0, 0] = scale
             self._transforms[:, 1, 1] = scale
             self._transforms[:, 2, 2] = 1.0
@@ -878,6 +903,8 @@ class RegularPolyCollection(_CollectionWithSizes):
     """Draw a collection of regular polygons with *numsides*."""
     _path_generator = mpath.Path.unit_regular_polygon
 
+    _factor = CIRCLE_AREA_FACTOR
+
     @docstring.dedent_interpd
     def __init__(self,
                  numsides,
@@ -926,6 +953,15 @@ class RegularPolyCollection(_CollectionWithSizes):
 
     def get_rotation(self):
         return self._rotation
+
+    @allow_rasterization
+    def draw(self, renderer):
+        self.set_sizes(self._sizes, self.figure.dpi)
+        self._transforms = [
+            transforms.Affine2D(x).rotate(-self._rotation).get_matrix()
+            for x in self._transforms
+        ]
+        Collection.draw(self, renderer)
 
 
 class StarPolygonCollection(RegularPolyCollection):
@@ -978,7 +1014,7 @@ class LineCollection(Collection):
             can be a different length.
 
         *colors*
-            must be a sequence of RGBA tuples (eg arbitrary color
+            must be a sequence of RGBA tuples (e.g., arbitrary color
             strings, etc, not allowed).
 
         *antialiaseds*
@@ -1021,7 +1057,7 @@ class LineCollection(Collection):
 
         The use of :class:`~matplotlib.cm.ScalarMappable` is optional.
         If the :class:`~matplotlib.cm.ScalarMappable` array
-        :attr:`~matplotlib.cm.ScalarMappable._A` is not None (ie a call to
+        :attr:`~matplotlib.cm.ScalarMappable._A` is not None (i.e., a call to
         :meth:`~matplotlib.cm.ScalarMappable.set_array` has been made), at
         draw time a call to scalar mappable will be made to set the colors.
         """
@@ -1160,7 +1196,7 @@ class EventCollection(LineCollection):
             a single numerical value
 
         *color*
-            must be a sequence of RGBA tuples (eg arbitrary color
+            must be a sequence of RGBA tuples (e.g., arbitrary color
             strings, etc, not allowed).
 
         *linestyle* [ 'solid' | 'dashed' | 'dashdot' | 'dotted' ]
@@ -1181,7 +1217,7 @@ class EventCollection(LineCollection):
 
         The use of :class:`~matplotlib.cm.ScalarMappable` is optional.
         If the :class:`~matplotlib.cm.ScalarMappable` array
-        :attr:`~matplotlib.cm.ScalarMappable._A` is not None (ie a call to
+        :attr:`~matplotlib.cm.ScalarMappable._A` is not None (i.e., a call to
         :meth:`~matplotlib.cm.ScalarMappable.set_array` has been made), at
         draw time a call to scalar mappable will be made to set the colors.
 
@@ -1376,6 +1412,8 @@ class CircleCollection(_CollectionWithSizes):
     """
     A collection of circles, drawn using splines.
     """
+    _factor = CIRCLE_AREA_FACTOR
+
     @docstring.dedent_interpd
     def __init__(self, sizes, **kwargs):
         """
@@ -1467,7 +1505,8 @@ class EllipseCollection(Collection):
         self._transforms[:, 1, 0] = widths * sin_angle
         self._transforms[:, 1, 1] = heights * cos_angle
         self._transforms[:, 2, 2] = 1.0
-
+        
+        _affine = transforms.Affine2D
         if self._units == 'xy':
             m = ax.transData.get_affine().get_matrix().copy()
             m[:2, 2:] = 0
@@ -1508,7 +1547,7 @@ class PatchCollection(Collection):
 
         The use of :class:`~matplotlib.cm.ScalarMappable` is optional.
         If the :class:`~matplotlib.cm.ScalarMappable` matrix _A is not
-        None (ie a call to set_array has been made), at draw time a
+        None (i.e., a call to set_array has been made), at draw time a
         call to scalar mappable will be made to set the face colors.
         """
 
@@ -1518,21 +1557,13 @@ class PatchCollection(Collection):
                     return patch.get_facecolor()
                 return [0, 0, 0, 0]
 
-            facecolors = [determine_facecolor(p) for p in patches]
-            edgecolors = [p.get_edgecolor() for p in patches]
-            linewidths = [p.get_linewidth() for p in patches]
-            linestyles = [p.get_linestyle() for p in patches]
-            antialiaseds = [p.get_antialiased() for p in patches]
+            kwargs['facecolors'] = [determine_facecolor(p) for p in patches]
+            kwargs['edgecolors'] = [p.get_edgecolor() for p in patches]
+            kwargs['linewidths'] = [p.get_linewidth() for p in patches]
+            kwargs['linestyles'] = [p.get_linestyle() for p in patches]
+            kwargs['antialiaseds'] = [p.get_antialiased() for p in patches]
 
-            Collection.__init__(
-                self,
-                edgecolors=edgecolors,
-                facecolors=facecolors,
-                linewidths=linewidths,
-                linestyles=linestyles,
-                antialiaseds=antialiaseds)
-        else:
-            Collection.__init__(self, **kwargs)
+        Collection.__init__(self, **kwargs)
 
         self.set_paths(patches)
 

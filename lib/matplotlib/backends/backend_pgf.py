@@ -14,6 +14,8 @@ import atexit
 import weakref
 import warnings
 
+import numpy as np
+
 import matplotlib as mpl
 from matplotlib.backend_bases import RendererBase, GraphicsContextBase,\
     FigureManagerBase, FigureCanvasBase
@@ -212,7 +214,7 @@ class LatexError(Exception):
         self.latex_output = latex_output
 
 
-class LatexManagerFactory:
+class LatexManagerFactory(object):
     previous_instance = None
 
     @staticmethod
@@ -233,7 +235,7 @@ class LatexManagerFactory:
             LatexManagerFactory.previous_instance = new_inst
             return new_inst
 
-class WeakSet:
+class WeakSet(object):
     # TODO: Poor man's weakref.WeakSet.
     #       Remove this once python 2.6 support is dropped from matplotlib.
 
@@ -251,7 +253,7 @@ class WeakSet:
         return six.iterkeys(self.weak_key_dict)
 
 
-class LatexManager:
+class LatexManager(object):
     """
     The LatexManager opens an instance of the LaTeX application for
     determining the metrics of text elements. The LaTeX environment can be
@@ -340,9 +342,9 @@ class LatexManager:
         if not os.path.isdir(self.tmpdir):
             return
         try:
-            self.latex_stdin_utf8.close()
             self.latex.communicate()
-            self.latex.wait()
+            self.latex_stdin_utf8.close()
+            self.latex.stdout.close()
         except:
             pass
         try:
@@ -429,7 +431,10 @@ class RendererPgf(RendererBase):
                     self.__dict__[m] = nop
         else:
             # if fh does not belong to a filename, deactivate draw_image
-            if not os.path.exists(fh.name):
+            if not hasattr(fh, 'name') or not os.path.exists(fh.name):
+                warnings.warn("streamed pgf-code does not support raster "
+                              "graphics, consider using the pgf-to-pdf option",
+                              UserWarning)
                 self.__dict__["draw_image"] = lambda *args, **kwargs: None
 
     def draw_markers(self, gc, marker_path, marker_trans, path, trans, rgbFace=None):
@@ -619,9 +624,7 @@ class RendererPgf(RendererBase):
         fname = os.path.splitext(os.path.basename(self.fh.name))[0]
         fname_img = "%s-img%d.png" % (fname, self.image_counter)
         self.image_counter += 1
-        im.flipud_out()
-        rows, cols, buf = im.as_rgba_str()
-        _png.write_png(buf, cols, rows, os.path.join(path, fname_img))
+        _png.write_png(np.array(im)[::-1], os.path.join(path, fname_img))
 
         # reference the image in the pgf picture
         writeln(self.fh, r"\begin{pgfscope}")
@@ -638,7 +641,7 @@ class RendererPgf(RendererBase):
         # prepare string for tex
         s = common_texification(s)
         prop_cmds = _font_properties_str(prop)
-        s = r"{%s %s}" % (prop_cmds, s)
+        s = r"%s %s" % (prop_cmds, s)
 
 
         writeln(self.fh, r"\begin{pgfscope}")
@@ -652,6 +655,7 @@ class RendererPgf(RendererBase):
             writeln(self.fh, r"\definecolor{textcolor}{rgb}{%f,%f,%f}" % rgb)
             writeln(self.fh, r"\pgfsetstrokecolor{textcolor}")
             writeln(self.fh, r"\pgfsetfillcolor{textcolor}")
+            s = r"\color{textcolor}" + s
 
         f = 1.0 / self.figure.dpi
         text_args = []
@@ -737,7 +741,7 @@ def new_figure_manager_given_figure(num, figure):
     return manager
 
 
-class TmpDirCleaner:
+class TmpDirCleaner(object):
     remaining_tmpdirs = set()
 
     @staticmethod
@@ -834,11 +838,8 @@ class FigureCanvasPgf(FigureCanvasBase):
             with codecs.open(fname_or_fh, "w", encoding="utf-8") as fh:
                 self._print_pgf_to_fh(fh, *args, **kwargs)
         elif is_writable_file_like(fname_or_fh):
-            if not os.path.exists(fname_or_fh.name):
-                warnings.warn("streamed pgf-code does not support raster "
-                              "graphics, consider using the pgf-to-pdf option",
-                              UserWarning)
-            self._print_pgf_to_fh(fname_or_fh, *args, **kwargs)
+            fh = codecs.getwriter("utf-8")(fname_or_fh)
+            self._print_pgf_to_fh(fh, *args, **kwargs)
         else:
             raise ValueError("filename must be a path")
 

@@ -45,19 +45,25 @@ def _process_text_args(override, fontdict=None, **kwargs):
 # Extracted from Text's method to serve as a function
 def get_rotation(rotation):
     """
-    Return the text angle as float.
+    Return the text angle as float. The returned
+    angle is between 0 and 360 deg.
 
     *rotation* may be 'horizontal', 'vertical', or a numeric value in degrees.
     """
-    if rotation in ('horizontal', None):
-        angle = 0.
-    elif rotation == 'vertical':
-        angle = 90.
-    else:
+    try:
         angle = float(rotation)
+    except (ValueError, TypeError):
+        isString = isinstance(rotation, six.string_types)
+        if ((isString and rotation == 'horizontal') or rotation is None):
+            angle = 0.
+        elif (isString and rotation == 'vertical'):
+            angle = 90.
+        else:
+            raise ValueError("rotation is {0} expected either 'horizontal'"
+                             " 'vertical', numeric value or"
+                             "None".format(rotation))
+
     return angle % 360
-
-
 # these are not available for the object inspector until after the
 # class is build so we define an initial set here for the init
 # function and they will be overridden after object defn
@@ -83,16 +89,17 @@ docstring.interpd.update(Text="""
     linespacing                float
     lod                        [True | False]
     multialignment             ['left' | 'right' | 'center' ]
-    name or fontname           string eg,
+    name or fontname           string e.g.,
                                ['Sans' | 'Courier' | 'Helvetica' ...]
     position                   (x,y)
     rotation                   [ angle in degrees 'vertical' | 'horizontal'
     rotation_mode              [ None | 'anchor']
-    size or fontsize           [size in points | relative size eg 'smaller',
+    size or fontsize           [size in points | relative size e.g., 'smaller',
                                                                   'x-large']
     style or fontstyle         [ 'normal' | 'italic' | 'oblique']
     text                       string
     transform                  a matplotlib.transform transformation instance
+    usetex                     [True | False | None]
     variant                    ['normal' | 'small-caps']
     verticalalignment or va    ['center' | 'top' | 'bottom' | 'baseline']
     visible                    [True | False]
@@ -167,6 +174,7 @@ class Text(Artist):
                  rotation=None,
                  linespacing=None,
                  rotation_mode=None,
+                 usetex=None,          # defaults to rcParams['text.usetex']
                  **kwargs
                  ):
         """
@@ -189,6 +197,7 @@ class Text(Artist):
 
         self.set_text(text)
         self.set_color(color)
+        self.set_usetex(usetex)
         self._verticalalignment = verticalalignment
         self._horizontalalignment = horizontalalignment
         self._multialignment = multialignment
@@ -437,7 +446,7 @@ class Text(Artist):
     def set_bbox(self, rectprops):
         """
         Draw a bounding box around self.  rectprops are any settable
-        properties for a rectangle, eg facecolor='red', alpha=0.5.
+        properties for a rectangle, e.g., facecolor='red', alpha=0.5.
 
           t.set_bbox(dict(facecolor='red', alpha=0.5))
 
@@ -469,6 +478,8 @@ class Text(Artist):
         else:
             self._bbox_patch = None
             self._bbox = rectprops
+
+        self._update_clip_properties()
 
     def get_bbox_patch(self):
         """
@@ -520,6 +531,61 @@ class Text(Artist):
         fontsize_in_pixel = renderer.points_to_pixels(self.get_size())
         self._bbox_patch.set_mutation_scale(fontsize_in_pixel)
         self._bbox_patch.draw(renderer)
+
+    def _update_clip_properties(self):
+        clipprops = dict(clip_box=self.clipbox,
+                         clip_path=self._clippath,
+                         clip_on=self._clipon)
+
+        if self._bbox:
+            bbox = self._bbox.update(clipprops)
+        if self._bbox_patch:
+            bbox = self._bbox_patch.update(clipprops)
+
+    def set_clip_box(self, clipbox):
+        """
+        Set the artist's clip :class:`~matplotlib.transforms.Bbox`.
+
+        ACCEPTS: a :class:`matplotlib.transforms.Bbox` instance
+        """
+        super(Text, self).set_clip_box(clipbox)
+        self._update_clip_properties()
+
+    def set_clip_path(self, path, transform=None):
+        """
+        Set the artist's clip path, which may be:
+
+          * a :class:`~matplotlib.patches.Patch` (or subclass) instance
+
+          * a :class:`~matplotlib.path.Path` instance, in which case
+             an optional :class:`~matplotlib.transforms.Transform`
+             instance may be provided, which will be applied to the
+             path before using it for clipping.
+
+          * *None*, to remove the clipping path
+
+        For efficiency, if the path happens to be an axis-aligned
+        rectangle, this method will set the clipping box to the
+        corresponding rectangle and set the clipping path to *None*.
+
+        ACCEPTS: [ (:class:`~matplotlib.path.Path`,
+        :class:`~matplotlib.transforms.Transform`) |
+        :class:`~matplotlib.patches.Patch` | None ]
+        """
+        super(Text, self).set_clip_path(path, transform)
+        self._update_clip_properties()
+
+    def set_clip_on(self, b):
+        """
+        Set whether artist uses clipping.
+
+        When False artists will be visible out side of the axes which
+        can lead to unexpected results.
+
+        ACCEPTS: [True | False]
+        """
+        super(Text, self).set_clip_on(b)
+        self._update_clip_properties()
 
     @allow_rasterization
     def draw(self, renderer):
@@ -576,7 +642,7 @@ class Text(Artist):
                 renderer = PathEffectRenderer(self.get_path_effects(),
                                               renderer)
 
-            if rcParams['text.usetex']:
+            if self.get_usetex():
                 renderer.draw_tex(gc, x, y, clean_line,
                                   self._fontproperties, angle, mtext=mtext)
             else:
@@ -677,7 +743,7 @@ class Text(Artist):
         Return a hashable tuple of properties.
 
         Not intended to be human readable, but useful for backends who
-        want to cache derived information about text (eg layouts) and
+        want to cache derived information about text (e.g., layouts) and
         need to know if the text has changed.
         """
         x, y = self.get_position()
@@ -761,6 +827,8 @@ class Text(Artist):
             self._bbox = dict(facecolor=color, edgecolor=color)
         else:
             self._bbox.update(dict(facecolor=color))
+
+        self._update_clip_properties()
 
     def set_color(self, color):
         """
@@ -1004,6 +1072,30 @@ class Text(Artist):
         'alias for set_fontproperties'
         self.set_fontproperties(fp)
 
+    def set_usetex(self, usetex):
+        """
+        Set this `Text` object to render using TeX (or not).
+
+        If `None` is given, the option will be reset to use the value of
+        `rcParams['text.usetex']`
+        """
+        if usetex is None:
+            self._usetex = None
+        else:
+            self._usetex = bool(usetex)
+
+    def get_usetex(self):
+        """
+        Return whether this `Text` object will render using TeX.
+
+        If the user has not manually set this value, it will default to
+        the value of `rcParams['text.usetex']`
+        """
+        if self._usetex is None:
+            return rcParams['text.usetex']
+        else:
+            return self._usetex
+
 docstring.interpd.update(Text=artist.kwdoc(Text))
 docstring.dedent_interpd(Text.__init__)
 
@@ -1030,7 +1122,7 @@ class TextWithDash(Text):
     *dashrotation* specifies the rotation of the dash, and should
     generally stay *None*. In this case
     :meth:`~matplotlib.text.TextWithDash.get_dashrotation` returns
-    :meth:`~matplotlib.text.Text.get_rotation`.  (I.e., the dash takes
+    :meth:`~matplotlib.text.Text.get_rotation`.  (i.e., the dash takes
     its rotation from the text's rotation). Because the text center is
     projected onto the dash, major deviations in the rotation cause
     what may be considered visually unappealing results.
@@ -1121,7 +1213,7 @@ class TextWithDash(Text):
         Return a hashable tuple of properties.
 
         Not intended to be human readable, but useful for backends who
-        want to cache derived information about text (eg layouts) and
+        want to cache derived information about text (e.g., layouts) and
         need to know if the text has changed.
         """
         props = [p for p in Text.get_prop_tup(self)]
@@ -1648,7 +1740,7 @@ class _AnnotationBase(object):
     @cbook.deprecated('1.4', message='Use `xyann` instead',
                       name='xytext', alternative='xyann')
     def xytext(self):
-        self.xyann
+        return self.xyann
 
     @xytext.setter
     @cbook.deprecated('1.4', message='Use `xyann` instead',
@@ -1704,7 +1796,7 @@ class Annotation(Text, _AnnotationBase):
                     annotated.  If *d* is the distance between the text and
                     annotated point, shrink will shorten the arrow so the tip
                     and base are shink percent of the distance *d* away from
-                    the endpoints.  ie, ``shrink=0.05 is 5%%``
+                    the endpoints.  i.e., ``shrink=0.05 is 5%%``
         ?           any key for :class:`matplotlib.patches.polygon`
         =========   ===========================================================
 

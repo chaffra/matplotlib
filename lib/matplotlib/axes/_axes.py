@@ -2,11 +2,10 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import six
-from six.moves import reduce, xrange, zip
+from six.moves import reduce, xrange, zip, zip_longest
 
 import math
 import warnings
-import itertools
 
 import numpy as np
 from numpy import ma
@@ -124,9 +123,10 @@ class Axes(_AxesBase):
 
         Other parameters
         ----------------
-        Other keyword arguments are text properties, see
-        :class:`~matplotlib.text.Text` for a list of valid text
-        properties.
+        kwargs : text properties
+            Other keyword arguments are text properties, see
+            :class:`~matplotlib.text.Text` for a list of valid text
+            properties.
         """
         try:
             title = {'left': self._left_title,
@@ -359,6 +359,11 @@ class Axes(_AxesBase):
             drawn ones. Default is ``None`` which will take the value from
             the ``legend.markerscale`` :data:`rcParam <matplotlib.rcParams>`.
 
+        *markerfirst*: [ *True* | *False* ]
+            if *True*, legend marker is placed to the left of the legend label
+            if *False*, legend marker is placed to the right of the legend
+            label
+
         frameon : None or bool
             Control whether a frame should be drawn around the legend.
             Default is ``None`` which will take the value from the
@@ -453,7 +458,16 @@ class Axes(_AxesBase):
         handles = kwargs.pop('handles', None)
         labels = kwargs.pop('labels', None)
 
-        if handles is not None and labels is None:
+        if (handles is not None or labels is not None) and len(args):
+            warnings.warn("You have mixed positional and keyword "
+                          "arguments, some input will be "
+                          "discarded.")
+
+        # if got both handles and labels as kwargs, make same length
+        if handles and labels:
+            handles, labels = zip(*zip(handles, labels))
+
+        elif handles is not None and labels is None:
             labels = [handle.get_label() for handle in handles]
             for label, handle in zip(labels[:], handles[:]):
                 if label.startswith('_'):
@@ -465,7 +479,7 @@ class Axes(_AxesBase):
 
         elif labels is not None and handles is None:
             # Get as many handles as there are labels.
-            handles = [handle for handle, _
+            handles = [handle for handle, label
                        in zip(self._get_legend_handles(handlers), labels)]
 
         # No arguments - automatically detect labels and handles.
@@ -480,32 +494,13 @@ class Axes(_AxesBase):
         elif len(args) == 1:
             labels, = args
             # Get as many handles as there are labels.
-            handles = [handle for handle, _
+            handles = [handle for handle, label
                        in zip(self._get_legend_handles(handlers), labels)]
 
-        # Two arguments. Either:
+        # Two arguments:
         #   * user defined handles and labels
-        #   * user defined labels and location (deprecated)
         elif len(args) == 2:
-            if is_string_like(args[1]) or isinstance(args[1], int):
-                cbook.warn_deprecated('1.4', 'The "loc" positional argument '
-                                      'to legend is deprecated. Please use '
-                                      'the "loc" keyword instead.')
-                labels, loc = args
-                handles = [handle for handle, _
-                           in zip(self._get_legend_handles(handlers), labels)]
-                kwargs['loc'] = loc
-            else:
-                handles, labels = args
-
-        # Three arguments. User defined handles, labels and
-        # location (deprecated).
-        elif len(args) == 3:
-            cbook.warn_deprecated('1.4', 'The "loc" positional argument '
-                                         'to legend is deprecated. Please '
-                                         'use the "loc" keyword instead.')
-            handles, labels, loc = args
-            kwargs['loc'] = loc
+            handles, labels = args
 
         else:
             raise TypeError('Invalid arguments to legend.')
@@ -614,7 +609,7 @@ class Axes(_AxesBase):
             position of the label `s`
 
         xycoords : string, optional, default: "data"
-            string that indicates what tye of coordinates `xy` is. Examples:
+            string that indicates what type of coordinates `xy` is. Examples:
             "figure points", "figure pixels", "figure fraction", "axes
             points", .... See `matplotlib.text.Annotation` for more details.
 
@@ -678,12 +673,12 @@ class Axes(_AxesBase):
 
         Returns
         -------
-        `~matplotlib.lines.Line2D`
+        :class:`~matplotlib.lines.Line2D`
 
         Notes
         -----
-        kwargs are the same as kwargs to plot, and can be
-        used to control the line properties.  e.g.,
+        kwargs are passed to :class:`~matplotlib.lines.Line2D` and can be used
+        to control the line properties.
 
         Examples
         --------
@@ -696,7 +691,7 @@ class Axes(_AxesBase):
 
             >>> axhline(y=1)
 
-        * draw a default hline at 'y' = .5 that spans the the middle half of
+        * draw a default hline at 'y' = .5 that spans the middle half of
           the xrange::
 
             >>> axhline(y=.5, xmin=0.25, xmax=0.75)
@@ -740,16 +735,16 @@ class Axes(_AxesBase):
             x position in data coordinates of the vertical line.
 
         ymin : scalar, optional, default: 0
-            Should be between 0 and 1, 0 being the far left of the plot, 1 the
-            far right of the plot.
+            Should be between 0 and 1, 0 being the bottom of the plot, 1 the
+            top of the plot.
 
         ymax : scalar, optional, default: 1
-            Should be between 0 and 1, 0 being the far left of the plot, 1 the
-            far right of the plot.
+            Should be between 0 and 1, 0 being the bottom of the plot, 1 the
+            top of the plot.
 
         Returns
         -------
-        `~matplotlib.lines.Line2D`
+        :class:`~matplotlib.lines.Line2D`
 
 
         Examples
@@ -1103,7 +1098,7 @@ class Axes(_AxesBase):
           A float or array-like containing floats.
 
         *colors*
-          must be a sequence of RGBA tuples (eg arbitrary color
+          must be a sequence of RGBA tuples (e.g., arbitrary color
           strings, etc, not allowed) or a list of such sequences
 
         *linestyles* :
@@ -1180,8 +1175,8 @@ class Axes(_AxesBase):
         if len(linewidths) == 1:
             linewidths = np.tile(linewidths, len(positions))
         if len(colors) == 1:
-            colors = np.asanyarray(colors)
-            colors = np.tile(colors, [len(positions), 1])
+            colors = list(colors)
+            colors = colors * len(positions)
         if len(linestyles) == 1:
             linestyles = [linestyles] * len(positions)
 
@@ -2212,11 +2207,11 @@ class Axes(_AxesBase):
 
         %(BrokenBarHCollection)s
 
-        these can either be a single argument, ie::
+        these can either be a single argument, i.e.,::
 
           facecolors = 'black'
 
-        or a sequence of arguments for the various bars, ie::
+        or a sequence of arguments for the various bars, i.e.,::
 
           facecolors = ('black', 'red', 'green')
 
@@ -2320,7 +2315,8 @@ class Axes(_AxesBase):
     def pie(self, x, explode=None, labels=None, colors=None,
             autopct=None, pctdistance=0.6, shadow=False, labeldistance=1.1,
             startangle=None, radius=None, counterclock=True,
-            wedgeprops=None, textprops=None):
+            wedgeprops=None, textprops=None, center=(0, 0),
+            frame=False):
         r"""
         Plot a pie chart.
 
@@ -2330,7 +2326,8 @@ class Axes(_AxesBase):
               colors=('b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'),
               autopct=None, pctdistance=0.6, shadow=False,
               labeldistance=1.1, startangle=None, radius=None,
-              counterclock=True, wedgeprops=None, textprops=None)
+              counterclock=True, wedgeprops=None, textprops=None,
+              center = (0, 0), frame = False )
 
         Make a pie chart of array *x*.  The fractional area of each
         wedge is given by x/sum(x).  If sum(x) <= 1, then the values
@@ -2388,6 +2385,11 @@ class Axes(_AxesBase):
           *textprops*: [ *None* | dict of key value pairs ]
             Dict of arguments to pass to the text objects.
 
+          *center*: [ (0,0) | sequence of 2 scalars ]
+          Center position of the chart.
+
+          *frame*: [ *False* | *True* ]
+            Plot axes frame with the chart.
 
         The pie chart will probably look best if the figure and axes are
         square, or the Axes aspect is equal.  e.g.::
@@ -2414,7 +2416,6 @@ class Axes(_AxesBase):
           :class:`~matplotlib.text.Text` instances for the numeric
           labels.
         """
-        self.set_frame_on(False)
 
         x = np.asarray(x).astype(np.float32)
 
@@ -2431,7 +2432,6 @@ class Axes(_AxesBase):
         if colors is None:
             colors = ('b', 'g', 'r', 'c', 'm', 'y', 'k', 'w')
 
-        center = 0, 0
         if radius is None:
             radius = 1
 
@@ -2514,10 +2514,15 @@ class Axes(_AxesBase):
             theta1 = theta2
             i += 1
 
-        self.set_xlim((-1.25, 1.25))
-        self.set_ylim((-1.25, 1.25))
-        self.set_xticks([])
-        self.set_yticks([])
+        if not frame:
+            self.set_frame_on(False)
+
+            self.set_xlim((-1.25 + center[0],
+                            1.25 + center[0]))
+            self.set_ylim((-1.25 + center[1],
+                            1.25 + center[1]))
+            self.set_xticks([])
+            self.set_yticks([])
 
         if autopct is None:
             return slices, texts
@@ -2883,7 +2888,7 @@ class Axes(_AxesBase):
 
         return errorbar_container  # (l0, caplines, barcols)
 
-    def boxplot(self, x, notch=False, sym='b+', vert=True, whis=1.5,
+    def boxplot(self, x, notch=False, sym=None, vert=True, whis=1.5,
                 positions=None, widths=None, patch_artist=False,
                 bootstrap=None, usermedians=None, conf_intervals=None,
                 meanline=False, showmeans=False, showcaps=True,
@@ -2919,11 +2924,13 @@ class Axes(_AxesBase):
             If False, produces a rectangular box plot.
             If True, will produce a notched box plot
 
-          sym : str, default = 'b+'
+          sym : str or None, default = None
             The default symbol for flier points.
             Enter an empty string ('') if you don't want to show fliers.
+            If `None`, then the fliers default to 'b+'  If you want more
+            control use the fliersprop kwarg.
 
-          vert : bool, default = False
+          vert : bool, default = True
             If True (default), makes the boxes vertical.
             If False, makes horizontal boxes.
 
@@ -3021,10 +3028,11 @@ class Axes(_AxesBase):
         Returns
         -------
 
-        A dictionary mapping each component of the boxplot
-        to a list of the :class:`matplotlib.lines.Line2D`
-        instances created. That dictionary has the following keys
-        (assuming vertical boxplots):
+        result : dict
+            A dictionary mapping each component of the boxplot
+            to a list of the :class:`matplotlib.lines.Line2D`
+            instances created. That dictionary has the following keys
+            (assuming vertical boxplots):
 
             - boxes: the main body of the boxplot showing the quartiles
               and the median's confidence intervals if enabled.
@@ -3043,10 +3051,38 @@ class Axes(_AxesBase):
         """
         bxpstats = cbook.boxplot_stats(x, whis=whis, bootstrap=bootstrap,
                                        labels=labels)
+        # make sure we have a dictionary
         if flierprops is None:
-            flierprops = dict(sym=sym)
-        else:
-            flierprops['sym'] = sym
+            flierprops = dict()
+        # if non-default sym value, put it into the flier dictionary
+        # the logic for providing the default symbol ('b+') now lives
+        # in bxp in the initial value of final_flierprops
+        # handle all of the `sym` related logic here so we only have to pass
+        # on the flierprops dict.
+        if sym is not None:
+            # no-flier case, which should really be done with
+            # 'showfliers=False' but none-the-less deal with it to keep back
+            # compatibility
+            if sym == '':
+                # blow away existing dict and make one for invisible markers
+                flierprops = dict(linestyle='none', marker='',
+                    color='none')
+                # turn the fliers off just to be safe
+                showfliers = False
+            # now process the symbol string
+            else:
+                # process the symbol string
+                # discarded linestyle
+                _, marker, color = _process_plot_format(sym)
+                # if we have a marker, use it
+                if marker is not None:
+                    flierprops['marker'] = marker
+                # if we have a color, use it
+                if color is not None:
+                    # assume that if color is passed in the user want
+                    # filled symbol, if the users want more control use
+                    # flierprops
+                    flierprops['color'] = color
 
         # replace medians if necessary:
         if usermedians is not None:
@@ -3140,7 +3176,7 @@ class Axes(_AxesBase):
           - ``fliers``: Data beyond the whiskers (sequence of floats).
             Needed if ``showfliers=True``.
 
-          - ``cilo`` & ``ciho``: Lower and upper confidence intervals
+          - ``cilo`` & ``cihi``: Lower and upper confidence intervals
             about the median. Needed if ``shownotches=True``.
 
           - ``label``: Name of the dataset (string). If available,
@@ -3285,27 +3321,10 @@ class Axes(_AxesBase):
             final_whiskerprops.update(whiskerprops)
 
         # set up the default flier properties
-        final_flierprops = dict(linestyle='none', marker='+',
-                    markeredgecolor='b',
-                    markerfacecolor='none')
+        final_flierprops = dict(linestyle='none', marker='+', color='blue')
+
         # flier (outlier) properties
         if flierprops is not None:
-            sym = flierprops.pop('sym', None)
-
-            # watch inverted logic, checks for non-default
-            # value of `sym`
-            if not (sym == '' or (sym is None)):
-                # process the symbol string
-                # discarded linestyle
-                _, marker, color = _process_plot_format(sym)
-                if marker is not None:
-                    flierprops['marker'] = marker
-                if color is not None:
-                    flierprops['color'] = color
-                    # assume that if color is passed in the user want
-                    # filled symbol
-                    flierprops['markeredgecolor'] = color
-                    flierprops['markerfacecolor'] = color
             final_flierprops.update(flierprops)
 
         # median line properties
@@ -4035,7 +4054,11 @@ class Axes(_AxesBase):
             ind = coarse.searchsorted(x).clip(0, len(coarse) - 1)
             mus = np.zeros(len(coarse))
             for i in range(len(coarse)):
-                mu = reduce_C_function(y[ind == i])
+                yi = y[ind == i]
+                if len(yi) > 0:
+                    mu = reduce_C_function(yi)
+                else:
+                    mu = np.nan
                 mus[i] = mu
             return mus
 
@@ -5032,6 +5055,7 @@ class Axes(_AxesBase):
 
           *edgecolors*: [*None* | ``'None'`` | ``'face'`` | color |
                          color sequence]
+
             If *None*, the rc setting is used by default.
 
             If ``'None'``, edges will not be visible.
@@ -5385,14 +5409,16 @@ class Axes(_AxesBase):
             Input values, this takes either a single array or a sequency of
             arrays which are not required to be of the same length
 
-        bins : integer or array_like, optional, default: 10
+        bins : integer or array_like, optional
             If an integer is given, `bins + 1` bin edges are returned,
             consistently with :func:`numpy.histogram` for numpy version >=
             1.3.
 
             Unequally spaced bins are supported if `bins` is a sequence.
 
-        range : tuple, optional, default: None
+            default is 10
+
+        range : tuple or None, optional
             The lower and upper range of the bins. Lower and upper outliers
             are ignored. If not provided, `range` is (x.min(), x.max()). Range
             has no effect if `bins` is a sequence.
@@ -5401,20 +5427,26 @@ class Axes(_AxesBase):
             is based on the specified bin range instead of the
             range of x.
 
-        normed : boolean, optional, default: False
+            Default is ``None``
+
+        normed : boolean, optional
             If `True`, the first element of the return tuple will
             be the counts normalized to form a probability density, i.e.,
-            ``n/(len(x)`dbin)``, ie the integral of the histogram will sum to
-            1. If *stacked* is also *True*, the sum of the histograms is
+            ``n/(len(x)`dbin)``, i.e., the integral of the histogram will sum
+            to 1. If *stacked* is also *True*, the sum of the histograms is
             normalized to 1.
 
-        weights : array_like, shape (n, ), optional, default: None
+            Default is ``False``
+
+        weights : (n, ) array_like or None, optional
             An array of weights, of the same shape as `x`.  Each value in `x`
             only contributes its associated weight towards the bin count
             (instead of 1).  If `normed` is True, the weights are normalized,
             so that the integral of the density over the range remains 1.
 
-        cumulative : boolean, optional, default : False
+            Default is ``None``
+
+        cumulative : boolean, optional
             If `True`, then a histogram is computed where each bin gives the
             counts in that bin plus all bins for smaller values. The last bin
             gives the total number of datapoints.  If `normed` is also `True`
@@ -5424,13 +5456,17 @@ class Axes(_AxesBase):
             `True`, then the histogram is normalized such that the first bin
             equals 1.
 
-        bottom : array_like, scalar, or None, default: None
+            Default is ``False``
+
+        bottom : array_like, scalar, or None
             Location of the bottom baseline of each bin.  If a scalar,
             the base line for each bin is shifted by the same amount.
             If an array, each bin is shifted independently and the length
             of bottom must match the number of bins.  If None, defaults to 0.
 
-        histtype : ['bar' | 'barstacked' | 'step' | 'stepfilled'], optional
+            Default is ``None``
+
+        histtype : {'bar', 'barstacked', 'step',  'stepfilled'}, optional
             The type of histogram to draw.
 
             - 'bar' is a traditional bar-type histogram.  If multiple data
@@ -5445,7 +5481,9 @@ class Axes(_AxesBase):
             - 'stepfilled' generates a lineplot that is by default
               filled.
 
-        align : ['left' | 'mid' | 'right'], optional, default: 'mid'
+            Default is 'bar'
+
+        align : {'left', 'mid', 'right'}, optional
             Controls how the histogram is plotted.
 
                 - 'left': bars are centered on the left bin edges.
@@ -5454,33 +5492,46 @@ class Axes(_AxesBase):
 
                 - 'right': bars are centered on the right bin edges.
 
-        orientation : ['horizontal' | 'vertical'], optional
+            Default is 'mid'
+
+        orientation : {'horizontal', 'vertical'}, optional
             If 'horizontal', `~matplotlib.pyplot.barh` will be used for
             bar-type histograms and the *bottom* kwarg will be the left edges.
 
-        rwidth : scalar, optional, default: None
+        rwidth : scalar or None, optional
             The relative width of the bars as a fraction of the bin width.  If
-            `None`, automatically compute the width. Ignored if `histtype` =
-            'step' or 'stepfilled'.
+            `None`, automatically compute the width.
 
-        log : boolean, optional, default : False
+            Ignored if `histtype` is 'step' or 'stepfilled'.
+
+            Default is ``None``
+
+        log : boolean, optional
             If `True`, the histogram axis will be set to a log scale. If `log`
             is `True` and `x` is a 1D array, empty bins will be filtered out
             and only the non-empty (`n`, `bins`, `patches`) will be returned.
 
-        color : color or array_like of colors, optional, default: None
+            Default is ``False``
+
+        color : color or array_like of colors or None, optional
             Color spec or sequence of color specs, one per dataset.  Default
             (`None`) uses the standard line color sequence.
 
-        label : string, optional, default: ''
+            Default is ``None``
+
+        label : string or None, optional
             String, or sequence of strings to match multiple datasets.  Bar
             charts yield multiple patches per dataset, but only the first gets
             the label, so that the legend command will work as expected.
 
-        stacked : boolean, optional, default : False
+            default is ``None``
+
+        stacked : boolean, optional
             If `True`, multiple data are stacked on top of each other If
             `False` multiple data are aranged side by side if histtype is
             'bar' or on top of each other if histtype is 'step'
+
+            Default is ``False``
 
         Returns
         -------
@@ -5524,6 +5575,9 @@ class Axes(_AxesBase):
         if not self._hold:
             self.cla()
 
+        if np.isscalar(x):
+            x = [x]
+
         # xrange becomes range after 2to3
         bin_range = range
         range = __builtins__["range"]
@@ -5553,9 +5607,6 @@ class Axes(_AxesBase):
         flat = np.ravel(x)
         if len(flat) == 0:
             raise ValueError("x must have at least one data point")
-        elif len(flat) == 1 and not binsgiven:
-            raise ValueError(
-                "x has only one data point. bins or range kwarg must be given")
 
         # Massage 'x' for processing.
         # NOTE: Be sure any changes here is also done below to 'weights'
@@ -5837,16 +5888,10 @@ class Axes(_AxesBase):
             labels = [None]
         elif is_string_like(label):
             labels = [label]
-        elif is_sequence_of_strings(label):
-            labels = list(label)
         else:
-            raise ValueError(
-                'invalid label: must be string or sequence of strings')
+            labels = [str(lab) for lab in label]
 
-        if len(labels) < nx:
-            labels += [None] * (nx - len(labels))
-
-        for (patch, lbl) in zip(patches, labels):
+        for (patch, lbl) in zip_longest(patches, labels, fillvalue=None):
             if patch:
                 p = patch[0]
                 p.update(kwargs)

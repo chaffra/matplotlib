@@ -152,10 +152,11 @@ C/C++ extensions
   address C++, but most of its admonitions still apply).
 
 * Interfacing with Python may be done either with the raw Python/C API
-  or Cython.  Use of PyCXX is discouraged for new code.
+  or Cython.
 
 * Python/C interface code should be kept separate from the core C/C++
-  code.  The interface code should be named `FOO_wrap.cpp`.
+  code.  The interface code should be named `FOO_wrap.cpp` or
+  `FOO_wrapper.cpp`.
 
 * Header file documentation (aka docstrings) should be in Numpydoc
   format.  We don't plan on using automated tools for these
@@ -200,7 +201,7 @@ illustration) just passes them on to the
       self.update(kwargs)
 
 ``update`` does the work looking for methods named like
-``set_property`` if ``property`` is a keyword argument.  I.e., no one
+``set_property`` if ``property`` is a keyword argument.  i.e., no one
 looks at the keywords, they just get passed through the API to the
 artist constructor which looks for suitably named methods and calls
 them with the value.
@@ -269,15 +270,20 @@ external backend via the ``module`` directive.  if
 
     backend : module://my_backend
 
-* with the use directive is your script::
+
+* with the :envvar:`MPLBACKEND` environment variable::
+
+    > export MPLBACKEND="module://my_backend"
+    > python simple_plot.py
+
+* from the command shell with the `-d` flag::
+
+    > python simple_plot.py -dmodule://my_backend
+
+* with the use directive in your script::
 
     import matplotlib
     matplotlib.use('module://my_backend')
-
-* from the command shell with the -d flag::
-
-    > python simple_plot.py -d module://my_backend
-
 
 .. _sample-data:
 
