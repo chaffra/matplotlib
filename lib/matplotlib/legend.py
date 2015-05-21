@@ -185,6 +185,8 @@ class Legend(Artist):
                  bbox_transform=None,  # transform for the bbox
                  frameon=None,  # draw frame
                  handler_map=None,
+                 
+                 draggable= True,
                  ):
         """
         - *parent*: the artist that contains the legend
@@ -393,6 +395,7 @@ class Legend(Artist):
         self.set_title(title)
         self._last_fontsize_points = self._fontsize
         self._draggable = None
+        self.draggable(draggable)
 
     def _set_artist_props(self, a):
         """

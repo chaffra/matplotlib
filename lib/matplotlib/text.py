@@ -1515,7 +1515,8 @@ class _AnnotationBase(object):
     def __init__(self,
                  xy,
                  xycoords='data',
-                 annotation_clip=None):
+                 annotation_clip=None,
+                 draggable = True):
 
         self.xy = xy
         self.xycoords = xycoords

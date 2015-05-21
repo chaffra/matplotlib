@@ -247,24 +247,25 @@ class Line2D(Artist):
             return "Line2D()"
 
     def __init__(self, xdata, ydata,
-                 linewidth=None,  # all Nones default to rc
-                 linestyle=None,
-                 color=None,
-                 marker=None,
-                 markersize=None,
-                 markeredgewidth=None,
-                 markeredgecolor=None,
-                 markerfacecolor=None,
-                 markerfacecoloralt='none',
-                 fillstyle='full',
-                 antialiased=None,
-                 dash_capstyle=None,
-                 solid_capstyle=None,
-                 dash_joinstyle=None,
-                 solid_joinstyle=None,
-                 pickradius=5,
-                 drawstyle=None,
-                 markevery=None,
+                 linewidth       = None, # all Nones default to rc
+                 linestyle       = None,
+                 color           = None,
+                 marker          = None,
+                 markersize      = None,
+                 markeredgewidth = None,
+                 markeredgecolor = None,
+                 markerfacecolor = None,
+                 markerfacecoloralt = 'none',
+                 fillstyle       = 'full',
+                 antialiased     = None,
+                 dash_capstyle   = None,
+                 solid_capstyle  = None,
+                 dash_joinstyle  = None,
+                 solid_joinstyle = None,
+                 pickradius      = 5,
+                 drawstyle       = None,
+                 markevery       = None,
+                 pointlabels     = None,
                  **kwargs
                  ):
         """
@@ -325,6 +326,7 @@ class Line2D(Artist):
         self.set_color(color)
         self._marker = MarkerStyle()
         self.set_marker(marker)
+        self.set_pointlabels(pointlabels)
         self.set_markevery(markevery)
         self.set_antialiased(antialiased)
         self.set_markersize(markersize)
@@ -343,6 +345,8 @@ class Line2D(Artist):
         self.update(kwargs)
         self.pickradius = pickradius
         self.ind_offset = 0
+        
+        #self.set_picker(pickradius)
         if is_numlike(self._picker):
             self.pickradius = self._picker
 
@@ -715,7 +719,19 @@ class Line2D(Artist):
                     gc.set_sketch_params(*self.get_sketch_params())
 
                 drawFunc(renderer, gc, tpath, affine.frozen())
+
                 gc.restore()
+                
+        if self._pointlabels is not None:
+            gc = renderer.new_gc()
+            self._set_gc_clip(gc)
+            gc.set_foreground(self.get_markeredgecolor())
+            gc.set_linewidth(self._markeredgewidth)
+            gc.set_alpha(self._alpha)
+            gc.set_snap(False)
+            tpath, affine = self._transformed_path.get_transformed_points_and_affine()
+            self._draw_pointlabels(renderer, gc, tpath, affine.frozen())
+            gc.restore()
 
         if self._marker:
             gc = renderer.new_gc()
@@ -1080,6 +1096,15 @@ class Line2D(Artist):
         """
         self._yorig = y
         self._invalidy = True
+        
+    def set_pointlabels(self, seq):
+        """
+        Set the labels for the points in xy_data
+        """
+        self._pointlabels = seq
+        
+    def get_pointlabels(self):
+        return self._pointlabels
 
     def set_dashes(self, seq):
         """
@@ -1097,6 +1122,46 @@ class Line2D(Artist):
 
     def _draw_lines(self, renderer, gc, path, trans):
         self._lineFunc(renderer, gc, path, trans)
+        
+    def _draw_pointlabels(self, renderer, gc, path, trans):
+        """
+        Draws point labels using TextPath objects.
+        by Chaffra Affouda
+        """
+        
+        from matplotlib.text import TextPath
+        import transforms
+
+        props = FontProperties(size=1.0)
+        texts = []
+        for label in self.get_pointlabels():
+            text = TextPath(xy=(0,0), s=label, fontproperties=props,
+                        usetex=rcParams['text.usetex'])
+            texts.append(text)
+                
+        segments = path.iter_segments(trans, simplify=False)
+        
+        for text, segment in zip(texts,segments):
+            if len(text.vertices) == 0:
+                return
+            
+            xmin, ymin = text.vertices.min(axis=0)
+            xmax, ymax = text.vertices.max(axis=0)
+            width = xmax - xmin
+            height = ymax - ymin
+            max_dim = max(width, height)
+            text_trans = Affine2D() \
+                .translate(-xmin + 0.5 * -width, -ymin + 0.5 * -height) \
+                .scale((renderer.points_to_pixels(self.get_markersize()) / max_dim))
+
+            rgbFace = self._get_rgb_face()
+            
+            vertices = segment[0]
+            if len(vertices):
+                x, y = vertices[-2:]
+                renderer.draw_path(gc, text,
+                               text_trans + transforms.Affine2D().translate(x, y),
+                               rgbFace)
 
     def _draw_steps_pre(self, renderer, gc, path, trans):
         vertices = self._xy
