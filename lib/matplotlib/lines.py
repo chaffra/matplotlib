@@ -1087,6 +1087,8 @@ class Line2D(Artist):
         """
         self._xorig = x
         self._invalidx = True
+        if self.axes:
+            self.axes.relim()
 
     def set_ydata(self, y):
         """
@@ -1096,6 +1098,8 @@ class Line2D(Artist):
         """
         self._yorig = y
         self._invalidy = True
+        if self.axes:
+            self.axes.relim()
         
     def set_pointlabels(self, seq):
         """
