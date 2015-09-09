@@ -2698,12 +2698,12 @@ class NavigationToolbar2(object):
     #   name_of_method, # name of the method in NavigationToolbar2 to call
     # )
     toolitems = (
-        ('Home', 'Reset original view', 'home.png', 'home'),
-        ('Back', 'Back to  previous view', 'back.png', 'back'),
-        ('Forward', 'Forward to next view', 'forward.png', 'forward'),
+        ('Home', 'Reset original view', 'home', 'home'),
+        ('Back', 'Back to  previous view', 'back', 'back'),
+        ('Forward', 'Forward to next view', 'forward', 'forward'),
         (None, None, None, None),
-        ('Pan', 'Pan axes with left mouse, zoom with right', 'move.png', 'pan'),
-        ('Zoom', 'Zoom to rectangle', 'zoom_to_rect.png', 'zoom'),
+        ('Pan', 'Pan axes with left mouse, zoom with right', 'move', 'pan'),
+        ('Zoom', 'Zoom to rectangle', 'zoom_to_rect', 'zoom'),
         (None, None, None, None),
         ('Subplots', 'Configure subplots', 'subplots', 'configure_subplots'),
         ('Save', 'Save the figure', 'filesave', 'save_figure'),

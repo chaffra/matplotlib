@@ -3,6 +3,7 @@ from __future__ import print_function, absolute_import
 from distutils import sysconfig
 from distutils import version
 from distutils.core import Extension
+from distutils.util import get_platform
 import glob
 import io
 import multiprocessing
@@ -14,6 +15,7 @@ import warnings
 from textwrap import fill
 
 PY3 = (sys.version_info[0] >= 3)
+MSYS = "MSYSTEM" in os.environ
 
 
 try:
@@ -47,6 +49,31 @@ if sys.platform != 'win32':
         from commands import getstatusoutput
     else:
         from subprocess import getstatusoutput
+elif MSYS:
+    from subprocess import Popen, PIPE, STDOUT
+
+    def getstatusoutput(cmd, input=None, cwd=None, env=None):
+        "Replacement for commands.getstatusoutput which does not work on Windows."
+        "Got it from fenics/instant project"
+        if isinstance(cmd, str):
+            cmd = cmd.strip().split()
+
+        # NOTE: This is not OFED-fork-safe! Check subprocess.py,
+        #       http://bugs.python.org/issue1336#msg146685
+        #       OFED-fork-safety means that parent should not
+        #       touch anything between fork() and exec(),
+        #       which is not met in subprocess module. See
+        #       https://www.open-mpi.org/faq/?category=openfabrics#ofa-fork
+        #       http://www.openfabrics.org/downloads/OFED/release_notes/OFED_3.12_rc1_release_notes#3.03
+        pipe = Popen(cmd, shell=False, cwd=cwd, env=env, stdout=PIPE, stderr=STDOUT)
+
+        (output, errout) = pipe.communicate(input=input)
+        assert not errout
+
+        status = pipe.returncode
+        output = output.decode('utf-8') if sys.version_info[0] > 2 else output
+
+        return (status, output)
 
 
 if PY3:
@@ -119,7 +146,7 @@ def has_include_file(include_dirs, filename):
     Returns `True` if `filename` can be found in one of the
     directories in `include_dirs`.
     """
-    if sys.platform == 'win32':
+    if sys.platform == 'win32' and not MSYS:
         include_dirs += os.environ.get('INCLUDE', '.').split(';')
     for dir in include_dirs:
         if os.path.exists(os.path.join(dir, filename)):
@@ -249,7 +276,7 @@ class PkgConfig(object):
         """
         Determines whether pkg-config exists on this machine.
         """
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and not MSYS:
             self.has_pkgconfig = False
         else:
             self.set_pkgconfig_path()
@@ -882,11 +909,16 @@ class FreeType(SetupPackage):
     name = "freetype"
 
     def check(self):
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and not MSYS:
             check_include_file(get_include_dirs(), 'ft2build.h', 'freetype')
             return 'Using unknown version found on system.'
-
-        status, output = getstatusoutput("freetype-config --ftversion")
+        
+        #env = os.environ.copy()
+        if MSYS:
+            status, output = getstatusoutput("bash freetype-config --ftversion")
+        else:
+            status, output = getstatusoutput("freetype-config --ftversion")
+            
         if status == 0:
             version = output
         else:
@@ -957,11 +989,14 @@ class Png(SetupPackage):
     name = "png"
 
     def check(self):
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and not MSYS:
             check_include_file(get_include_dirs(), 'png.h', 'png')
             return 'Using unknown version found on system.'
+        if MSYS:
+            status, output = getstatusoutput("bash libpng-config --version")
+        else:
+            status, output = getstatusoutput("libpng-config --version")
 
-        status, output = getstatusoutput("libpng-config --version")
         if status == 0:
             version = output
         else:
@@ -1290,6 +1325,8 @@ class BackendTkAgg(OptionalBackendPackage):
         self.tcl_tk_cache = None
 
     def check_requirements(self):
+        if MSYS:
+            raise CheckFailed("skipping due to configuration")
         try:
             if PY3:
                 import tkinter as Tkinter
@@ -1407,10 +1444,16 @@ class BackendTkAgg(OptionalBackendPackage):
             return None
 
         def get_var(file, varname):
+            if get_platform() == 'mingw' and MSYS:
+                executable="bash"
+            elif MSYS:
+                executable="sh"
+            else:
+                executable="/bin/sh"
             p = subprocess.Popen(
                 '. %s ; eval echo ${%s}' % (file, varname),
                 shell=True,
-                executable="/bin/sh",
+                executable=executable,
                 stdout=subprocess.PIPE)
             result = p.communicate()[0]
             return result.decode('ascii')
@@ -1482,7 +1525,7 @@ class BackendTkAgg(OptionalBackendPackage):
         return tcl_lib, tcl_inc, 'tcl', tk_lib, tk_inc, 'tk'
 
     def add_flags(self, ext):
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and not MSYS:
             major, minor1, minor2, s, tmp = sys.version_info
             if sys.version_info[0:2] < (3, 4):
                 ext.include_dirs.extend(['win32_static/include/tcl85'])
@@ -1618,7 +1661,7 @@ class BackendGtk(OptionalBackendPackage):
         return ext
 
     def add_flags(self, ext):
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and not MSYS:
             def getoutput(s):
                 ret = os.popen(s).read().strip()
                 return ret
@@ -1673,7 +1716,7 @@ class BackendGtk(OptionalBackendPackage):
                 'm' in ext.libraries):
                 ext.libraries.remove('m')
 
-        elif sys.platform != 'win32':
+        elif sys.platform != 'win32' or MSYS:
             pkg_config.setup_extension(ext, 'pygtk-2.0')
             pkg_config.setup_extension(ext, 'gtk+-2.0')
 
@@ -2100,7 +2143,7 @@ class Ghostscript(SetupPackage):
 
     def check(self):
         try:
-            if sys.platform == 'win32':
+            if sys.platform == 'win32' and not MSYS:
                 command = 'gswin32c --version'
                 try:
                     output = check_output(command, shell=True,
