@@ -18,7 +18,7 @@ The source code for the plot may be included in one of three ways:
 
           This is the caption for the plot
 
-     Additionally, one my specify the name of a function to call (with
+     Additionally, one may specify the name of a function to call (with
      no arguments) immediately after importing the module::
 
        .. plot:: path/to/plot.py plot_function1
@@ -133,8 +133,8 @@ The plot directive has the following configuration options:
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange
 
 import sys, os, shutil, io, re, textwrap
 from os.path import relpath

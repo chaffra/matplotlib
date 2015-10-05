@@ -1,10 +1,10 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange
 
-from nose.tools import assert_equal, assert_true, assert_raises
+from nose.tools import assert_equal, assert_true
 from matplotlib.testing.decorators import image_comparison, cleanup
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
@@ -156,6 +156,39 @@ def test_iterability_axes_argument():
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1, projection=MyClass())
     plt.close(fig)
+
+
+@cleanup
+def test_set_fig_size():
+    fig = plt.figure()
+
+    # check figwidth
+    fig.set_figwidth(5)
+    assert_equal(fig.get_figwidth(), 5)
+
+    # check figheight
+    fig.set_figheight(1)
+    assert_equal(fig.get_figheight(), 1)
+
+    # check using set_size_inches
+    fig.set_size_inches(2, 4)
+    assert_equal(fig.get_figwidth(), 2)
+    assert_equal(fig.get_figheight(), 4)
+
+    # check using tuple to first argument
+    fig.set_size_inches((1, 3))
+    assert_equal(fig.get_figwidth(), 1)
+    assert_equal(fig.get_figheight(), 3)
+
+
+@cleanup
+def test_axes_remove():
+    fig, axes = plt.subplots(2, 2)
+    axes[-1, -1].remove()
+    for ax in axes.ravel()[:-1]:
+        assert ax in fig.axes
+    assert axes[-1, -1] not in fig.axes
+    assert_equal(len(fig.axes), 3)
 
 
 if __name__ == "__main__":

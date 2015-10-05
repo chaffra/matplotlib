@@ -13,6 +13,7 @@
 .project
 .pydevproject
 .swp
+.idea
 
 # Compiled source #
 ###################
@@ -35,6 +36,7 @@ doc/_build
 dist
 # Egg metadata
 *.egg-info
+.eggs
 # tox testing tool
 .tox
 
@@ -67,3 +69,5 @@ examples/tests/*
 texput.log
 texput.aux
 result_images
+
+*.swp

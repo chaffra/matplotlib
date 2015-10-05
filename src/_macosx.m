@@ -39,6 +39,9 @@
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1060
 #define COMPILING_FOR_10_6
 #endif
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+#define COMPILING_FOR_10_7
+#endif
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 10100
 #define COMPILING_FOR_10_10
 #endif
@@ -47,6 +50,7 @@
 #ifndef COMPILING_FOR_10_5
 static int ngc = 0;    /* The number of graphics contexts in use */
 
+#include <Carbon/Carbon.h>
 
 /* For drawing Unicode strings with ATSUI */
 static ATSUStyle style = NULL;
@@ -2620,7 +2624,7 @@ setfont(CGContextRef cr, PyObject* family, float size, const char weight[],
 #endif
         CFRelease(string);
     }
-    if (font == NULL)
+    if (!font)
     {
         PyErr_SetString(PyExc_ValueError, "Could not load font");
     }
@@ -2648,7 +2652,6 @@ GraphicsContext_draw_text (GraphicsContext* self, PyObject* args)
     const char* italic;
     float angle;
     CTFontRef font;
-    CGColorRef color;
     CGFloat descent;
 #if PY33
     const char* text;
@@ -2697,22 +2700,16 @@ GraphicsContext_draw_text (GraphicsContext* self, PyObject* args)
         return NULL;
     }
 
-    color = CGColorCreateGenericRGB(self->color[0],
-                                    self->color[1],
-                                    self->color[2],
-                                    self->color[3]);
-
     keys[0] = kCTFontAttributeName;
-    keys[1] = kCTForegroundColorAttributeName;
+    keys[1] = kCTForegroundColorFromContextAttributeName;
     values[0] = font;
-    values[1] = color;
+    values[1] = kCFBooleanTrue;
     CFDictionaryRef attributes = CFDictionaryCreate(kCFAllocatorDefault,
                                         (const void**)&keys,
                                         (const void**)&values,
                                         2,
                                         &kCFTypeDictionaryKeyCallBacks,
                                         &kCFTypeDictionaryValueCallBacks);
-    CGColorRelease(color);
     CFRelease(font);
 
     CFAttributedStringRef string = CFAttributedStringCreate(kCFAllocatorDefault,
@@ -2768,18 +2765,37 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     const UniChar* text;
 #endif
 
-    CGFloat ascent;
-    CGFloat descent;
-    double width;
+    float descent;
+    float width;
+    float height;
+
     CGRect rect;
+    CGPoint point;
 
     CTFontRef font;
+
+    char data[8];
 
     CGContextRef cr = self->cr;
     if (!cr)
     {
-        PyErr_SetString(PyExc_RuntimeError, "CGContextRef is NULL");
-        return NULL;
+        CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
+        if (!colorspace) {
+            PyErr_SetString(PyExc_MemoryError, "Failed to create color space");
+            goto exit;
+        }
+        cr = CGBitmapContextCreate(data,
+                                   1,
+                                   1,
+                                   8,
+                                   1,
+                                   colorspace,
+                                   0);
+        CGColorSpaceRelease(colorspace);
+        if (!cr) {
+            PyErr_SetString(PyExc_MemoryError, "Failed to create bitmap context");
+            goto exit;
+        }
     }
 
 #if PY33
@@ -2789,7 +2805,7 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
                                 &family,
                                 &size,
                                 &weight,
-                                &italic)) return NULL;
+                                &italic)) goto exit;
     CFStringRef s = CFStringCreateWithCString(kCFAllocatorDefault, text, kCFStringEncodingUTF8);
 #else
     if(!PyArg_ParseTuple(args, "u#Ofss",
@@ -2805,7 +2821,7 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     if (!(font = setfont(cr, family, size, weight, italic)))
     {
         CFRelease(s);
-        return NULL;
+        goto exit;
     };
 
     CFStringRef keys[1];
@@ -2834,15 +2850,22 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     {
         PyErr_SetString(PyExc_RuntimeError,
                         "CTLineCreateWithAttributedString failed");
-        return NULL;
+        goto exit;
     }
 
-    width = CTLineGetTypographicBounds(line, &ascent, &descent, NULL);
+    point = CGContextGetTextPosition(cr);
     rect = CTLineGetImageBounds(line, cr);
-
     CFRelease(line);
+    if (!self->cr) CGContextRelease(cr);
 
-    return Py_BuildValue("fff", width, rect.size.height, descent);
+    width = rect.size.width;
+    height = rect.size.height;
+    descent = point.y - rect.origin.y;
+
+    return Py_BuildValue("fff", width, height, descent);
+exit:
+    if (cr && !self->cr) CGContextRelease(cr);
+    return NULL;
 }
 
 #else // Text drawing for OSX versions <10.5
@@ -2955,20 +2978,35 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     const char* italic;
 
     ATSFontRef atsfont;
+    Rect rect;
+
+    char data[8];
 
     CGContextRef cr = self->cr;
     if (!cr)
     {
-        PyErr_SetString(PyExc_RuntimeError, "CGContextRef is NULL");
-        return NULL;
+        CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceGray();
+        if (!colorspace) {
+            PyErr_SetString(PyExc_MemoryError, "Failed to create color space");
+            goto exit;
+        }
+        cr = CGBitmapContextCreate(data,
+                                   1,
+                                   1,
+                                   8,
+                                   1,
+                                   colorspace,
+                                   0);
+        CGColorSpaceRelease(colorspace);
+        if (!cr) {
+            PyErr_SetString(PyExc_MemoryError, "Failed to create bitmap context");
+            goto exit;
+        }
     }
 
-    if(!PyArg_ParseTuple(args, "u#Ofss", &text, &n, &family, &size, &weight, &italic)) return NULL;
+    if(!PyArg_ParseTuple(args, "u#Ofss", &text, &n, &family, &size, &weight, &italic)) goto exit;
 
-    if (!(atsfont = setfont(cr, family, size, weight, italic)))
-    {
-        return NULL;
-    }
+    if (!(atsfont = setfont(cr, family, size, weight, italic))) goto exit;
 
     OSStatus status = noErr;
     ATSUAttributeTag tags[] = {kATSUFontTag,
@@ -2988,7 +3026,7 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     if (status!=noErr)
     {
         PyErr_SetString(PyExc_RuntimeError, "ATSUSetAttributes failed");
-        return NULL;
+        goto exit;
     }
 
     status = ATSUSetTextPointerLocation(layout,
@@ -3000,7 +3038,7 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     {
         PyErr_SetString(PyExc_RuntimeError,
                         "ATSUCreateTextLayoutWithTextPtr failed");
-        return NULL;
+        goto exit;
     }
 
     status = ATSUSetRunStyle(layout,
@@ -3010,7 +3048,7 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     if (status!=noErr)
     {
         PyErr_SetString(PyExc_RuntimeError, "ATSUSetRunStyle failed");
-        return NULL;
+        goto exit;
     }
 
     ATSUAttributeTag tag = kATSUCGContextTag;
@@ -3020,26 +3058,26 @@ GraphicsContext_get_text_width_height_descent(GraphicsContext* self, PyObject* a
     if (status!=noErr)
     {
         PyErr_SetString(PyExc_RuntimeError, "ATSUSetLayoutControls failed");
-        return NULL;
+        goto exit;
     }
 
-    ATSUTextMeasurement before;
-    ATSUTextMeasurement after;
-    ATSUTextMeasurement ascent;
-    ATSUTextMeasurement descent;
-    status = ATSUGetUnjustifiedBounds(layout,
-                                      kATSUFromTextBeginning, kATSUToTextEnd,
-                                      &before, &after, &ascent, &descent);
+    status = ATSUMeasureTextImage(layout,
+                                  kATSUFromTextBeginning, kATSUToTextEnd,
+                                  0, 0, &rect);
     if (status!=noErr)
     {
-        PyErr_SetString(PyExc_RuntimeError, "ATSUGetUnjustifiedBounds failed");
-        return NULL;
+        PyErr_SetString(PyExc_RuntimeError, "ATSUMeasureTextImage failed");
+        goto exit;
     }
 
-    const float width = FixedToFloat(after-before);
-    const float height = FixedToFloat(ascent-descent);
+    const float width = rect.right-rect.left;
+    const float height = rect.bottom-rect.top;
+    const float descent = rect.bottom;
 
-    return Py_BuildValue("fff", width, height, FixedToFloat(descent));
+    return Py_BuildValue("fff", width, height, descent);
+exit:
+    if (cr && !self->cr) CGContextRelease(cr);
+    return NULL;
 }
 #endif
 
@@ -3950,7 +3988,6 @@ FigureManager_init(FigureManager *self, PyObject *args, PyObject *kwds)
     rect.size.height = height;
     rect.size.width = width;
 
-    NSApp = [NSApplication sharedApplication];
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     self->window = [self->window initWithContentRect: rect
                                          styleMask: NSTitledWindowMask
@@ -4849,9 +4886,12 @@ NavigationToolbar2_init(NavigationToolbar2 *self, PyObject *args, PyObject *kwds
 
     int i;
     NSRect rect;
+    NSSize size;
+    NSSize scale;
 
     const float gap = 2;
     const int height = 36;
+    const int imagesize = 24;
 
     const char* basedir;
 
@@ -4892,13 +4932,13 @@ NavigationToolbar2_init(NavigationToolbar2 *self, PyObject *args, PyObject *kwds
 
     NSButton* buttons[7];
 
-    NSString* images[7] = {@"home.png",
-                           @"back.png",
-                           @"forward.png",
-                           @"move.png",
-                           @"zoom_to_rect.png",
-                           @"subplots.png",
-                           @"filesave.png"};
+    NSString* images[7] = {@"home.pdf",
+                           @"back.pdf",
+                           @"forward.pdf",
+                           @"move.pdf",
+                           @"zoom_to_rect.pdf",
+                           @"subplots.pdf",
+                           @"filesave.pdf"};
 
     NSString* tooltips[7] = {@"Reset original view",
                              @"Back to  previous view",
@@ -4924,13 +4964,24 @@ NavigationToolbar2_init(NavigationToolbar2 *self, PyObject *args, PyObject *kwds
                                    NSMomentaryLightButton,
                                    NSMomentaryLightButton};
 
+    rect.origin.x = 0;
+    rect.origin.y = 0;
+    rect.size.width = imagesize;
+    rect.size.height = imagesize;
+#ifdef COMPILING_FOR_10_7
+    rect = [window convertRectToBacking: rect];
+#endif
+    size = rect.size;
+    scale.width = imagesize / size.width;
+    scale.height = imagesize / size.height;
+
     rect.size.width = 32;
     rect.size.height = 32;
     rect.origin.x = gap;
     rect.origin.y = 0.5*(height - rect.size.height);
+
     for (i = 0; i < 7; i++)
     {
-        const NSSize size = {24, 24};
         NSString* filename = [dir stringByAppendingPathComponent: images[i]];
         NSImage* image = [[NSImage alloc] initWithContentsOfFile: filename];
         buttons[i] = [[NSButton alloc] initWithFrame: rect];
@@ -4938,6 +4989,7 @@ NavigationToolbar2_init(NavigationToolbar2 *self, PyObject *args, PyObject *kwds
         [buttons[i] setBezelStyle: NSShadowlessSquareBezelStyle];
         [buttons[i] setButtonType: buttontypes[i]];
         [buttons[i] setImage: image];
+        [buttons[i] scaleUnitSquareToSize: scale];
         [buttons[i] setImagePosition: NSImageOnly];
         [buttons[i] setToolTip: tooltips[i]];
         [[window contentView] addSubview: buttons[i]];
@@ -6208,6 +6260,33 @@ static PyTypeObject TimerType = {
     Timer_new,                 /* tp_new */
 };
 
+static bool verify_framework(void)
+{
+#ifdef COMPILING_FOR_10_6
+    NSRunningApplication* app = [NSRunningApplication currentApplication];
+    NSApplicationActivationPolicy activationPolicy = [app activationPolicy];
+    switch (activationPolicy) {
+        case NSApplicationActivationPolicyRegular:
+        case NSApplicationActivationPolicyAccessory:
+            return true;
+        case NSApplicationActivationPolicyProhibited:
+            break;
+    }
+#else
+    ProcessSerialNumber psn;
+    if (CGMainDisplayID()!=0
+     && GetCurrentProcess(&psn)==noErr
+     && SetFrontProcess(&psn)==noErr) return true;
+#endif
+    PyErr_SetString(PyExc_RuntimeError,
+        "Python is not installed as a framework. The Mac OS X backend will "
+        "not be able to function correctly if Python is not installed as a "
+        "framework. See the Python documentation for more information on "
+        "installing Python as a framework on Mac OS X. Please either reinstall "
+        "Python as a framework, or try one of the other backends.");
+    return false;
+}
+
 static struct PyMethodDef methods[] = {
    {"show",
     (PyCFunction)show,
@@ -6248,7 +6327,6 @@ PyObject* PyInit__macosx(void)
 void init_macosx(void)
 #endif
 {
-#ifdef WITH_NEXT_FRAMEWORK
     PyObject *module;
     import_array();
 
@@ -6258,6 +6336,15 @@ void init_macosx(void)
      || PyType_Ready(&NavigationToolbarType) < 0
      || PyType_Ready(&NavigationToolbar2Type) < 0
      || PyType_Ready(&TimerType) < 0)
+#if PY3K
+        return NULL;
+#else
+        return;
+#endif
+
+    NSApp = [NSApplication sharedApplication];
+
+    if (!verify_framework())
 #if PY3K
         return NULL;
 #else
@@ -6299,22 +6386,5 @@ void init_macosx(void)
                              object: nil];
 #if PY3K
     return module;
-#endif
-#else
-    /* WITH_NEXT_FRAMEWORK is not defined. This means that Python is not
-     * installed as a framework, and therefore the Mac OS X backend will
-     * not interact properly with the window manager.
-     */
-    PyErr_SetString(PyExc_RuntimeError,
-        "Python is not installed as a framework. The Mac OS X backend will "
-        "not be able to function correctly if Python is not installed as a "
-        "framework. See the Python documentation for more information on "
-        "installing Python as a framework on Mac OS X. Please either reinstall "
-        "Python as a framework, or try one of the other backends.");
-#if PY3K
-    return NULL;
-#else
-    return;
-#endif
 #endif
 }

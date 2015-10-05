@@ -44,7 +44,7 @@ except ImportError:
 else:
     print("Using IPython's ipython_console_highlighting directive")
     extensions.append('IPython.sphinxext.ipython_console_highlighting')
-
+    extensions.append('IPython.sphinxext.ipython_directive')
 try:
     import numpydoc
 except ImportError:
@@ -295,7 +295,7 @@ class MyWX(MagicMock):
     class Frame(object):
         pass
 
-    VERSION_STRING = '2.8'
+    VERSION_STRING = '2.8.12'
 
 
 class MyPyQt4(MagicMock):

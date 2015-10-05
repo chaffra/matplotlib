@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import math
 import os
@@ -768,9 +768,6 @@ class FigureCanvasPgf(FigureCanvasBase):
     filetypes = {"pgf": "LaTeX PGF picture",
                  "pdf": "LaTeX compiled PGF picture",
                  "png": "Portable Network Graphics", }
-
-    def __init__(self, *args):
-        FigureCanvasBase.__init__(self, *args)
 
     def get_default_filetype(self):
         return 'pdf'

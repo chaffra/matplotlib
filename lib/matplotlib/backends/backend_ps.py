@@ -5,8 +5,8 @@ A PostScript backend, which can produce both PostScript .ps and .eps
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import StringIO
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import StringIO
 
 import glob, math, os, shutil, sys, time
 def _fn_name(): return sys._getframe(1).f_code.co_name
@@ -1581,6 +1581,7 @@ def xpdf_distill(tmpfile, eps=False, ptype='letter', bbox=None, rotated=False):
     else: paper_option = "-sPAPERSIZE=%s" % ptype
 
     command = 'ps2pdf -dAutoFilterColorImages=false \
+-dAutoFilterGrayImages=false -sGrayImageFilter=FlateEncode \
 -sColorImageFilter=FlateEncode %s "%s" "%s" > "%s"'% \
 (paper_option, tmpfile, pdffile, outfile)
     if sys.platform == 'win32': command = command.replace('=', '#')
@@ -1731,6 +1732,7 @@ def pstoeps(tmpfile, bbox=None, rotated=False):
                     write(b'countdictstack\n')
                     write(b'exch sub { end } repeat\n')
                     write(b'restore\n')
+                    write(b'showpage\n')
                     write(b'%%EOF\n')
                 elif line.startswith(b'%%PageBoundingBox'):
                     pass

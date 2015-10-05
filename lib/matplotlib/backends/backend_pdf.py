@@ -1,33 +1,30 @@
-# -*- coding: iso-8859-1 -*-
+# -*- coding: utf-8 -*-
 
 """
 A PDF matplotlib backend
-Author: Jouni K Sepp�nen <jks@iki.fi>
+Author: Jouni K Seppänen <jks@iki.fi>
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import map
+from matplotlib.externals import six
 
 import codecs
 import os
 import re
+import struct
 import sys
 import time
 import warnings
 import zlib
+from io import BytesIO
 
 import numpy as np
-from six import unichr
-from six import BytesIO
+from matplotlib.externals.six import unichr
+
 
 from datetime import datetime
 from math import ceil, cos, floor, pi, sin
-try:
-    set
-except NameError:
-    from sets import Set as set
 
 import matplotlib
 from matplotlib import __version__, rcParams
@@ -48,6 +45,7 @@ from matplotlib.mathtext import MathTextParser
 from matplotlib.transforms import Affine2D, BboxBase
 from matplotlib.path import Path
 from matplotlib import _path
+from matplotlib import _png
 from matplotlib import ttconv
 
 # Overview
@@ -92,8 +90,6 @@ from matplotlib import ttconv
 
 # TODOs:
 #
-# * the alpha channel of images
-# * image compression could be improved (PDF supports png-like compression)
 # * encoding of fonts, including mathtext fonts and unicode support
 # * TTF support has lots of small TODOs, e.g., how do you know if a font
 #   is serif/sans-serif, or symbolic/non-symbolic?
@@ -315,24 +311,17 @@ Op = Bunch(**dict([(name, Operator(value))
                    for name, value in six.iteritems(_pdfops)]))
 
 
-def _paint_path(closep, fillp, strokep):
+def _paint_path(fill, stroke):
     """Return the PDF operator to paint a path in the following way:
-    closep:  close the path before painting
-    fillp:   fill the path with the fill color
-    strokep: stroke the outline of the path with the line color"""
-    if strokep:
-        if closep:
-            if fillp:
-                return Op.close_fill_stroke
-            else:
-                return Op.close_stroke
+    fill:   fill the path with the fill color
+    stroke: stroke the outline of the path with the line color"""
+    if stroke:
+        if fill:
+            return Op.fill_stroke
         else:
-            if fillp:
-                return Op.fill_stroke
-            else:
-                return Op.stroke
+            return Op.stroke
     else:
-        if fillp:
+        if fill:
             return Op.fill
         else:
             return Op.endpath
@@ -347,11 +336,12 @@ class Stream(object):
     """
     __slots__ = ('id', 'len', 'pdfFile', 'file', 'compressobj', 'extra', 'pos')
 
-    def __init__(self, id, len, file, extra=None):
+    def __init__(self, id, len, file, extra=None, png=None):
         """id: object id of stream; len: an unused Reference object for the
         length of the stream, or None (to use a memory buffer); file:
         a PdfFile; extra: a dictionary of extra key-value pairs to
-        include in the stream header """
+        include in the stream header; png: if the data is already
+        png compressed, the decode parameters"""
         self.id = id            # object id
         self.len = len          # id of length object
         self.pdfFile = file
@@ -360,10 +350,13 @@ class Stream(object):
         if extra is None:
             self.extra = dict()
         else:
-            self.extra = extra
+            self.extra = extra.copy()
+        if png is not None:
+            self.extra.update({'Filter':      Name('FlateDecode'),
+                               'DecodeParms': png})
 
         self.pdfFile.recordXref(self.id)
-        if rcParams['pdf.compression']:
+        if rcParams['pdf.compression'] and not png:
             self.compressobj = zlib.compressobj(rcParams['pdf.compression'])
         if self.len is None:
             self.file = BytesIO()
@@ -593,12 +586,12 @@ class PdfFile(object):
             self.currentstream.write(data)
 
     def output(self, *data):
-        self.write(fill(list(map(pdfRepr, data))))
+        self.write(fill([pdfRepr(x) for x in data]))
         self.write(b'\n')
 
-    def beginStream(self, id, len, extra=None):
+    def beginStream(self, id, len, extra=None, png=None):
         assert self.currentstream is None
-        self.currentstream = Stream(id, len, self, extra)
+        self.currentstream = Stream(id, len, self, extra, png)
 
     def endStream(self):
         if self.currentstream is not None:
@@ -1182,14 +1175,12 @@ end"""
                  'XStep': sidelen, 'YStep': sidelen,
                  'Resources': res})
 
-            # lst is a tuple of stroke color, fill color,
-            # number of - lines, number of / lines,
-            # number of | lines, number of \ lines
-            rgb = hatch_style[0]
-            self.output(rgb[0], rgb[1], rgb[2], Op.setrgb_stroke)
-            if hatch_style[1] is not None:
-                rgb = hatch_style[1]
-                self.output(rgb[0], rgb[1], rgb[2], Op.setrgb_nonstroke,
+            stroke_rgb, fill_rgb, path = hatch_style
+            self.output(stroke_rgb[0], stroke_rgb[1], stroke_rgb[2],
+                        Op.setrgb_stroke)
+            if fill_rgb is not None:
+                self.output(fill_rgb[0], fill_rgb[1], fill_rgb[2],
+                            Op.setrgb_nonstroke,
                             0, 0, sidelen, sidelen, Op.rectangle,
                             Op.fill)
 
@@ -1198,7 +1189,7 @@ end"""
             # TODO: We could make this dpi-dependent, but that would be
             # an API change
             self.output(*self.pathOperations(
-                Path.hatch(hatch_style[2]),
+                Path.hatch(path),
                 Affine2D().scale(sidelen),
                 simplify=False))
             self.output(Op.stroke)
@@ -1262,69 +1253,105 @@ end"""
         self.images[image] = (name, ob)
         return name
 
-    # These two from backend_ps.py
-    # TODO: alpha (SMask, p. 518 of pdf spec)
+    def _unpack(self, im):
+        """
+        Unpack the image object im into height, width, data, alpha,
+        where data and alpha are HxWx3 (RGB) or HxWx1 (grayscale or alpha)
+        arrays, except alpha is None if the image is fully opaque.
+        """
 
-    def _rgb(self, im):
         h, w, s = im.as_rgba_str()
-
         rgba = np.fromstring(s, np.uint8)
         rgba.shape = (h, w, 4)
         rgba = rgba[::-1]
         rgb = rgba[:, :, :3]
-        a = rgba[:, :, 3:]
-        return h, w, rgb.tostring(), a.tostring()
+        alpha = rgba[:, :, 3][..., None]
+        if np.all(alpha == 255):
+            alpha = None
+        else:
+            alpha = np.array(alpha, order='C')
+        if im.is_grayscale:
+            r, g, b = rgb.astype(np.float32).transpose(2, 0, 1)
+            gray = (0.3 * r + 0.59 * g + 0.11 * b).astype(np.uint8)[..., None]
+            return h, w, gray, alpha
+        else:
+            rgb = np.array(rgb, order='C')
+            return h, w, rgb, alpha
 
-    def _gray(self, im, rc=0.3, gc=0.59, bc=0.11):
-        rgbat = im.as_rgba_str()
-        rgba = np.fromstring(rgbat[2], np.uint8)
-        rgba.shape = (rgbat[0], rgbat[1], 4)
-        rgba = rgba[::-1]
-        rgba_f = rgba.astype(np.float32)
-        r = rgba_f[:, :, 0]
-        g = rgba_f[:, :, 1]
-        b = rgba_f[:, :, 2]
-        gray = (r*rc + g*gc + b*bc).astype(np.uint8)
-        return rgbat[0], rgbat[1], gray.tostring()
+    def _writePng(self, data):
+        """
+        Write the image *data* into the pdf file using png
+        predictors with Flate compression.
+        """
+
+        buffer = BytesIO()
+        _png.write_png(data, buffer)
+        buffer.seek(8)
+        written = 0
+        header = bytearray(8)
+        while True:
+            n = buffer.readinto(header)
+            assert n == 8
+            length, type = struct.unpack(b'!L4s', bytes(header))
+            if type == b'IDAT':
+                data = bytearray(length)
+                n = buffer.readinto(data)
+                assert n == length
+                self.currentstream.write(bytes(data))
+                written += n
+            elif type == b'IEND':
+                break
+            else:
+                buffer.seek(length, 1)
+            buffer.seek(4, 1)   # skip CRC
+
+    def _writeImg(self, data, height, width, grayscale, id, smask=None):
+        """
+        Write the image *data* of size *height* x *width*, as grayscale
+        if *grayscale* is true and RGB otherwise, as pdf object *id*
+        and with the soft mask (alpha channel) *smask*, which should be
+        either None or a *height* x *width* x 1 array.
+        """
+
+        obj = {'Type':             Name('XObject'),
+               'Subtype':          Name('Image'),
+               'Width':            width,
+               'Height':           height,
+               'ColorSpace':       Name('DeviceGray' if grayscale
+                                        else 'DeviceRGB'),
+               'BitsPerComponent': 8}
+        if smask:
+            obj['SMask'] = smask
+        if rcParams['pdf.compression']:
+            png = {'Predictor': 10,
+                   'Colors':    1 if grayscale else 3,
+                   'Columns':   width}
+        else:
+            png = None
+        self.beginStream(
+            id,
+            self.reserveObject('length of image stream'),
+            obj,
+            png=png
+            )
+        if png:
+            self._writePng(data)
+        else:
+            self.currentstream.write(data.tostring())
+        self.endStream()
 
     def writeImages(self):
         for img, pair in six.iteritems(self.images):
-            if img.is_grayscale:
-                height, width, data = self._gray(img)
-                self.beginStream(
-                    pair[1].id,
-                    self.reserveObject('length of image stream'),
-                    {'Type': Name('XObject'), 'Subtype': Name('Image'),
-                     'Width': width, 'Height': height,
-                     'ColorSpace': Name('DeviceGray'), 'BitsPerComponent': 8})
-                # TODO: predictors (i.e., output png)
-                self.currentstream.write(data)
-                self.endStream()
-            else:
-                height, width, data, adata = self._rgb(img)
+            height, width, data, adata = self._unpack(img)
+            if adata is not None:
                 smaskObject = self.reserveObject("smask")
-                self.beginStream(
-                    smaskObject.id,
-                    self.reserveObject('length of smask stream'),
-                    {'Type': Name('XObject'), 'Subtype': Name('Image'),
-                     'Width': width, 'Height': height,
-                     'ColorSpace': Name('DeviceGray'), 'BitsPerComponent': 8})
-                # TODO: predictors (i.e., output png)
-                self.currentstream.write(adata)
-                self.endStream()
+                self._writeImg(adata, height, width, True, smaskObject.id)
+            else:
+                smaskObject = None
+            self._writeImg(data, height, width, img.is_grayscale,
+                           pair[1].id, smaskObject)
 
-                self.beginStream(
-                    pair[1].id,
-                    self.reserveObject('length of image stream'),
-                    {'Type': Name('XObject'), 'Subtype': Name('Image'),
-                     'Width': width, 'Height': height,
-                     'ColorSpace': Name('DeviceRGB'), 'BitsPerComponent': 8,
-                     'SMask': smaskObject})
-                # TODO: predictors (i.e., output png)
-                self.currentstream.write(data)
-                self.endStream()
-
-    def markerObject(self, path, trans, fillp, strokep, lw, joinstyle,
+    def markerObject(self, path, trans, fill, stroke, lw, joinstyle,
                      capstyle):
         """Return name of a marker XObject representing the given path."""
         # self.markers used by markerObject, writeMarkers, close:
@@ -1340,7 +1367,7 @@ end"""
         # first two components of each value in self.markers to be the
         # name and object reference.
         pathops = self.pathOperations(path, trans, simplify=False)
-        key = (tuple(pathops), bool(fillp), bool(strokep), joinstyle, capstyle)
+        key = (tuple(pathops), bool(fill), bool(stroke), joinstyle, capstyle)
         result = self.markers.get(key)
         if result is None:
             name = Name('M%d' % len(self.markers))
@@ -1354,7 +1381,7 @@ end"""
         return name
 
     def writeMarkers(self):
-        for ((pathops, fillp, strokep, joinstyle, capstyle),
+        for ((pathops, fill, stroke, joinstyle, capstyle),
              (name, ob, bbox, lw)) in six.iteritems(self.markers):
             bbox = bbox.padded(lw * 0.5)
             self.beginStream(
@@ -1365,7 +1392,7 @@ end"""
                         Op.setlinejoin)
             self.output(GraphicsContextPdf.capstyles[capstyle], Op.setlinecap)
             self.output(*pathops)
-            self.output(Op.paint_path(False, fillp, strokep))
+            self.output(Op.paint_path(fill, stroke))
             self.endStream()
 
     def pathCollectionObject(self, gc, path, trans, padding, filled, stroked):
@@ -1394,7 +1421,7 @@ end"""
                         Op.setlinejoin)
             self.output(GraphicsContextPdf.capstyles[capstyle], Op.setlinecap)
             self.output(*pathops)
-            self.output(Op.paint_path(False, filled, stroked))
+            self.output(Op.paint_path(filled, stroked))
             self.endStream()
 
     @staticmethod
@@ -1692,12 +1719,12 @@ class RendererPdf(RendererBase):
             return
 
         self.check_gc(gc, rgbFace)
-        fillp = gc.fillp(rgbFace)
-        strokep = gc.strokep()
+        fill = gc.fill(rgbFace)
+        stroke = gc.stroke()
 
         output = self.file.output
         marker = self.file.markerObject(
-            marker_path, marker_trans, fillp, strokep, self.gc._linewidth,
+            marker_path, marker_trans, fill, stroke, self.gc._linewidth,
             gc.get_joinstyle(), gc.get_capstyle())
 
         output(Op.gsave)
@@ -2138,7 +2165,7 @@ class GraphicsContextPdf(GraphicsContextBase):
         del d['parent']
         return repr(d)
 
-    def strokep(self):
+    def stroke(self):
         """
         Predicate: does the path need to be stroked (its outline drawn)?
         This tests for the various conditions that disable stroking
@@ -2149,7 +2176,7 @@ class GraphicsContextPdf(GraphicsContextBase):
         return (self._linewidth > 0 and self._alpha > 0 and
                 (len(self._rgb) <= 3 or self._rgb[3] != 0.0))
 
-    def fillp(self, *args):
+    def fill(self, *args):
         """
         Predicate: does the path need to be filled?
 
@@ -2164,19 +2191,12 @@ class GraphicsContextPdf(GraphicsContextBase):
                 (_fillcolor is not None and
                  (len(_fillcolor) <= 3 or _fillcolor[3] != 0.0)))
 
-    def close_and_paint(self):
-        """
-        Return the appropriate pdf operator to close the path and
-        cause it to be stroked, filled, or both.
-        """
-        return Op.paint_path(True, self.fillp(), self.strokep())
-
     def paint(self):
         """
         Return the appropriate pdf operator to cause the path to be
         stroked, filled, or both.
         """
-        return Op.paint_path(False, self.fillp(), self.strokep())
+        return Op.paint_path(self.fill(), self.stroke())
 
     capstyles = {'butt': 0, 'round': 1, 'projecting': 2}
     joinstyles = {'miter': 0, 'round': 1, 'bevel': 2}
@@ -2283,6 +2303,7 @@ class GraphicsContextPdf(GraphicsContextBase):
         needed to transform self into other.
         """
         cmds = []
+        fill_performed = False
         for params, cmd in self.commands:
             different = False
             for p in params:
@@ -2301,7 +2322,13 @@ class GraphicsContextPdf(GraphicsContextBase):
                 if different:
                     break
 
+            # Need to update hatching if we also updated fillcolor
+            if params == ('_hatch',) and fill_performed:
+                different = True
+
             if different:
+                if params == ('_fillcolor',):
+                    fill_performed = True
                 theirs = [getattr(other, p) for p in params]
                 cmds.extend(cmd(self, *theirs))
                 for p in params:

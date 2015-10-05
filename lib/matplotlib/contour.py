@@ -5,8 +5,8 @@ labelling for the axes class
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange
 
 import warnings
 import matplotlib as mpl
@@ -964,7 +964,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                     segs,
                     antialiaseds=aa,
                     linewidths=width,
-                    linestyle=[lstyle],
+                    linestyles=[lstyle],
                     alpha=self.alpha,
                     transform=self.get_transform(),
                     zorder=zorder)
@@ -1667,7 +1667,7 @@ class QuadContourSet(ContourSet):
           contour(Z,N)
           contour(X,Y,Z,N)
 
-        contour *N* automatically-chosen levels.
+        contour up to *N* automatically-chosen levels.
 
         ::
 

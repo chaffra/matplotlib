@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -983,6 +983,42 @@ def test_trirefiner_fortran_contiguous_triangles():
     fine_triang2 = refiner2.refine_triangulation(subdiv=1)
 
     assert_array_equal(fine_triang1.triangles, fine_triang2.triangles)
+
+
+def test_qhull_triangle_orientation():
+    # github issue 4437.
+    xi = np.linspace(-2, 2, 100)
+    x, y = map(np.ravel, np.meshgrid(xi, xi))
+    w = np.logical_and(x > y - 1, np.logical_and(x < -1.95, y > -1.2))
+    x, y = x[w], y[w]
+    theta = np.radians(25)
+    x1 = x*np.cos(theta) - y*np.sin(theta)
+    y1 = x*np.sin(theta) + y*np.cos(theta)
+
+    # Calculate Delaunay triangulation using Qhull.
+    triang = mtri.Triangulation(x1, y1)
+
+    # Neighbors returned by Qhull.
+    qhull_neighbors = triang.neighbors
+
+    # Obtain neighbors using own C++ calculation.
+    triang._neighbors = None
+    own_neighbors = triang.neighbors
+
+    assert_array_equal(qhull_neighbors, own_neighbors)
+
+
+def test_trianalyzer_mismatched_indices():
+    # github issue 4999.
+    x = np.array([0., 1., 0.5, 0., 2.])
+    y = np.array([0., 0., 0.5*np.sqrt(3.), -1., 1.])
+    triangles = np.array([[0, 1, 2], [0, 1, 3], [1, 2, 4]], dtype=np.int32)
+    mask = np.array([False, False, True], dtype=np.bool)
+    triang = mtri.Triangulation(x, y, triangles, mask=mask)
+    analyser = mtri.TriAnalyzer(triang)
+    # numpy >= 1.10 raises a VisibleDeprecationWarning in the following line
+    # prior to the fix.
+    triang2 = analyser._get_compressed_triangulation()
 
 
 if __name__ == '__main__':

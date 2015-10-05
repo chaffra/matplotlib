@@ -5,7 +5,7 @@ Provides a collection of utilities for comparing (image) results.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import hashlib
 import os
@@ -15,7 +15,7 @@ import numpy as np
 
 import matplotlib
 from matplotlib.compat import subprocess
-from matplotlib.testing.noseclasses import ImageComparisonFailure
+from matplotlib.testing.exceptions import ImageComparisonFailure
 from matplotlib import _png
 from matplotlib import _get_cachedir
 from matplotlib import cbook

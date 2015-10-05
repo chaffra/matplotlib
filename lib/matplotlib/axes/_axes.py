@@ -1,8 +1,8 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import reduce, xrange, zip, zip_longest
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import reduce, xrange, zip, zip_longest
 
 import math
 import warnings
@@ -11,9 +11,10 @@ import numpy as np
 from numpy import ma
 
 import matplotlib
+from matplotlib import unpack_labeled_data
 
 import matplotlib.cbook as cbook
-from matplotlib.cbook import _string_to_bool, mplDeprecation
+from matplotlib.cbook import mplDeprecation, STEP_LOOKUP_MAP
 import matplotlib.collections as mcoll
 import matplotlib.colors as mcolors
 import matplotlib.contour as mcontour
@@ -39,6 +40,7 @@ from matplotlib.container import BarContainer, ErrorbarContainer, StemContainer
 from matplotlib.axes._base import _AxesBase
 from matplotlib.axes._base import _process_plot_format
 
+
 rcParams = matplotlib.rcParams
 
 iterable = cbook.iterable
@@ -46,8 +48,38 @@ is_string_like = cbook.is_string_like
 is_sequence_of_strings = cbook.is_sequence_of_strings
 
 
+def _plot_args_replacer(args, data):
+    if len(args) == 1:
+        return ["y"]
+    elif len(args) == 2:
+        # this can be two cases: x,y or y,c
+        if not args[1] in data:
+            # this is not in data, so just assume that it is something which
+            # will not get replaced (color spec or array like).
+            return ["y", "c"]
+        # it's data, but could be a color code like 'ro' or 'b--'
+        # -> warn the user in that case...
+        try:
+            _process_plot_format(args[1])
+        except ValueError:
+            pass
+        else:
+            msg = "Second argument is ambiguous: could be a color spec " \
+                  "but is in data. Using as data.\nEither rename the " \
+                  "entry in data or use three arguments to plot."
+            warnings.warn(msg, RuntimeWarning, stacklevel=3)
+        return ["x", "y"]
+    elif len(args) == 3:
+        return ["x", "y", "c"]
+    else:
+        raise ValueError("Using arbitrary long args with data is not "
+                         "supported due to ambiguity of arguments.\nUse "
+                         "multiple plotting calls instead.")
+
+
 # The axes module contains all the wrappers to plotting functions.
 # All the other methods should go in the _AxesBase class.
+
 
 class Axes(_AxesBase):
     """
@@ -901,6 +933,7 @@ class Axes(_AxesBase):
         self.autoscale_view(scaley=False)
         return p
 
+    @unpack_labeled_data(replace_names=['y', 'xmin', 'xmax'], label_namer="y")
     @docstring.dedent
     def hlines(self, y, xmin, xmax, colors='k', linestyles='solid',
                label='', **kwargs):
@@ -979,6 +1012,8 @@ class Axes(_AxesBase):
 
         return coll
 
+    @unpack_labeled_data(replace_names=["x", "ymin", "ymax", "colors"],
+                         label_namer="x")
     @docstring.dedent_interpd
     def vlines(self, x, ymin, ymax, colors='k', linestyles='solid',
                label='', **kwargs):
@@ -1059,6 +1094,10 @@ class Axes(_AxesBase):
 
         return coll
 
+    @unpack_labeled_data(replace_names=["positions", "lineoffsets",
+                                        "linelengths", "linewidths",
+                                        "colors", "linestyles"],
+                         label_namer=None)
     @docstring.dedent_interpd
     def eventplot(self, positions, orientation='horizontal', lineoffsets=1,
                   linelengths=1, linewidths=None, colors=None,
@@ -1240,7 +1279,11 @@ class Axes(_AxesBase):
 
         return colls
 
-    #### Basic plotting
+    # ### Basic plotting
+    # The label_naming happens in `matplotlib.axes._base._plot_args`
+    @unpack_labeled_data(replace_names=["x", "y"],
+                         positional_parameter_names=_plot_args_replacer,
+                         label_namer=None)
     @docstring.dedent_interpd
     def plot(self, *args, **kwargs):
         """
@@ -1258,16 +1301,22 @@ class Axes(_AxesBase):
         If *x* and/or *y* is 2-dimensional, then the corresponding columns
         will be plotted.
 
-        An arbitrary number of *x*, *y*, *fmt* groups can be
-        specified, as in::
+        If used with labeled data, make sure that the color spec is not
+        included as an element in data, as otherwise the last case
+        ``plot("v","r", data={"v":..., "r":...)``
+        can be interpreted as the first case which would do ``plot(v, r)``
+        using the default line style and color.
+
+        If not used with labeled data (i.e., without a data argument),
+        an arbitrary number of *x*, *y*, *fmt* groups can be specified, as in::
 
             a.plot(x1, y1, 'g^', x2, y2, 'g-')
 
         Return value is a list of lines that were added.
 
-        By default, each line is assigned a different color specified by a
-        'color cycle'.  To change this behavior, you can edit the
-        axes.color_cycle rcParam.
+        By default, each line is assigned a different style specified by a
+        'style cycle'.  To change this behavior, you can edit the
+        axes.prop_cycle rcParam.
 
         The following format string characters are accepted to control
         the line style or marker:
@@ -1385,6 +1434,7 @@ class Axes(_AxesBase):
         self.autoscale_view(scalex=scalex, scaley=scaley)
         return lines
 
+    @unpack_labeled_data(replace_names=["x", "y"], label_namer="y")
     @docstring.dedent_interpd
     def plot_date(self, x, y, fmt='o', tz=None, xdate=True, ydate=False,
                   **kwargs):
@@ -1458,6 +1508,7 @@ class Axes(_AxesBase):
 
         return ret
 
+    # @unpack_labeled_data() # let 'plot' do the unpacking..
     @docstring.dedent_interpd
     def loglog(self, *args, **kwargs):
         """
@@ -1519,6 +1570,7 @@ class Axes(_AxesBase):
 
         return l
 
+    # @unpack_labeled_data() # let 'plot' do the unpacking..
     @docstring.dedent_interpd
     def semilogx(self, *args, **kwargs):
         """
@@ -1571,6 +1623,7 @@ class Axes(_AxesBase):
         self._hold = b  # restore the hold
         return l
 
+    # @unpack_labeled_data() # let 'plot' do the unpacking..
     @docstring.dedent_interpd
     def semilogy(self, *args, **kwargs):
         """
@@ -1623,6 +1676,7 @@ class Axes(_AxesBase):
 
         return l
 
+    @unpack_labeled_data(replace_names=["x"], label_namer="x")
     @docstring.dedent_interpd
     def acorr(self, x, **kwargs):
         """
@@ -1684,6 +1738,7 @@ class Axes(_AxesBase):
         """
         return self.xcorr(x, x, **kwargs)
 
+    @unpack_labeled_data(replace_names=["x", "y"], label_namer="y")
     @docstring.dedent_interpd
     def xcorr(self, x, y, normed=True, detrend=mlab.detrend_none,
               usevlines=True, maxlags=10, **kwargs):
@@ -1773,6 +1828,7 @@ class Axes(_AxesBase):
 
     #### Specialized plotting
 
+    @unpack_labeled_data(replace_names=["x", "y"], label_namer="y")
     def step(self, x, y, *args, **kwargs):
         """
         Make a step plot.
@@ -1790,12 +1846,15 @@ class Axes(_AxesBase):
         Keyword arguments:
 
         *where*: [ 'pre' | 'post' | 'mid'  ]
-          If 'pre', the interval from x[i] to x[i+1] has level y[i+1]
+          If 'pre' (the default), the interval from x[i] to x[i+1] has level
+          y[i+1].
 
-          If 'post', that interval has level y[i]
+          If 'post', that interval has level y[i].
 
           If 'mid', the jumps in *y* occur half-way between the
           *x*-values.
+
+        Return value is a list of lines that were added.
         """
 
         where = kwargs.pop('where', 'pre')
@@ -1807,6 +1866,11 @@ class Axes(_AxesBase):
 
         return self.plot(x, y, *args, **kwargs)
 
+    @unpack_labeled_data(replace_names=["left", "height", "width", "bottom",
+                                        "color", "edgecolor", "linewidth",
+                                        "tick_label", "xerr", "yerr",
+                                        "ecolor"],
+                         label_namer=None)
     @docstring.dedent_interpd
     def bar(self, left, height, width=0.8, bottom=None, **kwargs):
         """
@@ -1860,9 +1924,10 @@ class Axes(_AxesBase):
             specifies the color of errorbar(s)
             default: None
 
-        capsize : integer, optional
+        capsize : scalar, optional
            determines the length in points of the error bar caps
-           default: 3
+           default: None, which will take the value from the
+           ``errorbar.capsize`` :data:`rcParam<matplotlib.rcParams>`.
 
         error_kw : dict, optional
             dictionary of kwargs to be passed to errorbar method. *ecolor* and
@@ -1928,7 +1993,7 @@ class Axes(_AxesBase):
         yerr = kwargs.pop('yerr', None)
         error_kw = kwargs.pop('error_kw', dict())
         ecolor = kwargs.pop('ecolor', None)
-        capsize = kwargs.pop('capsize', 3)
+        capsize = kwargs.pop('capsize', rcParams["errorbar.capsize"])
         error_kw.setdefault('ecolor', ecolor)
         error_kw.setdefault('capsize', capsize)
 
@@ -2189,8 +2254,10 @@ class Axes(_AxesBase):
         ecolor : scalar or array-like, optional, default: None
             specifies the color of errorbar(s)
 
-        capsize : integer, optional, default: 3
+        capsize : scalar, optional
            determines the length in points of the error bar caps
+           default: None, which will take the value from the
+           ``errorbar.capsize`` :data:`rcParam<matplotlib.rcParams>`.
 
         error_kw :
             dictionary of kwargs to be passed to errorbar method. `ecolor` and
@@ -2230,6 +2297,7 @@ class Axes(_AxesBase):
                            bottom=bottom, orientation='horizontal', **kwargs)
         return patches
 
+    @unpack_labeled_data(label_namer=None)
     @docstring.dedent_interpd
     def broken_barh(self, xranges, yrange, **kwargs):
         """
@@ -2269,12 +2337,20 @@ class Axes(_AxesBase):
 
         .. plot:: mpl_examples/pylab_examples/broken_barh.py
         """
+        # process the unit information
+        self._process_unit_info(xdata=xranges[0],
+                                ydata=yrange[0],
+                                kwargs=kwargs)
+        xranges = self.convert_xunits(xranges)
+        yrange = self.convert_yunits(yrange)
+
         col = mcoll.BrokenBarHCollection(xranges, yrange, **kwargs)
         self.add_collection(col, autolim=True)
         self.autoscale_view()
 
         return col
 
+    @unpack_labeled_data(replace_all_args=True, label_namer=None)
     def stem(self, *args, **kwargs):
         """
         Create a stem plot.
@@ -2362,6 +2438,8 @@ class Axes(_AxesBase):
 
         return stem_container
 
+    @unpack_labeled_data(replace_names=['x', 'explode', 'labels', 'colors'],
+                         label_namer=None)
     def pie(self, x, explode=None, labels=None, colors=None,
             autopct=None, pctdistance=0.6, shadow=False, labeldistance=1.1,
             startangle=None, radius=None, counterclock=True,
@@ -2581,9 +2659,11 @@ class Axes(_AxesBase):
         else:
             return slices, texts, autotexts
 
+    @unpack_labeled_data(replace_names=["x", "y", "xerr", "yerr"],
+                         label_namer="y")
     @docstring.dedent_interpd
     def errorbar(self, x, y, yerr=None, xerr=None,
-                 fmt='', ecolor=None, elinewidth=None, capsize=3,
+                 fmt='', ecolor=None, elinewidth=None, capsize=None,
                  barsabove=False, lolims=False, uplims=False,
                  xlolims=False, xuplims=False, errorevery=1, capthick=None,
                  **kwargs):
@@ -2593,7 +2673,7 @@ class Axes(_AxesBase):
         Call signature::
 
           errorbar(x, y, yerr=None, xerr=None,
-                   fmt='', ecolor=None, elinewidth=None, capsize=3,
+                   fmt='', ecolor=None, elinewidth=None, capsize=None,
                    barsabove=False, lolims=False, uplims=False,
                    xlolims=False, xuplims=False, errorevery=1,
                    capthick=None)
@@ -2630,7 +2710,9 @@ class Axes(_AxesBase):
             The linewidth of the errorbar lines. If *None*, use the linewidth.
 
           *capsize*: scalar
-            The length of the error bar caps in points
+            The length of the error bar caps in points; if *None*, it will
+            take the value from ``errorbar.capsize``
+            :data:`rcParam<matplotlib.rcParams>`.
 
           *capthick*: scalar
             An alias kwarg to *markeredgewidth* (a.k.a. - *mew*). This
@@ -2653,7 +2735,7 @@ class Axes(_AxesBase):
             before :meth:`errorbar`.
 
           *errorevery*: positive integer
-            subsamples the errorbars. e.g., if everyerror=5, errorbars for
+            subsamples the errorbars. e.g., if errorevery=5, errorbars for
             every 5-th datapoint will be plotted. The data plot itself still
             shows all data points.
 
@@ -2783,6 +2865,8 @@ class Axes(_AxesBase):
             return xs, ys
 
         plot_kw = {'label': '_nolegend_'}
+        if capsize is None:
+            capsize = rcParams["errorbar.capsize"]
         if capsize > 0:
             plot_kw['ms'] = 2. * capsize
         if capthick is not None:
@@ -2807,6 +2891,14 @@ class Axes(_AxesBase):
                 right = [thisx + thiserr for (thisx, thiserr)
                          in cbook.safezip(x, xerr[1])]
             else:
+                # Check if xerr is scalar or symmetric. Asymmetric is handled
+                # above. This prevents Nx2 arrays from accidentally
+                # being accepted, when the user meant the 2xN transpose.
+                if not (len(xerr) == 1 or
+                        (len(xerr) == len(x) and not (
+                            iterable(xerr[0]) and len(xerr[0]) > 1))):
+                    raise ValueError("xerr must be a scalar, the same "
+                                     "dimensions as x, or 2xN.")
                 # using list comps rather than arrays to preserve units
                 left = [thisx - thiserr for (thisx, thiserr)
                         in cbook.safezip(x, xerr)]
@@ -2865,6 +2957,12 @@ class Axes(_AxesBase):
                 upper = [thisy + thiserr for (thisy, thiserr)
                          in cbook.safezip(y, yerr[1])]
             else:
+                # Check for scalar or symmetric, as in xerr.
+                if not (len(yerr) == 1 or
+                        (len(yerr) == len(y) and not (
+                            iterable(yerr[0]) and len(yerr[0]) > 1))):
+                    raise ValueError("yerr must be a scalar, the same "
+                                     "dimensions as y, or 2xN.")
                 # using list comps rather than arrays to preserve units
                 lower = [thisy - thiserr for (thisy, thiserr)
                          in cbook.safezip(y, yerr)]
@@ -2918,8 +3016,8 @@ class Axes(_AxesBase):
             l0, = self.plot(x, y, fmt, **kwargs)
 
         if ecolor is None:
-            if l0 is None:
-                ecolor = six.next(self._get_lines.color_cycle)
+            if l0 is None and 'color' in self._get_lines._prop_keys:
+                ecolor = six.next(self._get_lines.prop_cycler)['color']
             else:
                 ecolor = l0.get_color()
 
@@ -2940,11 +3038,12 @@ class Axes(_AxesBase):
 
         return errorbar_container  # (l0, caplines, barcols)
 
-    def boxplot(self, x, notch=False, sym=None, vert=True, whis=1.5,
-                positions=None, widths=None, patch_artist=False,
+    @unpack_labeled_data(label_namer=None)
+    def boxplot(self, x, notch=None, sym=None, vert=None, whis=None,
+                positions=None, widths=None, patch_artist=None,
                 bootstrap=None, usermedians=None, conf_intervals=None,
-                meanline=False, showmeans=False, showcaps=True,
-                showbox=True, showfliers=True, boxprops=None, labels=None,
+                meanline=None, showmeans=None, showcaps=None,
+                showbox=None, showfliers=None, boxprops=None, labels=None,
                 flierprops=None, medianprops=None, meanprops=None,
                 capprops=None, whiskerprops=None, manage_xticks=True):
         """
@@ -2952,7 +3051,7 @@ class Axes(_AxesBase):
 
         Call signature::
 
-          boxplot(self, x, notch=False, sym='b+', vert=True, whis=1.5,
+          boxplot(self, x, notch=None, sym=None, vert=None, whis=None,
                   positions=None, widths=None, patch_artist=False,
                   bootstrap=None, usermedians=None, conf_intervals=None,
                   meanline=False, showmeans=False, showcaps=True,
@@ -3104,11 +3203,59 @@ class Axes(_AxesBase):
 
         .. plot:: mpl_examples/statistics/boxplot_demo.py
         """
+        # If defined in matplotlibrc, apply the value from rc file
+        # Overridden if argument is passed
+        if whis is None:
+            whis = rcParams['boxplot.whiskers']
+        if bootstrap is None:
+            bootstrap = rcParams['boxplot.bootstrap']
         bxpstats = cbook.boxplot_stats(x, whis=whis, bootstrap=bootstrap,
                                        labels=labels)
-        # make sure we have a dictionary
-        if flierprops is None:
-            flierprops = dict()
+        if notch is None:
+            notch = rcParams['boxplot.notch']
+        if vert is None:
+            vert = rcParams['boxplot.vertical']
+        if patch_artist is None:
+            patch_artist = rcParams['boxplot.patchartist']
+        if meanline is None:
+            meanline = rcParams['boxplot.meanline']
+        if showmeans is None:
+            showmeans = rcParams['boxplot.showmeans']
+        if showcaps is None:
+            showcaps = rcParams['boxplot.showcaps']
+        if showbox is None:
+            showbox = rcParams['boxplot.showbox']
+        if showfliers is None:
+            showfliers = rcParams['boxplot.showfliers']
+
+        def _update_dict(dictionary, rc_name, properties):
+            """ Loads properties in the dictionary from rc file if not already
+            in the dictionary"""
+            rc_str = 'boxplot.{0}.{1}'
+            if dictionary is None:
+                dictionary = dict()
+            for prop_dict in properties:
+                dictionary.setdefault(prop_dict,
+                                rcParams[rc_str.format(rc_name, prop_dict)])
+            return dictionary
+
+        # Common property dictionnaries loading from rc
+        flier_props = ['color', 'marker', 'markerfacecolor', 'markeredgecolor',
+                       'markersize', 'linestyle', 'linewidth']
+        default_props = ['color', 'linewidth', 'linestyle']
+
+        boxprops = _update_dict(boxprops, 'boxprops', default_props)
+        whiskerprops = _update_dict(whiskerprops, 'whiskerprops',
+                                                            default_props)
+        capprops = _update_dict(capprops, 'capprops', default_props)
+        medianprops = _update_dict(medianprops, 'medianprops', default_props)
+        meanprops = _update_dict(meanprops, 'meanprops', default_props)
+        flierprops = _update_dict(flierprops, 'flierprops', flier_props)
+
+        if patch_artist:
+            boxprops['linestyle'] = 'solid'
+            boxprops['edgecolor'] = boxprops.pop('color')
+
         # if non-default sym value, put it into the flier dictionary
         # the logic for providing the default symbol ('b+') now lives
         # in bxp in the initial value of final_flierprops
@@ -3152,8 +3299,8 @@ class Axes(_AxesBase):
 
         if conf_intervals is not None:
             if np.shape(conf_intervals)[0] != len(bxpstats):
-                raise ValueError('conf_intervals length not '
-                                 'compatible with x')
+                err_mess = 'conf_intervals length not compatible with x'
+                raise ValueError(err_mess)
             else:
                 for stats, ci in zip(bxpstats, conf_intervals):
                     if ci is not None:
@@ -3561,6 +3708,10 @@ class Axes(_AxesBase):
         return dict(whiskers=whiskers, caps=caps, boxes=boxes,
                     medians=medians, fliers=fliers, means=means)
 
+    @unpack_labeled_data(replace_names=["x", "y", "s", "linewidths",
+                                        "edgecolors", "c", 'facecolor',
+                                        'facecolors', 'color'],
+                         label_namer="y")
     @docstring.dedent_interpd
     def scatter(self, x, y, s=20, c=None, marker='o', cmap=None, norm=None,
                 vmin=None, vmax=None, alpha=None, linewidths=None,
@@ -3637,6 +3788,12 @@ class Axes(_AxesBase):
         which case all masks will be combined and only unmasked points
         will be plotted.
 
+        Fundamentally, scatter works with 1-D arrays; `x`, `y`, `s`,
+        and `c` may be input as 2-D arrays, but within scatter
+        they will be flattened. The exception is `c`, which
+        will be flattened only if its size matches the size of `x`
+        and `y`.
+
         Examples
         --------
         .. plot:: mpl_examples/shapes_and_collections/scatter_demo.py
@@ -3670,7 +3827,7 @@ class Axes(_AxesBase):
             if facecolors is not None:
                 c = facecolors
             else:
-                c = 'b'  # the original default
+                c = 'b'  # The original default
 
         self._process_unit_info(xdata=x, ydata=y, kwargs=kwargs)
         x = self.convert_xunits(x)
@@ -3688,13 +3845,13 @@ class Axes(_AxesBase):
         # After this block, c_array will be None unless
         # c is an array for mapping.  The potential ambiguity
         # with a sequence of 3 or 4 numbers is resolved in
-        # favor mapping, not rgb or rgba.
+        # favor of mapping, not rgb or rgba.
         try:
             c_array = np.asanyarray(c, dtype=float)
-            if c_array.shape == x.shape:
+            if c_array.size == x.size:
                 c = np.ma.ravel(c_array)
             else:
-                # Wrong shape; it must not be intended for mapping.
+                # Wrong size; it must not be intended for mapping.
                 c_array = None
         except ValueError:
             # Failed to make a floating-point array; c must be color specs.
@@ -3768,6 +3925,7 @@ class Axes(_AxesBase):
 
         return collection
 
+    @unpack_labeled_data(replace_names=["x", "y"], label_namer="y")
     @docstring.dedent_interpd
     def hexbin(self, x, y, C=None, gridsize=100, bins=None,
                xscale='linear', yscale='linear', extent=None,
@@ -4268,6 +4426,8 @@ class Axes(_AxesBase):
         return qk
     quiverkey.__doc__ = mquiver.QuiverKey.quiverkey_doc
 
+    # args can by a combination if X, Y, U, V, C and all should be replaced
+    @unpack_labeled_data(replace_all_args=True, label_namer=None)
     def quiver(self, *args, **kw):
         if not self._hold:
             self.cla()
@@ -4278,13 +4438,17 @@ class Axes(_AxesBase):
         return q
     quiver.__doc__ = mquiver.Quiver.quiver_doc
 
+    # args can by either Y or y1,y2,... and all should be replaced
+    @unpack_labeled_data(replace_all_args=True, label_namer=None)
     def stackplot(self, x, *args, **kwargs):
         return mstack.stackplot(self, x, *args, **kwargs)
     stackplot.__doc__ = mstack.stackplot.__doc__
 
+    @unpack_labeled_data(replace_names=["x", "y", "u", "v", "start_points"],
+                         label_namer=None)
     def streamplot(self, x, y, u, v, density=1, linewidth=None, color=None,
                    cmap=None, norm=None, arrowsize=1, arrowstyle='-|>',
-                   minlength=0.1, transform=None, zorder=1):
+                   minlength=0.1, transform=None, zorder=1, start_points=None):
         if not self._hold:
             self.cla()
         stream_container = mstream.streamplot(self, x, y, u, v,
@@ -4296,11 +4460,14 @@ class Axes(_AxesBase):
                                               arrowsize=arrowsize,
                                               arrowstyle=arrowstyle,
                                               minlength=minlength,
+                                              start_points=start_points,
                                               transform=transform,
                                               zorder=zorder)
         return stream_container
     streamplot.__doc__ = mstream.streamplot.__doc__
 
+    # args can be some combination of X, Y, U, V, C and all should be replaced
+    @unpack_labeled_data(replace_all_args=True, label_namer=None)
     @docstring.dedent_interpd
     def barbs(self, *args, **kw):
         """
@@ -4317,6 +4484,8 @@ class Axes(_AxesBase):
         self.autoscale_view()
         return b
 
+    @unpack_labeled_data(replace_names=["x", "y"], label_namer=None,
+                        positional_parameter_names=["x", "y", "c"])
     @docstring.dedent_interpd
     def fill(self, *args, **kwargs):
         """
@@ -4368,51 +4537,63 @@ class Axes(_AxesBase):
         self.autoscale_view()
         return patches
 
+    @unpack_labeled_data(replace_names=["x", "y1", "y2", "where"],
+                         label_namer=None)
     @docstring.dedent_interpd
     def fill_between(self, x, y1, y2=0, where=None, interpolate=False,
+                     step=None,
                      **kwargs):
         """
         Make filled polygons between two curves.
 
-        Call signature::
-
-          fill_between(x, y1, y2=0, where=None, **kwargs)
 
         Create a :class:`~matplotlib.collections.PolyCollection`
         filling the regions between *y1* and *y2* where
         ``where==True``
 
-          *x* :
+        Parameters
+        ----------
+        x : array
             An N-length array of the x data
 
-          *y1* :
+        y1 : array
             An N-length array (or scalar) of the y data
 
-          *y2* :
+        y2 : array
             An N-length array (or scalar) of the y data
 
-          *where* :
-            If *None*, default to fill between everywhere.  If not *None*,
+        where : array, optional
+            If `None`, default to fill between everywhere.  If not `None`,
             it is an N-length numpy boolean array and the fill will
             only happen over the regions where ``where==True``.
 
-          *interpolate* :
-            If *True*, interpolate between the two lines to find the
+        interpolate : bool, optional
+            If `True`, interpolate between the two lines to find the
             precise point of intersection.  Otherwise, the start and
             end points of the filled region will only occur on explicit
             values in the *x* array.
 
-          *kwargs* :
-            Keyword args passed on to the
-            :class:`~matplotlib.collections.PolyCollection`.
+        step : {'pre', 'post', 'mid'}, optional
+            If not None, fill with step logic.
+
+
+        Notes
+        -----
+
+        Additional Keyword args passed on to the
+        :class:`~matplotlib.collections.PolyCollection`.
 
         kwargs control the :class:`~matplotlib.patches.Polygon` properties:
 
         %(PolyCollection)s
 
+        Examples
+        --------
+
         .. plot:: mpl_examples/pylab_examples/fill_between_demo.py
 
-        .. seealso::
+        See Also
+        --------
 
             :meth:`fill_betweenx`
                 for filling between two sets of x-values
@@ -4449,6 +4630,9 @@ class Axes(_AxesBase):
             xslice = x[ind0:ind1]
             y1slice = y1[ind0:ind1]
             y2slice = y2[ind0:ind1]
+            if step is not None:
+                step_func = STEP_LOOKUP_MAP[step]
+                xslice, y1slice, y2slice = step_func(xslice, y1slice, y2slice)
 
             if not len(xslice):
                 continue
@@ -4508,8 +4692,11 @@ class Axes(_AxesBase):
         self.autoscale_view()
         return collection
 
+    @unpack_labeled_data(replace_names=["y", "x1", "x2", "where"],
+                         label_namer=None)
     @docstring.dedent_interpd
-    def fill_betweenx(self, y, x1, x2=0, where=None, **kwargs):
+    def fill_betweenx(self, y, x1, x2=0, where=None,
+                      step=None, **kwargs):
         """
         Make filled polygons between two horizontal curves.
 
@@ -4521,31 +4708,42 @@ class Axes(_AxesBase):
         filling the regions between *x1* and *x2* where
         ``where==True``
 
-          *y* :
+        Parameters
+        ----------
+        y : array
             An N-length array of the y data
 
-          *x1* :
+        x1 : array
             An N-length array (or scalar) of the x data
 
-          *x2* :
+        x2 : array, optional
             An N-length array (or scalar) of the x data
 
-          *where* :
-             If *None*, default to fill between everywhere.  If not *None*,
-             it is a N length numpy boolean array and the fill will
-             only happen over the regions where ``where==True``
+        where : array, optional
+            If *None*, default to fill between everywhere.  If not *None*,
+            it is a N length numpy boolean array and the fill will
+            only happen over the regions where ``where==True``
 
-          *kwargs* :
-            keyword args passed on to the
+        step : {'pre', 'post', 'mid'}, optional
+            If not None, fill with step logic.
+
+        Notes
+        -----
+
+        keyword args passed on to the
             :class:`~matplotlib.collections.PolyCollection`
 
         kwargs control the :class:`~matplotlib.patches.Polygon` properties:
 
         %(PolyCollection)s
 
+        Examples
+        --------
+
         .. plot:: mpl_examples/pylab_examples/fill_betweenx_demo.py
 
-        .. seealso::
+        See Also
+        --------
 
             :meth:`fill_between`
                 for filling between two sets of y-values
@@ -4582,6 +4780,9 @@ class Axes(_AxesBase):
             yslice = y[ind0:ind1]
             x1slice = x1[ind0:ind1]
             x2slice = x2[ind0:ind1]
+            if step is not None:
+                step_func = STEP_LOOKUP_MAP[step]
+                yslice, x1slice, x2slice = step_func(yslice, x1slice, x2slice)
 
             if not len(yslice):
                 continue
@@ -4617,7 +4818,7 @@ class Axes(_AxesBase):
         return collection
 
     #### plotting z(x,y): imshow, pcolor and relatives, contour
-
+    @unpack_labeled_data(label_namer=None)
     @docstring.dedent_interpd
     def imshow(self, X, cmap=None, norm=None, aspect=None,
                interpolation=None, alpha=None, vmin=None, vmax=None,
@@ -4822,6 +5023,7 @@ class Axes(_AxesBase):
             C = C[:Ny - 1, :Nx - 1]
         return X, Y, C
 
+    @unpack_labeled_data(label_namer=None)
     @docstring.dedent_interpd
     def pcolor(self, *args, **kwargs):
         """
@@ -5098,6 +5300,7 @@ class Axes(_AxesBase):
         self.add_collection(collection, autolim=False)
         return collection
 
+    @unpack_labeled_data(label_namer=None)
     @docstring.dedent_interpd
     def pcolormesh(self, *args, **kwargs):
         """
@@ -5246,6 +5449,7 @@ class Axes(_AxesBase):
         self.add_collection(collection, autolim=False)
         return collection
 
+    @unpack_labeled_data(label_namer=None)
     @docstring.dedent_interpd
     def pcolorfast(self, *args, **kwargs):
         """
@@ -5433,6 +5637,7 @@ class Axes(_AxesBase):
         self.autoscale_view(tight=True)
         return ret
 
+    @unpack_labeled_data()
     def contour(self, *args, **kwargs):
         if not self._hold:
             self.cla()
@@ -5440,6 +5645,7 @@ class Axes(_AxesBase):
         return mcontour.QuadContourSet(self, *args, **kwargs)
     contour.__doc__ = mcontour.QuadContourSet.contour_doc
 
+    @unpack_labeled_data()
     def contourf(self, *args, **kwargs):
         if not self._hold:
             self.cla()
@@ -5480,6 +5686,7 @@ class Axes(_AxesBase):
 
     #### Data analysis
 
+    @unpack_labeled_data(replace_names=["x", 'weights'], label_namer="x")
     @docstring.dedent_interpd
     def hist(self, x, bins=10, range=None, normed=False, weights=None,
              cumulative=False, bottom=None, histtype='bar', align='mid',
@@ -5698,6 +5905,12 @@ class Axes(_AxesBase):
         if histtype == 'barstacked' and not stacked:
             stacked = True
 
+        # process the unit information
+        self._process_unit_info(xdata=x, kwargs=kwargs)
+        x = self.convert_xunits(x)
+        if bin_range is not None:
+            bin_range = self.convert_xunits(bin_range)
+
         # Check whether bins or range are given explicitly.
         binsgiven = (cbook.iterable(bins) or bin_range is not None)
 
@@ -5729,8 +5942,8 @@ class Axes(_AxesBase):
 
         nx = len(x)  # number of datasets
 
-        if color is None:
-            color = [six.next(self._get_lines.color_cycle)
+        if color is None and 'color' in self._get_lines._prop_keys:
+            color = [six.next(self._get_lines.prop_cycler)['color']
                      for i in xrange(nx)]
         else:
             color = mcolors.colorConverter.to_rgba_array(color)
@@ -5899,7 +6112,9 @@ class Axes(_AxesBase):
                     logbase = self.yaxis._scale.base
 
                 # Setting a minimum of 0 results in problems for log plots
-                if normed or weights is not None:
+                if np.min(bottom) > 0:
+                    minimum = np.min(bottom)
+                elif normed or weights is not None:
                     # For normed data, set to log base * minimum data value
                     # (gives 1 full tick-label unit for the lowest filled bin)
                     ndata = np.array(n)
@@ -5990,7 +6205,7 @@ class Axes(_AxesBase):
         elif is_string_like(label):
             labels = [label]
         else:
-            labels = [str(lab) for lab in label]
+            labels = [six.text_type(lab) for lab in label]
 
         for (patch, lbl) in zip_longest(patches, labels, fillvalue=None):
             if patch:
@@ -6018,6 +6233,7 @@ class Axes(_AxesBase):
         else:
             return n, bins, cbook.silent_list('Lists of Patches', patches)
 
+    @unpack_labeled_data(replace_names=["x", "y", "weights"], label_namer=None)
     @docstring.dedent_interpd
     def hist2d(self, x, y, bins=10, range=None, normed=False, weights=None,
                cmin=None, cmax=None, **kwargs):
@@ -6111,6 +6327,7 @@ class Axes(_AxesBase):
 
         return h, xedges, yedges, pc
 
+    @unpack_labeled_data(replace_names=["x"], label_namer=None)
     @docstring.dedent_interpd
     def psd(self, x, NFFT=None, Fs=None, Fc=None, detrend=None,
             window=None, noverlap=None, pad_to=None,
@@ -6235,6 +6452,7 @@ class Axes(_AxesBase):
         else:
             return pxx, freqs, line
 
+    @unpack_labeled_data(replace_names=["x", "y"], label_namer="y")
     @docstring.dedent_interpd
     def csd(self, x, y, NFFT=None, Fs=None, Fc=None, detrend=None,
             window=None, noverlap=None, pad_to=None,
@@ -6346,6 +6564,7 @@ class Axes(_AxesBase):
         else:
             return pxy, freqs, line
 
+    @unpack_labeled_data(replace_names=["x"], label_namer=None)
     @docstring.dedent_interpd
     def magnitude_spectrum(self, x, Fs=None, Fc=None, window=None,
                            pad_to=None, sides=None, scale=None,
@@ -6445,6 +6664,7 @@ class Axes(_AxesBase):
 
         return spec, freqs, lines[0]
 
+    @unpack_labeled_data(replace_names=["x"], label_namer=None)
     @docstring.dedent_interpd
     def angle_spectrum(self, x, Fs=None, Fc=None, window=None,
                        pad_to=None, sides=None, **kwargs):
@@ -6522,6 +6742,7 @@ class Axes(_AxesBase):
 
         return spec, freqs, lines[0]
 
+    @unpack_labeled_data(replace_names=["x"], label_namer=None)
     @docstring.dedent_interpd
     def phase_spectrum(self, x, Fs=None, Fc=None, window=None,
                        pad_to=None, sides=None, **kwargs):
@@ -6599,6 +6820,7 @@ class Axes(_AxesBase):
 
         return spec, freqs, lines[0]
 
+    @unpack_labeled_data(replace_names=["x", "y"], label_namer=None)
     @docstring.dedent_interpd
     def cohere(self, x, y, NFFT=256, Fs=2, Fc=0, detrend=mlab.detrend_none,
                window=mlab.window_hanning, noverlap=0, pad_to=None,
@@ -6666,6 +6888,7 @@ class Axes(_AxesBase):
 
         return cxy, freqs
 
+    @unpack_labeled_data(replace_names=["x"], label_namer=None)
     @docstring.dedent_interpd
     def specgram(self, x, NFFT=None, Fs=None, Fc=None, detrend=None,
                  window=None, noverlap=None,
@@ -6983,6 +7206,7 @@ class Axes(_AxesBase):
                                                  integer=True))
         return im
 
+    @unpack_labeled_data(replace_names=["dataset"], label_namer=None)
     def violinplot(self, dataset, positions=None, vert=True, widths=0.5,
                    showmeans=False, showextrema=True, showmedians=False,
                    points=100, bw_method=None):
@@ -7076,6 +7300,9 @@ class Axes(_AxesBase):
         """
 
         def _kde_method(X, coords):
+            # fallback gracefully if the vector contains only one value
+            if np.all(X[0] == X):
+                return (X[0] == coords).astype(float)
             kde = mlab.GaussianKDE(X, bw_method)
             return kde.evaluate(coords)
 

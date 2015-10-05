@@ -1,8 +1,8 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange
 try:
     # mock in python 3.3+
     from unittest import mock
@@ -238,6 +238,27 @@ def test_legend_stackplot():
     ax.set_xlim((0, 10))
     ax.set_ylim((0, 70))
     ax.legend(loc=0)
+
+
+@cleanup
+def test_nanscatter():
+    fig, ax = plt.subplots()
+
+    h = ax.scatter([np.nan], [np.nan], marker="o",
+                   facecolor="r", edgecolor="r", s=3)
+
+    ax.legend([h], ["scatter"])
+
+    fig, ax = plt.subplots()
+    for color in ['red', 'green', 'blue']:
+        n = 750
+        x, y = np.random.rand(2, n)
+        scale = 200.0 * np.random.rand(n)
+        ax.scatter(x, y, c=color, s=scale, label=color,
+                   alpha=0.3, edgecolors='none')
+
+    ax.legend()
+    ax.grid(True)
 
 
 if __name__ == '__main__':

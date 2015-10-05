@@ -6,7 +6,7 @@ from __future__ import (absolute_import, division, print_function,
 import io
 import re
 import numpy as np
-import six
+from matplotlib.externals import six
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -23,17 +23,20 @@ needs_tex = knownfailureif(
     "This test needs a TeX installation")
 
 
-def _test_savefig_to_stringio(format='ps'):
+def _test_savefig_to_stringio(format='ps', use_log=False):
+    fig, ax = plt.subplots()
     buffers = [
         six.moves.StringIO(),
         io.StringIO(),
         io.BytesIO()]
 
-    plt.figure()
-    plt.plot([0, 1], [0, 1])
-    plt.title("Déjà vu")
+    if use_log:
+        ax.set_yscale('log')
+
+    ax.plot([1, 2], [1, 2])
+    ax.set_title("Déjà vu")
     for buffer in buffers:
-        plt.savefig(buffer, format=format)
+        fig.savefig(buffer, format=format)
 
     values = [x.getvalue() for x in buffers]
 
@@ -79,6 +82,12 @@ def test_savefig_to_stringio_eps():
 
 
 @cleanup
+def test_savefig_to_stringio_eps_afm():
+    matplotlib.rcParams['ps.useafm'] = True
+    _test_savefig_to_stringio(format='eps', use_log=True)
+
+
+@cleanup
 @needs_tex
 def test_savefig_to_stringio_with_usetex_eps():
     matplotlib.rcParams['text.latex.unicode'] = True
@@ -88,8 +97,8 @@ def test_savefig_to_stringio_with_usetex_eps():
 
 @cleanup
 def test_composite_image():
-    #Test that figures can be saved with and without combining multiple images
-    #(on a single set of axes) into a single composite image.
+    # Test that figures can be saved with and without combining multiple images
+    # (on a single set of axes) into a single composite image.
     X, Y = np.meshgrid(np.arange(-5, 5, 1), np.arange(-5, 5, 1))
     Z = np.sin(Y ** 2)
     fig = plt.figure()
@@ -109,6 +118,7 @@ def test_composite_image():
         ps.seek(0)
         buff = ps.read()
         assert buff.count(six.b(' colorimage')) == 2
+
 
 if __name__ == '__main__':
     import nose

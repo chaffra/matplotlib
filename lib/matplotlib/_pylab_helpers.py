@@ -4,7 +4,7 @@ Manage figures for pyplot interface.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 import sys
 import gc
 import atexit
@@ -114,7 +114,7 @@ class Gcf(object):
         """
         Return the number of figures being managed.
         """
-        return len(cls.figs.values())
+        return len(cls.figs)
 
     @classmethod
     def get_active(cls):
@@ -139,5 +139,14 @@ class Gcf(object):
         cls._activeQue.append(manager)
         cls.figs[manager.num] = manager
 
+    @classmethod
+    def draw_all(cls, force=False):
+        """
+        Redraw all figures registered with the pyplot
+        state machine.
+        """
+        for f_mgr in cls.get_all_fig_managers():
+            if force or f_mgr.canvas.figure.stale:
+                f_mgr.canvas.draw_idle()
 
 atexit.register(Gcf.destroy_all)

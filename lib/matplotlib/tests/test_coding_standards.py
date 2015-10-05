@@ -194,7 +194,6 @@ def test_pep8_conformance_installed_files():
                           'type1font.py',
                           'widgets.py',
                           'testing/decorators.py',
-                          'testing/noseclasses.py',
                           'testing/jpl_units/Duration.py',
                           'testing/jpl_units/Epoch.py',
                           'testing/jpl_units/EpochConverter.py',
@@ -236,8 +235,6 @@ def test_pep8_conformance_installed_files():
                           'backends/backend_svg.py',
                           'backends/backend_template.py',
                           'backends/backend_tkagg.py',
-                          'backends/backend_wx.py',
-                          'backends/backend_wxagg.py',
                           'backends/tkagg.py',
                           'backends/windowing.py',
                           'backends/qt_editor/formlayout.py',
@@ -246,7 +243,8 @@ def test_pep8_conformance_installed_files():
                           'sphinxext/plot_directive.py',
                           'projections/__init__.py',
                           'projections/geo.py',
-                          'projections/polar.py']
+                          'projections/polar.py',
+                          'externals/six.py']
     expected_bad_files = ['*/matplotlib/' + s for s in expected_bad_files]
     assert_pep8_conformance(module=matplotlib,
                             exclude_files=exclude_files,

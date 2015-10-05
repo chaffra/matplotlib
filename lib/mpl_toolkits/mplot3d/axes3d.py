@@ -13,8 +13,8 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 import math
 
-import six
-from six.moves import map, xrange, zip, reduce
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import map, xrange, zip, reduce
 
 import warnings
 from operator import itemgetter
@@ -126,9 +126,11 @@ class Axes3D(Axes):
 
     def set_axis_off(self):
         self._axis3don = False
+        self.stale = True
 
     def set_axis_on(self):
         self._axis3don = True
+        self.stale = True
 
     def have_units(self):
         """
@@ -190,26 +192,29 @@ class Axes3D(Axes):
     def _init_axis(self):
         '''Init 3D axes; overrides creation of regular X/Y axes'''
         self.w_xaxis = axis3d.XAxis('x', self.xy_viewLim.intervalx,
-                            self.xy_dataLim.intervalx, self)
+                                    self.xy_dataLim.intervalx, self)
         self.xaxis = self.w_xaxis
         self.w_yaxis = axis3d.YAxis('y', self.xy_viewLim.intervaly,
-                            self.xy_dataLim.intervaly, self)
+                                    self.xy_dataLim.intervaly, self)
         self.yaxis = self.w_yaxis
         self.w_zaxis = axis3d.ZAxis('z', self.zz_viewLim.intervalx,
-                            self.zz_dataLim.intervalx, self)
+                                    self.zz_dataLim.intervalx, self)
         self.zaxis = self.w_zaxis
 
         for ax in self.xaxis, self.yaxis, self.zaxis:
             ax.init3d()
 
     def get_children(self):
-        return [self.zaxis,] + Axes.get_children(self)
+        return [self.zaxis, ] + Axes.get_children(self)
+
+    def _get_axis_list(self):
+        return super(Axes3D, self)._get_axis_list() + (self.zaxis, )
 
     def unit_cube(self, vals=None):
         minx, maxx, miny, maxy, minz, maxz = vals or self.get_w_lims()
         xs, ys, zs = ([minx, maxx, maxx, minx, minx, maxx, maxx, minx],
-                    [miny, miny, maxy, maxy, miny, miny, maxy, maxy],
-                    [minz, minz, minz, minz, maxz, maxz, maxz, maxz])
+                      [miny, miny, maxy, maxy, miny, miny, maxy, maxy],
+                      [minz, minz, minz, minz, maxz, maxz, maxz, maxz])
         return list(zip(xs, ys, zs))
 
     def tunit_cube(self, vals=None, M=None):
@@ -241,6 +246,18 @@ class Axes3D(Axes):
         # draw the background patch
         self.axesPatch.draw(renderer)
         self._frameon = False
+
+        # first, set the aspect
+        # this is duplicated from `axes._base._AxesBase.draw`
+        # but must be called before any of the artist are drawn as
+        # it adjusts the view limits and the size of the bounding box
+        # of the axes
+        locator = self.get_axes_locator()
+        if locator:
+            pos = locator(self, renderer)
+            self.apply_aspect(pos)
+        else:
+            self.apply_aspect()
 
         # add the projection matrix to the renderer
         self.M = self.get_proj()
@@ -342,6 +359,7 @@ class Axes3D(Axes):
         if m < 0 or m > 1 :
             raise ValueError("margin must be in range 0 to 1")
         self._zmargin = m
+        self.stale = True
 
     def margins(self, *args, **kw) :
         """
@@ -610,7 +628,7 @@ class Axes3D(Axes):
                     if (other.figure != self.figure and
                         other.figure.canvas is not None):
                         other.figure.canvas.draw_idle()
-
+        self.stale = True
         return left, right
     set_xlim = set_xlim3d
 
@@ -665,7 +683,7 @@ class Axes3D(Axes):
                     if (other.figure != self.figure and
                         other.figure.canvas is not None):
                         other.figure.canvas.draw_idle()
-
+        self.stale = True
         return bottom, top
     set_ylim = set_ylim3d
 
@@ -719,7 +737,7 @@ class Axes3D(Axes):
                     if (other.figure != self.figure and
                         other.figure.canvas is not None):
                         other.figure.canvas.draw_idle()
-
+        self.stale = True
         return bottom, top
     set_zlim = set_zlim3d
 
@@ -771,6 +789,7 @@ class Axes3D(Axes):
         self.yaxis._set_scale(value, **kwargs)
         self.autoscale_view(scalex=False, scalez=False)
         self._update_transScale()
+        self.stale = True
     set_yscale.__doc__ = maxes.Axes.set_yscale.__doc__ + """
 
         .. versionadded :: 1.1.0
@@ -802,6 +821,7 @@ class Axes3D(Axes):
         self.zaxis._set_scale(value, **kwargs)
         self.autoscale_view(scalex=False, scaley=False)
         self._update_transScale()
+        self.stale = True
 
     def set_zticks(self, *args, **kwargs):
         """
@@ -1216,6 +1236,7 @@ class Axes3D(Axes):
         .. versionadded :: 1.1.0
         """
         self._frameon = bool(b)
+        self.stale = True
 
     def get_axisbelow(self):
         """
@@ -1241,6 +1262,7 @@ class Axes3D(Axes):
             This function was added for completeness.
         """
         self._axisbelow = True
+        self.stale = True
 
     def grid(self, b=True, **kwargs):
         '''
@@ -1259,6 +1281,7 @@ class Axes3D(Axes):
         if len(kwargs) :
             b = True
         self._draw_grid = cbook._string_to_bool(b)
+        self.stale = True
 
     def ticklabel_format(self, **kwargs) :
         """
@@ -1471,7 +1494,7 @@ class Axes3D(Axes):
         ==========  ================================================
         Argument    Description
         ==========  ================================================
-        *xs*, *ys*  X, y coordinates of vertices
+        *xs*, *ys*  x, y coordinates of vertices
 
         *zs*        z value(s), either one for all points or one for
                     each point.
@@ -1709,7 +1732,9 @@ class Axes3D(Axes):
         Plot a 3D wireframe.
 
         The `rstride` and `cstride` kwargs set the stride used to
-        sample the input data to generate the graph.
+        sample the input data to generate the graph. If either is 0
+        the input data in not sampled along this direction producing a
+        3D line plot rather than a wireframe plot.
 
         ==========  ================================================
         Argument    Description
@@ -1740,14 +1765,23 @@ class Axes3D(Axes):
         # This transpose will make it easy to obtain the columns.
         tX, tY, tZ = np.transpose(X), np.transpose(Y), np.transpose(Z)
 
-        rii = list(xrange(0, rows, rstride))
-        cii = list(xrange(0, cols, cstride))
+        if rstride:
+            rii = list(xrange(0, rows, rstride))
+            # Add the last index only if needed
+            if rows > 0 and rii[-1] != (rows - 1) :
+                rii += [rows-1]
+        else:
+            rii = []
+        if cstride:
+            cii = list(xrange(0, cols, cstride))
+            # Add the last index only if needed
+            if cols > 0 and cii[-1] != (cols - 1) :
+                cii += [cols-1]
+        else:
+            cii = []
 
-        # Add the last index only if needed
-        if rows > 0 and rii[-1] != (rows - 1) :
-            rii += [rows-1]
-        if cols > 0 and cii[-1] != (cols - 1) :
-            cii += [cols-1]
+        if rstride == 0 and cstride == 0:
+            raise ValueError("Either rstride or cstride must be non zero")
 
         # If the inputs were empty, then just
         # reset everything.
@@ -2189,10 +2223,10 @@ class Axes3D(Axes):
                       the same plane. Default is 0.
         *zdir*        Which direction to use as z ('x', 'y' or 'z')
                       when plotting a 2D set.
-        *s*           size in points^2.  It is a scalar or an array of the
+        *s*           Size in points^2.  It is a scalar or an array of the
                       same length as *x* and *y*.
 
-        *c*           a color. *c* can be a single color format string, or a
+        *c*           A color. *c* can be a single color format string, or a
                       sequence of color specifications of length *N*, or a
                       sequence of *N* numbers to be mapped to colors using the
                       *cmap* and *norm* specified via kwargs (see below). Note
@@ -2419,6 +2453,8 @@ class Axes3D(Axes):
         self.add_collection(col)
 
         self.auto_scale_xyz((minx, maxx), (miny, maxy), (minz, maxz), had_data)
+
+        return col
 
     def set_title(self, label, fontdict=None, loc='center', **kwargs):
         ret = Axes.set_title(self, label, fontdict=fontdict, loc=loc, **kwargs)

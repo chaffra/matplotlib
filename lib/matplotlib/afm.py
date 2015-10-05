@@ -36,8 +36,8 @@ It is pretty easy to use, and requires only built-in python libs:
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import map
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import map
 
 import sys
 import os
@@ -169,7 +169,7 @@ def _parse_header(fh):
                   key, val, file=sys.stderr)
             continue
         except KeyError:
-            print('Found an unknown keyword in AFM header (was %s)' % key,
+            print('Found an unknown keyword in AFM header (was %r)' % key,
                   file=sys.stderr)
             continue
         if key == b'StartCharMetrics':
@@ -194,17 +194,19 @@ def _parse_char_metrics(fh):
         line = fh.readline()
         if not line:
             break
-        line = line.rstrip()
-        if line.startswith(b'EndCharMetrics'):
+        line = line.rstrip().decode('ascii')  # Convert from byte-literal
+        if line.startswith('EndCharMetrics'):
             return ascii_d, name_d
-        vals = line.split(b';')[:4]
-        if len(vals) != 4:
+        # Split the metric line into a dictonary, keyed by metric identifiers
+        vals = filter(lambda s: len(s) > 0, line.split(';'))
+        vals = dict(map(lambda s: tuple(s.strip().split(' ', 1)), vals))
+        # There may be other metrics present, but only these are needed
+        if any([id not in vals.keys() for id in ('C', 'WX', 'N', 'B')]):
             raise RuntimeError('Bad char metrics line: %s' % line)
-        num = _to_int(vals[0].split()[1])
-        wx = _to_float(vals[1].split()[1])
-        name = vals[2].split()[1]
-        name = name.decode('ascii')
-        bbox = _to_list_of_floats(vals[3][2:])
+        num = _to_int(vals['C'])
+        wx = _to_float(vals['WX'])
+        name = vals['N']
+        bbox = _to_list_of_floats(vals['B'])
         bbox = list(map(int, bbox))
         # Workaround: If the character name is 'Euro', give it the
         # corresponding character code, according to WinAnsiEncoding (see PDF

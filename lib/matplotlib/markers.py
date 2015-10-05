@@ -79,8 +79,8 @@ that define the shape.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange
 
 import numpy as np
 
@@ -145,7 +145,7 @@ class MarkerStyle(object):
     # TODO: Is this ever used as a non-constant?
     _point_size_reduction = 0.5
 
-    def __init__(self, marker=None, fillstyle='full'):
+    def __init__(self, marker=None, fillstyle=None):
         """
         MarkerStyle
 
@@ -165,6 +165,8 @@ class MarkerStyle(object):
         fillstyle : string, optional, default: 'full'
             'full', 'left", 'right', 'bottom', 'top', 'none'
         """
+        # The fillstyle has to be set here as it might be accessed by calls to
+        # _recache() in set_marker.
         self._fillstyle = fillstyle
         self.set_marker(marker)
         self.set_fillstyle(fillstyle)
@@ -211,6 +213,8 @@ class MarkerStyle(object):
         ----------
         fillstyle : string amongst known fillstyles
         """
+        if fillstyle is None:
+            fillstyle = rcParams['markers.fillstyle']
         if fillstyle not in self.fillstyles:
             raise ValueError("Unrecognized fillstyle %s"
                              % ' '.join(self.fillstyles))

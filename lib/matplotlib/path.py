@@ -15,7 +15,7 @@ convenient Path visualisation - the two most frequently used of these are
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import math
 from weakref import WeakValueDictionary
@@ -988,7 +988,8 @@ def get_path_collection_extents(
     if len(paths) == 0:
         raise ValueError("No paths provided")
     return Bbox.from_extents(*_path.get_path_collection_extents(
-        master_transform, paths, transforms, offsets, offset_transform))
+        master_transform, paths, np.atleast_3d(transforms),
+        offsets, offset_transform))
 
 
 def get_paths_extents(paths, transforms=[]):

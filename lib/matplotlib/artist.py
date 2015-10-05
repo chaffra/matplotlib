@@ -1,11 +1,12 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import re
 import warnings
 import inspect
+import numpy as np
 import matplotlib
 import matplotlib.cbook as cbook
 from matplotlib.cbook import mplDeprecation
@@ -68,6 +69,11 @@ def allow_rasterization(draw):
     return draw_wrapper
 
 
+def _stale_axes_callback(self, val):
+    if self.axes:
+        self.axes.stale = val
+
+
 class Artist(object):
     """
     Abstract base class for someone who renders into a
@@ -78,6 +84,8 @@ class Artist(object):
     zorder = 0
 
     def __init__(self):
+        self._stale = True
+        self.stale_callback = None
         self._axes = None
         self.figure = None
 
@@ -94,7 +102,7 @@ class Artist(object):
         self._contains = None
         self._rasterized = None
         self._agg_filter = None
-
+        self._mouseover = False
         self.eventson = False  # fire events only if eventson
         self._oid = 0  # an observer id
         self._propobservers = {}  # a dict from oids to funcs
@@ -115,6 +123,7 @@ class Artist(object):
         # remove the unpicklable remove method, this will get re-added on load
         # (by the axes) if the artist lives on an axes.
         d['_remove_method'] = None
+        d['stale_callback'] = None
         return d
 
     def remove(self):
@@ -138,6 +147,23 @@ class Artist(object):
         # callback has one parameter, which is the child to be removed.
         if self._remove_method is not None:
             self._remove_method(self)
+            # clear stale callback
+            self.stale_callback = None
+            _ax_flag = False
+            if hasattr(self, 'axes') and self.axes:
+                # remove from the mouse hit list
+                self.axes.mouseover_set.discard(self)
+                # mark the axes as stale
+                self.axes.stale = True
+                # decouple the artist from the axes
+                self.axes = None
+                _ax_flag = True
+
+            if self.figure:
+                self.figure = None
+                if not _ax_flag:
+                    self.figure = True
+
         else:
             raise NotImplementedError('cannot remove artist')
         # TODO: the fix for the collections relim problem is to move the
@@ -205,13 +231,40 @@ class Artist(object):
 
     @axes.setter
     def axes(self, new_axes):
-        if self._axes is not None and new_axes != self._axes:
+
+        if (new_axes is not None and
+                (self._axes is not None and new_axes != self._axes)):
             raise ValueError("Can not reset the axes.  You are "
                              "probably trying to re-use an artist "
                              "in more than one Axes which is not "
                              "supported")
+
         self._axes = new_axes
+        if new_axes is not None and new_axes is not self:
+            self.stale_callback = _stale_axes_callback
+
         return new_axes
+
+    @property
+    def stale(self):
+        """
+        If the artist is 'stale' and needs to be re-drawn for the output to
+        match the internal state of the artist.
+        """
+        return self._stale
+
+    @stale.setter
+    def stale(self, val):
+        self._stale = val
+
+        # if the artist is animated it does not take normal part in the
+        # draw stack and is not expected to be drawn as part of the normal
+        # draw loop (when not saving) so do not propagate this change
+        if self.get_animated():
+            return
+
+        if val and self.stale_callback is not None:
+            self.stale_callback(self, val)
 
     def get_window_extent(self, renderer):
         """
@@ -283,6 +336,7 @@ class Artist(object):
         self._transform = t
         self._transformSet = True
         self.pchanged()
+        self.stale = True
 
     def get_transform(self):
         """
@@ -499,6 +553,7 @@ class Artist(object):
         Only supported by the Agg and MacOSX backends.
         """
         self._snap = snap
+        self.stale = True
 
     def get_sketch_params(self):
         """
@@ -546,6 +601,7 @@ class Artist(object):
             self._sketch = None
         else:
             self._sketch = (scale, length or 128.0, randomness or 16.0)
+        self.stale = True
 
     def set_path_effects(self, path_effects):
         """
@@ -553,6 +609,7 @@ class Artist(object):
         matplotlib.patheffect._Base class or its derivatives.
         """
         self._path_effects = path_effects
+        self.stale = True
 
     def get_path_effects(self):
         return self._path_effects
@@ -571,8 +628,21 @@ class Artist(object):
 
         ACCEPTS: a :class:`matplotlib.figure.Figure` instance
         """
+        # if this is a no-op just return
+        if self.figure is fig:
+            return
+        # if we currently have a figure (the case of both `self.figure`
+        # and `fig` being none is taken care of above) we then user is
+        # trying to change the figure an artist is associated with which
+        # is not allowed for the same reason as adding the same instance
+        # to more than one Axes
+        if self.figure is not None:
+            raise RuntimeError("Can not put single artist in "
+                               "more than one figure")
         self.figure = fig
-        self.pchanged()
+        if self.figure and self.figure is not self:
+            self.pchanged()
+        self.stale = True
 
     def set_clip_box(self, clipbox):
         """
@@ -582,6 +652,7 @@ class Artist(object):
         """
         self.clipbox = clipbox
         self.pchanged()
+        self.stale = True
 
     def set_clip_path(self, path, transform=None):
         """
@@ -634,8 +705,10 @@ class Artist(object):
         if not success:
             print(type(path), type(transform))
             raise TypeError("Invalid arguments to set_clip_path")
-
+        # this may result in the callbacks being hit twice, but grantees they
+        # will be hit at least once
         self.pchanged()
+        self.stale = True
 
     def get_alpha(self):
         """
@@ -684,7 +757,10 @@ class Artist(object):
         ACCEPTS: [True | False]
         """
         self._clipon = b
+        # This may result in the callbacks being hit twice, but ensures they
+        # are hit at least once
         self.pchanged()
+        self.stale = True
 
     def _set_gc_clip(self, gc):
         'Set the clip properly for the gc'
@@ -723,11 +799,13 @@ class Artist(object):
 
         """
         self._agg_filter = filter_func
+        self.stale = True
 
     def draw(self, renderer, *args, **kwargs):
         'Derived classes drawing method'
         if not self.get_visible():
             return
+        self.stale = False
 
     def set_alpha(self, alpha):
         """
@@ -738,6 +816,7 @@ class Artist(object):
         """
         self._alpha = alpha
         self.pchanged()
+        self.stale = True
 
     def set_visible(self, b):
         """
@@ -747,6 +826,7 @@ class Artist(object):
         """
         self._visible = b
         self.pchanged()
+        self.stale = True
 
     def set_animated(self, b):
         """
@@ -754,8 +834,9 @@ class Artist(object):
 
         ACCEPTS: [True | False]
         """
-        self._animated = b
-        self.pchanged()
+        if self._animated != b:
+            self._animated = b
+            self.pchanged()
 
     def update(self, props):
         """
@@ -778,6 +859,7 @@ class Artist(object):
         self.eventson = store
         if changed:
             self.pchanged()
+            self.stale = True
 
     def get_label(self):
         """
@@ -796,6 +878,7 @@ class Artist(object):
         else:
             self._label = None
         self.pchanged()
+        self.stale = True
 
     def get_zorder(self):
         """
@@ -812,6 +895,7 @@ class Artist(object):
         """
         self.zorder = level
         self.pchanged()
+        self.stale = True
 
     def update_from(self, other):
         'Copy properties from *other* to *self*.'
@@ -826,6 +910,7 @@ class Artist(object):
         self._sketch = other._sketch
         self._path_effects = other._path_effects
         self.pchanged()
+        self.stale = True
 
     def properties(self):
         """
@@ -835,13 +920,20 @@ class Artist(object):
 
     def set(self, **kwargs):
         """
-        A tkstyle set command, pass *kwargs* to set properties
+        A property batch setter. Pass *kwargs* to set properties.
+        Will handle property name collisions (e.g., if both
+        'color' and 'facecolor' are specified, the property
+        with higher priority gets set last).
+
         """
         ret = []
-        for k, v in six.iteritems(kwargs):
+        for k, v in sorted(kwargs.items(), reverse=True):
             k = k.lower()
             funcName = "set_%s" % k
-            func = getattr(self, funcName)
+            func = getattr(self, funcName, None)
+            if func is None:
+               raise TypeError('There is no %s property "%s"' %
+                               (self.__class__.__name__, k))
             ret.extend([func(v)])
         return ret
 
@@ -889,6 +981,38 @@ class Artist(object):
         if include_self and matchfunc(self):
             artists.append(self)
         return artists
+
+    def get_cursor_data(self, event):
+        """
+        Get the cursor data for a given event.
+        """
+        return None
+
+    def format_cursor_data(self, data):
+        """
+        Return *cursor data* string formatted.
+        """
+        try:
+            data[0]
+        except (TypeError, IndexError):
+            data = [data]
+        return ', '.join('{:0.3g}'.format(item) for item in data if
+                isinstance(item, (np.floating, np.integer, int, float)))
+
+    @property
+    def mouseover(self):
+        return self._mouseover
+
+    @mouseover.setter
+    def mouseover(self, val):
+        val = bool(val)
+        self._mouseover = val
+        ax = self.axes
+        if ax:
+            if val:
+                ax.mouseover_set.add(self)
+            else:
+                ax.mouseover_set.discard(self)
 
 
 class ArtistInspector(object):
@@ -986,7 +1110,11 @@ class ArtistInspector(object):
             o = getattr(self.o, name)
             if not six.callable(o):
                 continue
-            if len(inspect.getargspec(o)[0]) < 2:
+            if six.PY2:
+                nargs = len(inspect.getargspec(o)[0])
+            else:
+                nargs = len(inspect.getfullargspec(o)[0])
+            if nargs < 2:
                 continue
             func = o
             if self.is_alias(func):
@@ -1325,14 +1453,17 @@ def setp(obj, *args, **kwargs):
     funcvals = []
     for i in range(0, len(args) - 1, 2):
         funcvals.append((args[i], args[i + 1]))
-    funcvals.extend(kwargs.items())
+    funcvals.extend(sorted(kwargs.items(), reverse=True))
 
     ret = []
     for o in objs:
         for s, val in funcvals:
             s = s.lower()
             funcName = "set_%s" % s
-            func = getattr(o, funcName)
+            func = getattr(o, funcName, None)
+            if func is None:
+                raise TypeError('There is no %s property "%s"' %
+                                (o.__class__.__name__, s))
             ret.extend([func(val)])
     return [x for x in cbook.flatten(ret)]
 

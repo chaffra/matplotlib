@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import os, sys
 def fn_name(): return sys._getframe(1).f_code.co_name
@@ -210,15 +210,11 @@ class FigureCanvasGTK3 (Gtk.DrawingArea, FigureCanvasBase):
         self.set_double_buffered(True)
         self.set_can_focus(True)
         self._renderer_init()
-        self._idle_event_id = GLib.idle_add(self.idle_event)
         default_context = GLib.main_context_get_thread_default() or GLib.main_context_default()
-        self._idle_event_source = default_context.find_source_by_id(self._idle_event_id)
 
     def destroy(self):
         #Gtk.DrawingArea.destroy(self)
         self.close_event()
-        if not self._idle_event_source.is_destroyed():
-            GLib.source_remove(self._idle_event_id)
         if self._idle_draw_id != 0:
             GLib.source_remove(self._idle_draw_id)
 
@@ -340,14 +336,15 @@ class FigureCanvasGTK3 (Gtk.DrawingArea, FigureCanvasBase):
             self.get_property("window").process_updates (False)
 
     def draw_idle(self):
+        if self._idle_draw_id != 0:
+            return
         def idle_draw(*args):
             try:
                 self.draw()
             finally:
                 self._idle_draw_id = 0
             return False
-        if self._idle_draw_id == 0:
-            self._idle_draw_id = GLib.idle_add(idle_draw)
+        self._idle_draw_id = GLib.idle_add(idle_draw)
 
     def new_timer(self, *args, **kwargs):
         """
@@ -451,6 +448,7 @@ class FigureManagerGTK3(FigureManagerBase):
         self.window.connect("delete_event", destroy)
         if matplotlib.is_interactive():
             self.window.show()
+            self.canvas.draw_idle()
 
         def notify_axes_change(fig):
             'this will be called whenever the current axes is changed'

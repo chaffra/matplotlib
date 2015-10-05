@@ -24,8 +24,8 @@ for more information.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange
 
 import warnings
 
@@ -112,7 +112,7 @@ class Legend(Artist):
 
     The location codes are::
 
-      'best'         : 0, (only implemented for axis legends)
+      'best'         : 0, (only implemented for axes legends)
       'upper right'  : 1,
       'upper left'   : 2,
       'lower left'   : 3,
@@ -128,7 +128,7 @@ class Legend(Artist):
     respect its parent.
 
     """
-    codes = {'best':         0,  # only implemented for axis legends
+    codes = {'best':         0,  # only implemented for axes legends
              'upper right':  1,
              'upper left':   2,
              'lower left':   3,
@@ -424,6 +424,7 @@ class Legend(Artist):
         self._legend_box.set_offset(_findoffset)
 
         self._loc_real = loc
+        self.stale = True
 
     def _get_loc(self):
         return self._loc_real
@@ -484,6 +485,7 @@ class Legend(Artist):
         self._legend_box.draw(renderer)
 
         renderer.close_group('legend')
+        self.stale = False
 
     def _approx_text_height(self, renderer=None):
         """
@@ -810,6 +812,7 @@ class Legend(Artist):
             self._legend_title_box.set_visible(True)
         else:
             self._legend_title_box.set_visible(False)
+        self.stale = True
 
     def get_title(self):
         'return Text instance for the legend title'
@@ -832,6 +835,7 @@ class Legend(Artist):
         ACCEPTS: [ *True* | *False* ]
         """
         self._drawFrame = b
+        self.stale = True
 
     def get_bbox_to_anchor(self):
         """
@@ -872,6 +876,7 @@ class Legend(Artist):
 
         self._bbox_to_anchor = TransformedBbox(self._bbox_to_anchor,
                                                transform)
+        self.stale = True
 
     def _get_anchored_bbox(self, loc, bbox, parentbbox, renderer):
         """

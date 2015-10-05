@@ -2,9 +2,9 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import tkinter as Tk
-from six.moves import tkinter_filedialog as FileDialog
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import tkinter as Tk
+from matplotlib.externals.six.moves import tkinter_filedialog as FileDialog
 
 import os, sys, math
 import os.path
@@ -60,7 +60,7 @@ def raise_msg_to_str(msg):
     return msg
 
 def error_msg_tkpaint(msg, parent=None):
-    from six.moves import tkinter_messagebox as tkMessageBox
+    from matplotlib.externals.six.moves import tkinter_messagebox as tkMessageBox
     tkMessageBox.showerror("matplotlib", msg)
 
 def draw_if_interactive():
@@ -112,6 +112,7 @@ def new_figure_manager_given_figure(num, figure):
     figManager = FigureManagerTkAgg(canvas, num, window)
     if matplotlib.is_interactive():
         figManager.show()
+        canvas.draw_idle()
     return figManager
 
 
@@ -225,7 +226,8 @@ class FigureCanvasTkAgg(FigureCanvasAgg):
         t1,t2,w,h = self.figure.bbox.bounds
         w, h = int(w), int(h)
         self._tkcanvas = Tk.Canvas(
-            master=master, width=w, height=h, borderwidth=4)
+            master=master, width=w, height=h, borderwidth=0,
+            highlightthickness=0)
         self._tkphoto = Tk.PhotoImage(
             master=self._tkcanvas, width=w, height=h)
         self._tkcanvas.create_image(w//2, h//2, image=self._tkphoto)
@@ -361,16 +363,18 @@ class FigureCanvasTkAgg(FigureCanvasAgg):
 
     def draw_idle(self):
         'update drawing area only if idle'
-        d = self._idle
+        if self._idle is False:
+            return
+
         self._idle = False
+
         def idle_draw(*args):
             try:
                 self.draw()
             finally:
                 self._idle = True
 
-        if d:
-            self._idle_callback = self._tkcanvas.after_idle(idle_draw)
+        self._idle_callback = self._tkcanvas.after_idle(idle_draw)
 
     def get_tk_widget(self):
         """returns the Tk widget used to implement FigureCanvasTkAgg.
@@ -778,7 +782,7 @@ class NavigationToolbar2TkAgg(NavigationToolbar2, Tk.Frame):
         canvas.get_tk_widget().pack(side=Tk.TOP, fill=Tk.BOTH, expand=1)
 
     def save_figure(self, *args):
-        from six.moves import tkinter_tkfiledialog, tkinter_messagebox
+        from matplotlib.externals.six.moves import tkinter_tkfiledialog, tkinter_messagebox
         filetypes = self.canvas.get_supported_filetypes().copy()
         default_filetype = self.canvas.get_default_filetype()
 
@@ -1018,7 +1022,7 @@ class StatusbarTk(StatusbarBase, Tk.Frame):
 
 class SaveFigureTk(backend_tools.SaveFigureBase):
     def trigger(self, *args):
-        from six.moves import tkinter_tkfiledialog, tkinter_messagebox
+        from matplotlib.externals.six.moves import tkinter_tkfiledialog, tkinter_messagebox
         filetypes = self.figure.canvas.get_supported_filetypes().copy()
         default_filetype = self.figure.canvas.get_default_filetype()
 

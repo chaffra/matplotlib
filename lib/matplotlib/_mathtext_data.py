@@ -6,7 +6,7 @@ font data tables for truetype and afm computer modern fonts
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 """
 from matplotlib.ft2font import FT2Font
@@ -1946,7 +1946,6 @@ tex2uni = {
     'boxminus'                 : 8863,
     'equiv'                    : 8801,
     'Lleftarrow'               : 8666,
-    'thinspace'                : 8201,
     'll'                       : 8810,
     'Cup'                      : 8915,
     'measeq'                   : 8798,
@@ -2169,7 +2168,6 @@ tex2uni = {
     'cdots'                    : 8943,
     'hat'                      : 770,
     'eqgtr'                    : 8925,
-    'enspace'                  : 8194,
     'psi'                      : 968,
     'frown'                    : 8994,
     'acute'                    : 769,

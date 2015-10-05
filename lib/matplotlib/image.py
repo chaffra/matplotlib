@@ -6,7 +6,10 @@ operations.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
+from matplotlib.externals.six.moves.urllib.parse import urlparse
+from matplotlib.externals.six.moves.urllib.request import urlopen
+from io import BytesIO
 
 import os
 import warnings
@@ -31,35 +34,50 @@ from matplotlib._image import *
 from matplotlib.transforms import BboxBase, Bbox, IdentityTransform
 import matplotlib.transforms as mtransforms
 
+# map interpolation strings to module constants
+_interpd_ = {
+    'none': _image.NEAREST,  # fall back to nearest when not supported
+    'nearest': _image.NEAREST,
+    'bilinear': _image.BILINEAR,
+    'bicubic': _image.BICUBIC,
+    'spline16': _image.SPLINE16,
+    'spline36': _image.SPLINE36,
+    'hanning': _image.HANNING,
+    'hamming': _image.HAMMING,
+    'hermite': _image.HERMITE,
+    'kaiser': _image.KAISER,
+    'quadric': _image.QUADRIC,
+    'catrom': _image.CATROM,
+    'gaussian': _image.GAUSSIAN,
+    'bessel': _image.BESSEL,
+    'mitchell': _image.MITCHELL,
+    'sinc': _image.SINC,
+    'lanczos': _image.LANCZOS,
+    'blackman': _image.BLACKMAN,
+}
+
+
+interpolations_names = set(six.iterkeys(_interpd_))
+
 
 class _AxesImageBase(martist.Artist, cm.ScalarMappable):
     zorder = 0
-    # map interpolation strings to module constants
-    _interpd = {
-        'none': _image.NEAREST,  # fall back to nearest when not supported
-        'nearest': _image.NEAREST,
-        'bilinear': _image.BILINEAR,
-        'bicubic': _image.BICUBIC,
-        'spline16': _image.SPLINE16,
-        'spline36': _image.SPLINE36,
-        'hanning': _image.HANNING,
-        'hamming': _image.HAMMING,
-        'hermite': _image.HERMITE,
-        'kaiser': _image.KAISER,
-        'quadric': _image.QUADRIC,
-        'catrom': _image.CATROM,
-        'gaussian': _image.GAUSSIAN,
-        'bessel': _image.BESSEL,
-        'mitchell': _image.MITCHELL,
-        'sinc': _image.SINC,
-        'lanczos': _image.LANCZOS,
-        'blackman': _image.BLACKMAN,
-    }
 
+    # the 3 following keys seem to be unused now, keep it for
+    # backward compatibility just in case.
+    _interpd = _interpd_
     # reverse interp dict
-    _interpdr = dict([(v, k) for k, v in six.iteritems(_interpd)])
+    _interpdr = dict([(v, k) for k, v in six.iteritems(_interpd_)])
+    iterpnames = interpolations_names
+    # <end unused keys>
 
-    interpnames = list(six.iterkeys(_interpd))
+    def set_cmap(self, cmap):
+        super(_AxesImageBase, self).set_cmap(cmap)
+        self.stale = True
+
+    def set_norm(self, norm):
+        super(_AxesImageBase, self).set_norm(norm)
+        self.stale = True
 
     def __str__(self):
         return "AxesImage(%g,%g;%gx%g)" % tuple(self.axes.bbox.bounds)
@@ -89,7 +107,7 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
         """
         martist.Artist.__init__(self)
         cm.ScalarMappable.__init__(self, norm, cmap)
-
+        self._mouseover = True
         if origin is None:
             origin = rcParams['image.origin']
         self.origin = origin
@@ -375,6 +393,7 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
             im._gid = self.get_gid()
             renderer.draw_image(gc, l, b, im)
         gc.restore()
+        self.stale = False
 
     def contains(self, mouseevent):
         """
@@ -437,6 +456,7 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
         self._rgbacache = None
         self._oldxslice = None
         self._oldyslice = None
+        self.stale = True
 
     def set_array(self, A):
         """
@@ -478,9 +498,10 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
         if s is None:
             s = rcParams['image.interpolation']
         s = s.lower()
-        if s not in self._interpd:
+        if s not in _interpd_:
             raise ValueError('Illegal interpolation string')
         self._interpolation = s
+        self.stale = True
 
     def set_resample(self, v):
         """
@@ -491,6 +512,7 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
         if v is None:
             v = rcParams['image.resample']
         self._resample = v
+        self.stale = True
 
     def get_resample(self):
         """Return the image resample boolean"""
@@ -508,6 +530,8 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
         else:
             self._filternorm = 0
 
+        self.stale = True
+
     def get_filternorm(self):
         """Return the filternorm setting"""
         return self._filternorm
@@ -523,6 +547,7 @@ class _AxesImageBase(martist.Artist, cm.ScalarMappable):
         if r <= 0:
             raise ValueError("The filter radius must be a positive number")
         self._filterrad = r
+        self.stale = True
 
     def get_filterrad(self):
         """return the filterrad setting"""
@@ -607,7 +632,7 @@ class AxesImage(_AxesImageBase):
         numrows, numcols = im.get_size()
         if numrows < 1 or numcols < 1:   # out of range
             return None
-        im.set_interpolation(self._interpd[self._interpolation])
+        im.set_interpolation(_interpd_[self._interpolation])
 
         im.set_resample(self._resample)
 
@@ -671,6 +696,7 @@ class AxesImage(_AxesImageBase):
             self.axes.set_xlim((xmin, xmax), auto=None)
         if self.axes._autoscaleYon:
             self.axes.set_ylim((ymin, ymax), auto=None)
+        self.stale = True
 
     def get_extent(self):
         """Get the image extent: left, right, bottom, top"""
@@ -683,6 +709,24 @@ class AxesImage(_AxesImageBase):
                 return (-0.5, numcols-0.5, numrows-0.5, -0.5)
             else:
                 return (-0.5, numcols-0.5, -0.5, numrows-0.5)
+
+    def get_cursor_data(self, event):
+        """Get the cursor data for a given event"""
+        xmin, xmax, ymin, ymax = self.get_extent()
+        if self.origin == 'upper':
+            ymin, ymax = ymax, ymin
+        arr = self.get_array()
+        data_extent = mtransforms.Bbox([[ymin, xmin], [ymax, xmax]])
+        array_extent = mtransforms.Bbox([[0, 0], arr.shape[:2]])
+        trans = mtransforms.BboxTransform(boxin=data_extent,
+                                          boxout=array_extent)
+        y, x = event.ydata, event.xdata
+        i, j = trans.transform_point([y, x]).astype(int)
+        # Clip the coordinates at array bounds
+        if not (0 <= i < arr.shape[0]) or not (0 <= j < arr.shape[1]):
+            return None
+        else:
+            return arr[i, j]
 
 
 class NonUniformImage(AxesImage):
@@ -735,7 +779,7 @@ class NonUniformImage(AxesImage):
         im = _image.pcolor(self._Ax, self._Ay, A,
                            int(height), int(width),
                            (x0, x0+v_width, y0, y0+v_height),
-                           self._interpd[self._interpolation])
+                           _interpd_[self._interpolation])
 
         fc = self.axes.patch.get_facecolor()
         bg = mcolors.colorConverter.to_rgba(fc, 0)
@@ -778,6 +822,7 @@ class NonUniformImage(AxesImage):
         # accessed - JDH 3/3/2010
         self._oldxslice = None
         self._oldyslice = None
+        self.stale = True
 
     def set_array(self, *args):
         raise NotImplementedError('Method not supported')
@@ -802,12 +847,12 @@ class NonUniformImage(AxesImage):
     def set_norm(self, norm):
         if self._A is not None:
             raise RuntimeError('Cannot change colors after loading data')
-        cm.ScalarMappable.set_norm(self, norm)
+        super(NonUniformImage, self).set_norm(norm)
 
     def set_cmap(self, cmap):
         if self._A is not None:
             raise RuntimeError('Cannot change colors after loading data')
-        cm.ScalarMappable.set_cmap(self, cmap)
+        super(NonUniformImage, self).set_cmap(cmap)
 
 
 class PcolorImage(martist.Artist, cm.ScalarMappable):
@@ -890,6 +935,7 @@ class PcolorImage(martist.Artist, cm.ScalarMappable):
                             round(self.axes.bbox.ymin),
                             im)
         gc.restore()
+        self.stale = False
 
     def set_data(self, x, y, A):
         A = cbook.safe_masked_invalid(A)
@@ -923,6 +969,7 @@ class PcolorImage(martist.Artist, cm.ScalarMappable):
         self._Ax = x
         self._Ay = y
         self._rgbacache = None
+        self.stale = True
 
     def set_array(self, *args):
         raise NotImplementedError('Method not supported')
@@ -998,6 +1045,7 @@ class FigureImage(martist.Artist, cm.ScalarMappable):
     def set_data(self, A):
         """Set the image array."""
         cm.ScalarMappable.set_array(self, cbook.safe_masked_invalid(A))
+        self.stale = True
 
     def set_array(self, A):
         """Deprecated; use set_data for consistency with other image types."""
@@ -1046,6 +1094,7 @@ class FigureImage(martist.Artist, cm.ScalarMappable):
         gc.set_alpha(self.get_alpha())
         renderer.draw_image(gc, round(self.ox), round(self.oy), im)
         gc.restore()
+        self.stale = False
 
     def write_png(self, fname):
         """Write the image to png file with fname"""
@@ -1157,7 +1206,7 @@ class BboxImage(_AxesImageBase):
         # image input dimensions
         im.reset_matrix()
 
-        im.set_interpolation(self._interpd[self._interpolation])
+        im.set_interpolation(_interpd_[self._interpolation])
 
         im.set_resample(self._resample)
 
@@ -1197,14 +1246,16 @@ class BboxImage(_AxesImageBase):
         b = np.min([y0, y1])
         renderer.draw_image(gc, round(l), round(b), im)
         gc.restore()
+        self.stale = True
 
 
 def imread(fname, format=None):
     """
     Read an image from a file into an array.
 
-    *fname* may be a string path or a Python file-like object.  If
-    using a file object, it must be opened in binary mode.
+    *fname* may be a string path, a valid URL, or a Python
+    file-like object.  If using a file object, it must be opened in binary
+    mode.
 
     If *format* is provided, will try to read file of that type,
     otherwise the format is deduced from the filename.  If nothing can
@@ -1217,7 +1268,9 @@ def imread(fname, format=None):
     matplotlib can only read PNGs natively, but if `PIL
     <http://www.pythonware.com/products/pil/>`_ is installed, it will
     use it to load the image and return an array (if possible) which
-    can be used with :func:`~matplotlib.pyplot.imshow`.
+    can be used with :func:`~matplotlib.pyplot.imshow`. Note, URL strings
+    may not be compatible with PIL. Check the PIL documentation for more
+    information.
     """
 
     def pilread(fname):
@@ -1226,20 +1279,19 @@ def imread(fname, format=None):
             from PIL import Image
         except ImportError:
             return None
-        if cbook.is_string_like(fname):
-            # force close the file after reading the image
-            with open(fname, "rb") as fh:
-                image = Image.open(fh)
-                return pil_to_array(image)
-        else:
-            image = Image.open(fname)
-            return pil_to_array(image)
+        image = Image.open(fname)
+        return pil_to_array(image)
 
     handlers = {'png': _png.read_png, }
     if format is None:
         if cbook.is_string_like(fname):
-            basename, ext = os.path.splitext(fname)
-            ext = ext.lower()[1:]
+            parsed = urlparse(fname)
+            # If the string is a URL, assume png
+            if len(parsed.scheme) > 1:
+                ext = 'png'
+            else:
+                basename, ext = os.path.splitext(fname)
+                ext = ext.lower()[1:]
         elif hasattr(fname, 'name'):
             basename, ext = os.path.splitext(fname.name)
             ext = ext.lower()[1:]
@@ -1262,8 +1314,14 @@ def imread(fname, format=None):
     # reader extension, since Python handles them quite well, but it's
     # tricky in C.
     if cbook.is_string_like(fname):
-        with open(fname, 'rb') as fd:
+        parsed = urlparse(fname)
+        # If fname is a URL, download the data
+        if len(parsed.scheme) > 1:
+            fd = BytesIO(urlopen(fname).read())
             return handler(fd)
+        else:
+            with open(fname, 'rb') as fd:
+                return handler(fd)
     else:
         return handler(fname)
 

@@ -4,7 +4,7 @@ Render to qt from agg
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import os  # not used
 import sys
@@ -69,26 +69,11 @@ class FigureCanvasQTAgg(FigureCanvasQTAggBase,
         if DEBUG:
             print('FigureCanvasQtAgg: ', figure)
         FigureCanvasQT.__init__(self, figure)
+        FigureCanvasQTAggBase.__init__(self, figure)
         FigureCanvasAgg.__init__(self, figure)
         self._drawRect = None
         self.blitbox = None
         self.setAttribute(QtCore.Qt.WA_OpaquePaintEvent)
-        # it has been reported that Qt is semi-broken in a windows
-        # environment.  If `self.draw()` uses `update` to trigger a
-        # system-level window repaint (as is explicitly advised in the
-        # Qt documentation) the figure responds very slowly to mouse
-        # input.  The work around is to directly use `repaint`
-        # (against the advice of the Qt documentation).  The
-        # difference between `update` and repaint is that `update`
-        # schedules a `repaint` for the next time the system is idle,
-        # where as `repaint` repaints the window immediately.  The
-        # risk is if `self.draw` gets called with in another `repaint`
-        # method there will be an infinite recursion.  Thus, we only
-        # expose windows users to this risk.
-        if sys.platform.startswith('win'):
-            self._priv_update = self.repaint
-        else:
-            self._priv_update = self.update
 
 
 FigureCanvas = FigureCanvasQTAgg

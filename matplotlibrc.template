@@ -80,7 +80,7 @@ backend      : %(backend)s
 # information on line properties.
 #lines.linewidth   : 1.0     # line width in points
 #lines.linestyle   : -       # solid line
-#lines.color       : blue    # has no affect on plot(); see axes.color_cycle
+#lines.color       : blue    # has no affect on plot(); see axes.prop_cycle
 #lines.marker      : None    # the default marker
 #lines.markeredgewidth  : 0.5     # the line width around the marker symbol
 #lines.markersize  : 6            # markersize, in points
@@ -89,6 +89,8 @@ backend      : %(backend)s
 #lines.solid_joinstyle : miter       # miter|round|bevel
 #lines.solid_capstyle : projecting   # butt|round|projecting
 #lines.antialiased : True         # render lines in antialised (no jaggies)
+
+#markers.fillstyle: full # full|left|right|bottom|top|none
 
 ### PATCHES
 # Patches are graphical objects that fill 2D space, like polygons or
@@ -256,16 +258,17 @@ backend      : %(backend)s
                                    # separator in the fr_FR locale.
 #axes.formatter.use_mathtext : False # When True, use mathtext for scientific
                                      # notation.
-#axes.formatter.useoffset      : True    # If True, the tick label formatter 
-                                         # will default to labeling ticks relative 
-                                         # to an offset when the data range is very 
-                                         # small compared to the minimum absolute 
+#axes.formatter.useoffset      : True    # If True, the tick label formatter
+                                         # will default to labeling ticks relative
+                                         # to an offset when the data range is very
+                                         # small compared to the minimum absolute
                                          # value of the data.
 
 #axes.unicode_minus  : True    # use unicode for the minus symbol
                                # rather than hyphen.  See
                                # http://en.wikipedia.org/wiki/Plus_and_minus_signs#Character_codes
-#axes.color_cycle    : b, g, r, c, m, y, k  # color cycle for plot lines
+#axes.prop_cycle    : cycler('color', 'bgrcmyk')
+                                            # color cycle for plot lines
                                             # as list of string colorspecs:
                                             # single letter, long name, or
                                             # web-style hex
@@ -363,6 +366,9 @@ backend      : %(backend)s
 #contour.negative_linestyle : dashed # dashed | solid
 #contour.corner_mask        : True   # True | False | legacy
 
+### ERRORBAR PLOTS
+#errorbar.capsize : 3             # length of end cap on error bars in pixels
+
 ### Agg rendering
 ### Warning: experimental, 2008/10/10
 #agg.path.chunksize : 0           # 0 to disable; values in the range
@@ -407,7 +413,7 @@ backend      : %(backend)s
 #savefig.jpeg_quality: 95       # when a jpeg is saved, the default quality parameter.
 #savefig.directory   : ~        # default directory in savefig dialog box,
                                 # leave empty to always use current working directory
-#savefig.transparent : False    # setting that controls whether figures are saved with a 
+#savefig.transparent : False    # setting that controls whether figures are saved with a
                                 # transparent background by default
 
 # tk backend params
@@ -481,6 +487,9 @@ backend      : %(backend)s
 #examples.directory : ''   # directory to look in for custom installation
 
 ###ANIMATION settings
+#animation.html : 'none'           # How to display the animation as HTML in
+                                   # the IPython notebook. 'html5' uses
+                                   # HTML5 video tag.
 #animation.writer : ffmpeg         # MovieWriter 'backend' to use
 #animation.codec : mpeg4           # Codec to use for writing movie
 #animation.bitrate: -1             # Controls size/quality tradeoff for movie.
@@ -497,5 +506,5 @@ backend      : %(backend)s
                                    # $PATH is searched
 #animation.mencoder_args: ''       # Additional arguments to pass to mencoder
 #animation.convert_path: 'convert' # Path to ImageMagick's convert binary.
-                                   # On Windows use the full path since convert 
+                                   # On Windows use the full path since convert
                                    # is also the name of a system tool.

@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import numpy as np
 from io import BytesIO
@@ -99,6 +99,18 @@ def test_text_urls():
 
 @image_comparison(baseline_images=['bold_font_output'], extensions=['svg'])
 def test_bold_font_output():
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(np.arange(10), np.arange(10))
+    ax.set_xlabel('nonbold-xlabel')
+    ax.set_ylabel('bold-ylabel', fontweight='bold')
+    ax.set_title('bold-title', fontweight='bold')
+
+
+@image_comparison(baseline_images=['bold_font_output_with_none_fonttype'],
+                  extensions=['svg'])
+def test_bold_font_output_with_none_fonttype():
+    plt.rcParams['svg.fonttype'] = 'none'
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
     ax.plot(np.arange(10), np.arange(10))

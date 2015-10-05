@@ -32,7 +32,7 @@ themselves.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import numpy as np
 from numpy import ma
@@ -50,7 +50,8 @@ except NameError:
 from .path import Path
 
 DEBUG = False
-
+# we need this later, but this is very expensive to set up
+MINFLOAT = np.MachAr(float).xmin
 MaskedArray = ma.MaskedArray
 
 
@@ -665,7 +666,8 @@ class BboxBase(TransformNode):
 
         bboxes is a sequence of :class:`BboxBase` objects
         """
-        return count_bboxes_overlapping_bbox(self, [np.array(x) for x in bboxes])
+        return count_bboxes_overlapping_bbox(
+            self, np.atleast_3d([np.array(x) for x in bboxes]))
 
     def expanded(self, sw, sh):
         """
@@ -1468,9 +1470,10 @@ class Transform(TransformNode):
         if pts.shape[1] != 2:
             raise ValueError("'pts' must be array with 2 columns for x,y")
 
-        if angles.ndim!=1 or angles.shape[0] != pts.shape[0]:
+        if angles.ndim != 1 or angles.shape[0] != pts.shape[0]:
             msg = "'angles' must be a column vector and have same number of"
             msg += " rows as 'pts'"
+            raise ValueError(msg)
 
         # Convert to radians if desired
         if not radians:
@@ -2725,16 +2728,23 @@ def nonsingular(vmin, vmax, expander=0.001, tiny=1e-15, increasing=True):
 
     Returns *vmin*, *vmax*, expanded and/or swapped if necessary.
 
-    If either input is inf or NaN, or if both inputs are 0,
-    returns -*expander*, *expander*.
+    If either input is inf or NaN, or if both inputs are 0 or very
+    close to zero, it returns -*expander*, *expander*.
     '''
     if (not np.isfinite(vmin)) or (not np.isfinite(vmax)):
         return -expander, expander
+
     swapped = False
     if vmax < vmin:
         vmin, vmax = vmax, vmin
         swapped = True
-    if vmax - vmin <= max(abs(vmin), abs(vmax)) * tiny:
+
+    maxabsvalue = max(abs(vmin), abs(vmax))
+    if maxabsvalue < (1e6 / tiny) * MINFLOAT:
+        vmin = -expander
+        vmax = expander
+
+    elif vmax - vmin <= maxabsvalue * tiny:
         if vmax == 0 and vmin == 0:
             vmin = -expander
             vmax = expander

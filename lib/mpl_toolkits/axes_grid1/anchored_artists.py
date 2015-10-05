@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 from matplotlib.patches import Rectangle, Ellipse
 
@@ -24,7 +24,7 @@ class AnchoredDrawingArea(AnchoredOffsetbox):
         *prop* : font property. This is only used for scaling the paddings.
         """
 
-        self.da = DrawingArea(width, height, xdescent, ydescent, clip=True)
+        self.da = DrawingArea(width, height, xdescent, ydescent)
         self.drawing_area = self.da
 
         super(AnchoredDrawingArea, self).__init__(loc, pad=pad, borderpad=borderpad,

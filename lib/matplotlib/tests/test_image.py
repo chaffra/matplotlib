@@ -1,12 +1,12 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import numpy as np
 
 from matplotlib.testing.decorators import image_comparison, knownfailureif, cleanup
-from matplotlib.image import BboxImage, imread
+from matplotlib.image import BboxImage, imread, NonUniformImage
 from matplotlib.transforms import Bbox
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
@@ -157,6 +157,76 @@ def test_imsave_color_alpha():
         data[data[:, :, 3] == 0, j] = 1
 
     assert_array_equal(data, arr_buf)
+
+
+@cleanup
+def test_cursor_data():
+    from matplotlib.backend_bases import MouseEvent
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(np.arange(100).reshape(10, 10), origin='upper')
+
+    x, y = 4, 4
+    xdisp, ydisp = ax.transData.transform_point([x, y])
+
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    z = im.get_cursor_data(event)
+    assert z == 44, "Did not get 44, got %d" % z
+
+    # Now try for a point outside the image
+    # Tests issue #4957
+    x, y = 10.1, 4
+    xdisp, ydisp = ax.transData.transform_point([x, y])
+
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    z = im.get_cursor_data(event)
+    assert z is None, "Did not get None, got %d" % z
+
+    # Hmm, something is wrong here... I get 0, not None...
+    # But, this works further down in the tests with extents flipped
+    #x, y = 0.1, -0.1
+    #xdisp, ydisp = ax.transData.transform_point([x, y])
+    #event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    #z = im.get_cursor_data(event)
+    #assert z is None, "Did not get None, got %d" % z
+
+    ax.clear()
+    # Now try with the extents flipped.
+    im = ax.imshow(np.arange(100).reshape(10, 10), origin='lower')
+
+    x, y = 4, 4
+    xdisp, ydisp = ax.transData.transform_point([x, y])
+
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    z = im.get_cursor_data(event)
+    assert z == 44, "Did not get 44, got %d" % z
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(np.arange(100).reshape(10, 10), extent=[0, 0.5, 0, 0.5])
+
+    x, y = 0.25, 0.25
+    xdisp, ydisp = ax.transData.transform_point([x, y])
+
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    z = im.get_cursor_data(event)
+    assert z == 55, "Did not get 55, got %d" % z
+
+    # Now try for a point outside the image
+    # Tests issue #4957
+    x, y = 0.75, 0.25
+    xdisp, ydisp = ax.transData.transform_point([x, y])
+
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    z = im.get_cursor_data(event)
+    assert z is None, "Did not get None, got %d" % z
+
+    x, y = 0.01, -0.01
+    xdisp, ydisp = ax.transData.transform_point([x, y])
+
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    z = im.get_cursor_data(event)
+    assert z is None, "Did not get None, got %d" % z
+
 
 @image_comparison(baseline_images=['image_clip'])
 def test_image_clip():
@@ -370,6 +440,18 @@ def test_zoom_and_clip_upper_origin():
     ax.set_ylim(2.0, -0.5)
     ax.set_xlim(-0.5, 2.0)
 
+
+@cleanup
+def test_nonuniformimage_setcmap():
+    ax = plt.gca()
+    im = NonUniformImage(ax)
+    im.set_cmap('Blues')
+
+@cleanup
+def test_nonuniformimage_setnorm():
+    ax = plt.gca()
+    im = NonUniformImage(ax)
+    im.set_norm(plt.Normalize())
 
 if __name__=='__main__':
     import nose

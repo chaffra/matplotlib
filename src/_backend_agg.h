@@ -6,7 +6,9 @@
 #ifndef __BACKEND_AGG_H__
 #define __BACKEND_AGG_H__
 
+#include <cmath>
 #include <vector>
+#include <algorithm>
 
 #include "agg_alpha_mask_u8.h"
 #include "agg_conv_curve.h"
@@ -213,7 +215,7 @@ class RendererAgg
 
     BufferRegion *copy_from_bbox(agg::rect_d in_rect);
     void restore_region(BufferRegion &reg);
-    void restore_region(BufferRegion &region, int x, int y, int xx1, int yy1, int xx2, int yy2);
+    void restore_region(BufferRegion &region, int xx1, int yy1, int xx2, int yy2, int x, int y);
 
     unsigned int width, height;
     double dpi;
@@ -477,7 +479,7 @@ RendererAgg::draw_path(GCAgg &gc, PathIterator &path, agg::trans_affine &trans, 
 
     trans *= agg::trans_affine_scaling(1.0, -1.0);
     trans *= agg::trans_affine_translation(0.0, (double)height);
-    bool clip = !face.first && gc.has_hatchpath() && !path.has_curves();
+    bool clip = !face.first && !gc.has_hatchpath() && !path.has_curves();
     bool simplify = path.should_simplify() && clip;
     double snapping_linewidth = points_to_pixels(gc.linewidth);
     if (gc.color.a == 0.0) {
@@ -597,7 +599,7 @@ inline void RendererAgg::draw_markers(GCAgg &gc,
 
         if (has_clippath) {
             while (path_curve.vertex(&x, &y) != agg::path_cmd_stop) {
-                if (MPL_notisfinite64(x) || MPL_notisfinite64(y)) {
+                if (!(std::isfinite(x) && std::isfinite(y))) {
                     continue;
                 }
 
@@ -629,7 +631,7 @@ inline void RendererAgg::draw_markers(GCAgg &gc,
             }
         } else {
             while (path_curve.vertex(&x, &y) != agg::path_cmd_stop) {
-                if (MPL_notisfinite64(x) || MPL_notisfinite64(y)) {
+                if (!(std::isfinite(x) && std::isfinite(y))) {
                     continue;
                 }
 

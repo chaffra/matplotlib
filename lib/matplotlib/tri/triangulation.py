@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import matplotlib._tri as _tri
 import matplotlib._qhull as _qhull
@@ -107,7 +107,7 @@ class Triangulation(object):
         if self._cpp_triangulation is None:
             self._cpp_triangulation = _tri.Triangulation(
                 self.x, self.y, self.triangles, self.mask, self._edges,
-                self._neighbors)
+                self._neighbors, not self.is_delaunay)
         return self._cpp_triangulation
 
     def get_masked_triangles(self):

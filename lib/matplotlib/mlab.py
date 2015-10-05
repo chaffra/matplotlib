@@ -165,8 +165,8 @@ Example usage::
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import map, xrange, zip
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import map, xrange, zip
 
 import copy
 import csv
@@ -765,9 +765,6 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
         pass
 
     if mode == 'psd':
-        # Scale the spectrum by the norm of the window to compensate for
-        # windowing loss; see Bendat & Piersol Sec 11.5.2.
-        result /= (np.abs(windowVals)**2).sum()
 
         # Also include scaling factors for one-sided densities and dividing by
         # the sampling frequency, if desired. Scale everything, except the DC
@@ -787,6 +784,12 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
         # values. Perform the same scaling here.
         if scale_by_freq:
             result /= Fs
+            # Scale the spectrum by the norm of the window to compensate for
+            # windowing loss; see Bendat & Piersol Sec 11.5.2.
+            result /= (np.abs(windowVals)**2).sum()
+        else:
+            # In this case, preserve power in the segment, not amplitude
+            result /= np.abs(windowVals).sum()**2
 
     t = np.arange(NFFT/2, len(x) - NFFT/2 + 1, NFFT - noverlap)/Fs
 
@@ -2867,14 +2870,20 @@ def csv2rec(fname, comments='#', skiprows=0, checkrows=0, delimiter=',',
         'print':  'print_',
         }
 
-    def get_converters(reader):
+    def get_converters(reader, comments):
 
         converters = None
-        for i, row in enumerate(reader):
+        i = 0
+        for row in reader:
+            if (len(row) and comments is not None and
+                    row[0].startswith(comments)):
+                continue
             if i == 0:
                 converters = [mybool]*len(row)
             if checkrows and i > checkrows:
                 break
+            i += 1
+
             for j, (name, item) in enumerate(zip(names, row)):
                 func = converterd.get(j)
                 if func is None:
@@ -2925,7 +2934,7 @@ def csv2rec(fname, comments='#', skiprows=0, checkrows=0, delimiter=',',
             names = [n.strip() for n in names.split(',')]
 
     # get the converter functions by inspecting checkrows
-    converters = get_converters(reader)
+    converters = get_converters(reader, comments)
     if converters is None:
         raise ValueError('Could not find any valid data in CSV file')
 

@@ -1,9 +1,9 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
-from six import unichr
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange
+from matplotlib.externals.six import unichr
 
 import os, base64, tempfile, gzip, io, sys, codecs, re
 
@@ -1030,7 +1030,7 @@ class RendererSVG(RendererBase):
             style['font-size'] = six.text_type(fontsize) + 'px'
             style['font-family'] = six.text_type(fontfamily)
             style['font-style'] = prop.get_style().lower()
-            style['font-weight'] = prop.get_weight().lower()
+            style['font-weight'] = six.text_type(prop.get_weight()).lower()
             attrib['style'] = generate_css(style)
 
             if mtext and (angle == 0 or mtext.get_rotation_mode() == "anchor"):

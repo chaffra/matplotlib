@@ -14,6 +14,9 @@ import sys
 import warnings
 from textwrap import fill
 
+import versioneer
+
+
 PY3 = (sys.version_info[0] >= 3)
 MSYS = "MSYSTEM" in os.environ
 
@@ -136,7 +139,7 @@ def extract_versions():
     """
     with open('lib/matplotlib/__init__.py') as fd:
         for line in fd.readlines():
-            if (line.startswith('__version__')):
+            if (line.startswith('__version__numpy__')):
                 exec(line.strip())
     return locals()
 
@@ -279,8 +282,13 @@ class PkgConfig(object):
         if sys.platform == 'win32' and not MSYS:
             self.has_pkgconfig = False
         else:
+            try:
+                self.pkg_config = os.environ['PKG_CONFIG']
+            except KeyError:
+                self.pkg_config = 'pkg-config'
+
             self.set_pkgconfig_path()
-            status, output = getstatusoutput("pkg-config --help")
+            status, output = getstatusoutput(self.pkg_config + " --help")
             self.has_pkgconfig = (status == 0)
             if not self.has_pkgconfig:
                 print("IMPORTANT WARNING:")
@@ -313,7 +321,7 @@ class PkgConfig(object):
 
         executable = alt_exec
         if self.has_pkgconfig:
-            executable = 'pkg-config {0}'.format(package)
+            executable = (self.pkg_config + ' {0}').format(package)
 
         use_defaults = True
 
@@ -357,7 +365,7 @@ class PkgConfig(object):
             return None
 
         status, output = getstatusoutput(
-            "pkg-config %s --modversion" % (package))
+            self.pkg_config + " %s --modversion" % (package))
         if status == 0:
             return output
         return None
@@ -439,6 +447,12 @@ class SetupPackage(object):
         Get a list of Python packages that we require at build time.
         pip/easy_install will attempt to download and install this
         package if it is not installed.
+        """
+        return []
+
+    def get_tests_require(self):
+        """
+        Get a list of Python packages that we require for executing tests.
         """
         return []
 
@@ -582,7 +596,7 @@ class Matplotlib(SetupPackage):
     name = "matplotlib"
 
     def check(self):
-        return extract_versions()['__version__']
+        return versioneer.get_version()
 
     def get_packages(self):
         return [
@@ -617,13 +631,14 @@ class Matplotlib(SetupPackage):
                 'mpl-data/images/*.xpm',
                 'mpl-data/images/*.svg',
                 'mpl-data/images/*.gif',
+                'mpl-data/images/*.pdf',
                 'mpl-data/images/*.png',
                 'mpl-data/images/*.ppm',
                 'mpl-data/example/*.npy',
                 'mpl-data/matplotlibrc',
                 'backends/web_backend/*.*',
-                'backends/web_backend/jquery/js/*',
-                'backends/web_backend/jquery/css/themes/base/*.*',
+                'backends/web_backend/jquery/js/*.min.js',
+                'backends/web_backend/jquery/css/themes/base/*.min.css',
                 'backends/web_backend/jquery/css/themes/base/images/*',
                 'backends/web_backend/css/*.*',
                 'backends/Matplotlib.nib/*',
@@ -672,8 +687,8 @@ class Tests(OptionalPackage):
 
         msgs = []
         msg_template = ('{package} is required to run the matplotlib test '
-                        'suite.  pip/easy_install may attempt to install it '
-                        'after matplotlib.')
+                        'suite. "setup.py test" will automatically download it.'
+                        ' Install {package} to run matplotlib.test()')
 
         bad_nose = msg_template.format(
             package='nose %s or later' % self.nose_min_version
@@ -721,8 +736,8 @@ class Tests(OptionalPackage):
                 'sphinxext/tests/tinypages/_static/*',
             ]}
 
-    def get_install_requires(self):
-        requires = ['nose>=%s' % self.nose_min_version]
+    def get_tests_require(self):
+        requires = ['nose>=%s' % self.nose_min_version, 'sphinx']
         if not sys.version_info >= (3, 3):
             requires += ['mock']
         return requires
@@ -1166,31 +1181,11 @@ class Tri(SetupPackage):
         return ext
 
 
-class Six(SetupPackage):
-    name = "six"
-    min_version = "1.4"
+class Externals(SetupPackage):
+    name = "externals"
 
-    def check(self):
-        try:
-            import six
-        except ImportError:
-            return (
-                "six was not found."
-                "pip will attempt to install it "
-                "after matplotlib.")
-
-        if not is_min_version(six.__version__, self.min_version):
-            return ("The installed version of six is {inst_ver} but "
-                    "a the minimum required version is {min_ver}. "
-                    "pip/easy install will attempt to install a "
-                    "newer version."
-                    ).format(min_ver=self.min_version,
-                             inst_ver=six.__version__)
-
-        return "using six version %s" % six.__version__
-
-    def get_install_requires(self):
-        return ['six>={0}'.format(self.min_version)]
+    def get_packages(self):
+        return ['matplotlib.externals']
 
 
 class Pytz(SetupPackage):
@@ -1209,6 +1204,24 @@ class Pytz(SetupPackage):
 
     def get_install_requires(self):
         return ['pytz']
+
+
+class Cycler(SetupPackage):
+    name = "cycler"
+
+    def check(self):
+        try:
+            import cycler
+        except ImportError:
+            return (
+                "cycler was not found. "
+                "pip will attempt to install it "
+                "after matplotlib.")
+
+        return "using cycler version %s" % cycler.__version__
+
+    def get_install_requires(self):
+        return ['cycler']
 
 
 class Dateutil(SetupPackage):
@@ -1892,20 +1905,22 @@ class BackendWxAgg(OptionalBackendPackage):
     name = "wxagg"
 
     def check_requirements(self):
+        wxversioninstalled = True
         try:
             import wxversion
         except ImportError:
-            raise CheckFailed("requires wxPython")
+            wxversioninstalled = False
 
-        try:
-            _wx_ensure_failed = wxversion.AlreadyImportedError
-        except AttributeError:
-            _wx_ensure_failed = wxversion.VersionError
+        if wxversioninstalled:
+            try:
+                _wx_ensure_failed = wxversion.AlreadyImportedError
+            except AttributeError:
+                _wx_ensure_failed = wxversion.VersionError
 
-        try:
-            wxversion.ensureMinimal('2.8')
-        except _wx_ensure_failed:
-            pass
+            try:
+                wxversion.ensureMinimal('2.8')
+            except _wx_ensure_failed:
+                pass
 
         try:
             import wx

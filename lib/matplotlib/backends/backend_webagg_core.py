@@ -13,7 +13,7 @@ Displays Agg images in the browser, with interactivity
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import io
 import json
@@ -329,6 +329,7 @@ class FigureCanvasWebAggCore(backend_agg.FigureCanvasAgg):
             self.send_event('figure_label', label=figure_label)
             self._force_full = True
             self.draw_idle()
+
         else:
             handler = getattr(self, 'handle_{0}'.format(e_type), None)
             if handler is None:

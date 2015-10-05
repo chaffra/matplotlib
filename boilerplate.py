@@ -8,6 +8,7 @@ Hence, the non-generatable content should be edited in the pyplot.py file
 itself, whereas the generatable content must be edited via templates in
 this file.
 
+This file is python 3 only due to the use of `inspect`
 """
 # We did try to do the wrapping the smart way,
 # with callable functions and new.function, but could never get the
@@ -19,7 +20,7 @@ this file.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import os
 import inspect
@@ -56,7 +57,6 @@ def %(func)s(%(argspec)s):
         %(ax)s.hold(hold)
     try:
         %(ret)s = %(ax)s.%(func)s(%(call)s)
-        draw_if_interactive()
     finally:
         %(ax)s.hold(%(washold)s)
 %(mappable)s
@@ -69,7 +69,6 @@ MISC_FN_TEMPLATE = AUTOGEN_MSG + """
 @docstring.copy_dedent(Axes.%(func)s)
 def %(func)s(%(argspec)s):
     %(ret)s = gca().%(func)s(%(call)s)
-    draw_if_interactive()
     return %(ret)s
 """
 
@@ -85,7 +84,6 @@ def {name}():
 
     if im is not None:
         im.set_cmap(cm.{name})
-    draw_if_interactive()
 
 """
 
@@ -212,17 +210,35 @@ def boilerplate_gen():
                 mappable = ''
 
             # Get argspec of wrapped function
-            args, varargs, varkw, defaults = inspect.getargspec(getattr(Axes, func))
+            base_func = getattr(Axes, func)
+            has_data = 'data' in inspect.signature(base_func).parameters
+            work_func = inspect.unwrap(base_func)
+
+            if six.PY2:
+                args, varargs, varkw, defaults = inspect.getargspec(work_func)
+            else:
+                (args, varargs, varkw, defaults, kwonlyargs, kwonlydefs,
+                    annotations) = inspect.getfullargspec(work_func)
             args.pop(0)  # remove 'self' argument
             if defaults is None:
                 defaults = ()
             else:
                 def_edited = []
                 for val in defaults:
-                    if isinstance(val, unicode):
-                        val = val.encode('ascii', 'ignore')
+                    if six.PY2:
+                        if isinstance(val, unicode):
+                            val = val.encode('ascii', 'ignore')
                     def_edited.append(val)
                 defaults = tuple(def_edited)
+
+            # Add a data keyword argument if needed (fmt is PLOT_TEMPLATE) and
+            # possible (if *args is used, we can't just add a data
+            # argument in front of it since it would gobble one of the
+            # arguments the user means to pass via *args)
+            # This needs to be done here so that it goes into call
+            if not varargs and fmt is PLOT_TEMPLATE and has_data:
+                args.append('data')
+                defaults = defaults + (None,)
 
             # How to call the wrapped function
             call = []
@@ -231,6 +247,14 @@ def boilerplate_gen():
                     call.append('%s' % arg)
                 else:
                     call.append('%s=%s' % (arg, arg))
+
+            # remove the data keyword as it was needed above to go into the
+            # call but should go after `hold` in the signature.
+            # This is janky as all get out, but hopefully boilerplate will
+            # be retired soon.
+            if not varargs and fmt is PLOT_TEMPLATE and has_data:
+                args.pop()
+                defaults = defaults[:-1]
 
             if varargs is not None:
                 call.append('*' + varargs)
@@ -251,6 +275,9 @@ def boilerplate_gen():
             elif fmt is PLOT_TEMPLATE:
                 args.append('hold')
                 defaults = defaults + (None,)
+                if has_data:
+                    args.append('data')
+                    defaults = defaults + (None,)
                 sethold = ''
 
             # Now we can build the argspec for defining the wrapper
@@ -273,7 +300,7 @@ def boilerplate_gen():
 
             # Since we can't avoid using some function names,
             # bail out if they are used as argument names
-            for reserved in ('gca', 'gci', 'draw_if_interactive'):
+            for reserved in ('gca', 'gci'):
                 if reserved in bad:
                     msg = 'Axes method %s has kwarg named %s' % (func, reserved)
                     raise ValueError(msg)
@@ -295,7 +322,12 @@ def boilerplate_gen():
         'spring',
         'summer',
         'winter',
-        'spectral'
+        'spectral',
+
+        'magma',
+        'inferno',
+        'plasma',
+        'viridis'
     )
     # add all the colormaps (autumn, hsv, ....)
     for name in cmaps:

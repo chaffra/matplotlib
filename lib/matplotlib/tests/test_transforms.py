@@ -1,14 +1,15 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange, zip
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange, zip
 
 import unittest
 
 from nose.tools import assert_equal, assert_raises
 import numpy.testing as np_test
 from numpy.testing import assert_almost_equal, assert_array_equal
+from numpy.testing import assert_array_almost_equal
 from matplotlib.transforms import Affine2D, BlendedGenericTransform, Bbox
 from matplotlib.path import Path
 from matplotlib.scale import LogScale
@@ -533,6 +534,46 @@ def test_nan_overlap():
     a = Bbox([[0, 0], [1, 1]])
     b = Bbox([[0, 0], [1, np.nan]])
     assert not a.overlaps(b)
+
+
+def test_transform_angles():
+    t = mtrans.Affine2D()  # Identity transform
+    angles = np.array([20, 45, 60])
+    points = np.array([[0, 0], [1, 1], [2, 2]])
+
+    # Identity transform does not change angles
+    new_angles = t.transform_angles(angles, points)
+    assert_array_almost_equal(angles, new_angles)
+
+    # points missing a 2nd dimension
+    assert_raises(ValueError, t.transform_angles, angles, points[0:2, 0:1])
+
+    # Number of angles != Number of points
+    assert_raises(ValueError, t.transform_angles, angles, points[0:2, :])
+
+
+def test_nonsingular():
+    # test for zero-expansion type cases; other cases may be added later
+    zero_expansion = np.array([-0.001, 0.001])
+    cases = [(0, np.nan), (0, 0), (0, 7.9e-317)]
+    for args in cases:
+        out = np.array(mtrans.nonsingular(*args))
+        assert_array_equal(out, zero_expansion)
+
+
+def test_invalid_arguments():
+    t = mtrans.Affine2D()
+    # There are two different exceptions, since the wrong number of
+    # dimensions is caught when constructing an array_view, and that
+    # raises a ValueError, and a wrong shape with a possible number
+    # of dimensions is caught by our CALL_CPP macro, which always
+    # raises the less precise RuntimeError.
+    assert_raises(ValueError, t.transform, 1)
+    assert_raises(ValueError, t.transform, [[[1]]])
+    assert_raises(RuntimeError, t.transform, [])
+    assert_raises(RuntimeError, t.transform, [1])
+    assert_raises(RuntimeError, t.transform, [[1]])
+    assert_raises(RuntimeError, t.transform, [[1, 2, 3]])
 
 
 if __name__ == '__main__':

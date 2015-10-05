@@ -4,7 +4,6 @@
 
 #include "_backend_agg.h"
 #include "mplutils.h"
-#include "MPL_isnan.h"
 
 void BufferRegion::to_string_argb(uint8_t *buf)
 {
@@ -46,7 +45,7 @@ RendererAgg::RendererAgg(unsigned int width, unsigned int height, double dpi)
       rendererBase(),
       rendererAA(),
       rendererBin(),
-      theRasterizer(4096),
+      theRasterizer(8192),
       lastclippath(NULL),
       _fill_color(agg::rgba(1, 1, 1, 0))
 {
@@ -110,7 +109,7 @@ void RendererAgg::restore_region(BufferRegion &region)
 
 // Restore the part of the saved region with offsets
 void
-RendererAgg::restore_region(BufferRegion &region, int x, int y, int xx1, int yy1, int xx2, int yy2)
+RendererAgg::restore_region(BufferRegion &region, int xx1, int yy1, int xx2, int yy2, int x, int y )
 {
     if (region.get_data() == NULL) {
         throw "Cannot restore_region from NULL data";

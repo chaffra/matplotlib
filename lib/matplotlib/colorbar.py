@@ -21,8 +21,8 @@ is a thin wrapper over :meth:`~matplotlib.figure.Figure.colorbar`.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange, zip
+from matplotlib.externals import six
+from matplotlib.externals.six.moves import xrange, zip
 
 import warnings
 
@@ -256,6 +256,8 @@ class ColorbarBase(cm.ScalarMappable):
                    'min': slice(1, None),
                    'max': slice(0, -1)}
 
+    n_rasterize = 50  # rasterize solids if number of colors >= n_rasterize
+
     def __init__(self, ax, cmap=None,
                  norm=None,
                  alpha=None,
@@ -392,6 +394,7 @@ class ColorbarBase(cm.ScalarMappable):
 
         if update_ticks:
             self.update_ticks()
+        self.stale = True
 
     def set_ticklabels(self, ticklabels, update_ticks=True):
         """
@@ -405,6 +408,7 @@ class ColorbarBase(cm.ScalarMappable):
                 self.update_ticks()
         else:
             warnings.warn("set_ticks() must have been called.")
+        self.stale = True
 
     def _config_axes(self, X, Y):
         '''
@@ -444,6 +448,7 @@ class ColorbarBase(cm.ScalarMappable):
             self.ax.set_ylabel(self._label, **self._labelkw)
         else:
             self.ax.set_xlabel(self._label, **self._labelkw)
+        self.stale = True
 
     def set_label(self, label, **kw):
         '''
@@ -514,6 +519,8 @@ class ColorbarBase(cm.ScalarMappable):
                                     colors=(mpl.rcParams['axes.edgecolor'],),
                                     linewidths=linewidths)
             self.ax.add_collection(self.dividers)
+        elif len(self._y) >= self.n_rasterize:
+            self.solids.set_rasterized(True)
 
     def add_lines(self, levels, colors, linewidths, erase=True):
         '''
@@ -548,6 +555,7 @@ class ColorbarBase(cm.ScalarMappable):
         self.lines.append(col)
         col.set_color(colors)
         self.ax.add_collection(col)
+        self.stale = True
 
     def _ticker(self):
         '''
@@ -942,6 +950,7 @@ class Colorbar(ColorbarBase):
             CS = self.mappable
             if not CS.filled:
                 self.add_lines(CS)
+        self.stale = True
 
     def update_bruteforce(self, mappable):
         '''

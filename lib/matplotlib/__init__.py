@@ -102,12 +102,13 @@ to MATLAB&reg;, a registered trademark of The MathWorks, Inc.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 import sys
 import distutils.version
 from itertools import chain
 
 import io
+import inspect
 import locale
 import os
 import re
@@ -115,19 +116,25 @@ import tempfile
 import warnings
 import contextlib
 import distutils.sysconfig
-
+import functools
 # cbook must import matplotlib only within function
 # definitions, so it is safe to import from it here.
-from matplotlib.cbook import is_string_like, mplDeprecation
+from matplotlib.cbook import is_string_like, mplDeprecation, dedent, get_label
 from matplotlib.compat import subprocess
 from matplotlib.rcsetup import (defaultParams,
-                                validate_backend)
+                                validate_backend,
+                                cycler)
 
 import numpy
-from six.moves.urllib.request import urlopen
-from six.moves import reload_module as reload
+from matplotlib.externals.six.moves.urllib.request import urlopen
+from matplotlib.externals.six.moves import reload_module as reload
 
-__version__ = str('1.5.dev1')
+# Get the version from the _version.py versioneer file. For a git checkout,
+# this is computed based on the number of commits since the last tag.
+from ._version import get_versions
+__version__ = str(get_versions()['version'])
+del get_versions
+
 __version__numpy__ = str('1.6')  # minimum required numpy version
 
 try:
@@ -537,6 +544,7 @@ def _create_tmp_config_dir():
     """
     import getpass
     import tempfile
+    from matplotlib.cbook import mkdirs
 
     try:
         tempdir = tempfile.gettempdir()
@@ -546,6 +554,8 @@ def _create_tmp_config_dir():
         return None
     tempdir = os.path.join(tempdir, 'matplotlib-%s' % getpass.getuser())
     os.environ['MPLCONFIGDIR'] = tempdir
+
+    mkdirs(tempdir)
 
     return tempdir
 
@@ -810,16 +820,21 @@ def matplotlib_fname():
     return fname
 
 
+# names of keys to deprecate
+# the values are a tuple of (new_name, f_old_2_new, f_new_2_old)
+# the inverse function may be `None`
 _deprecated_map = {
-    'text.fontstyle':   ('font.style', lambda x: x),
-    'text.fontangle':   ('font.style', lambda x: x),
-    'text.fontvariant': ('font.variant', lambda x: x),
-    'text.fontweight':  ('font.weight', lambda x: x),
-    'text.fontsize':    ('font.size', lambda x: x),
-    'tick.size':        ('tick.major.size', lambda x: x),
+    'text.fontstyle':   ('font.style', lambda x: x, None),
+    'text.fontangle':   ('font.style', lambda x: x, None),
+    'text.fontvariant': ('font.variant', lambda x: x, None),
+    'text.fontweight':  ('font.weight', lambda x: x, None),
+    'text.fontsize':    ('font.size', lambda x: x, None),
+    'tick.size':        ('tick.major.size', lambda x: x, None),
     'svg.embed_char_paths': ('svg.fonttype',
-                             lambda x: "path" if x else "none"),
-    'savefig.extension': ('savefig.format', lambda x: x),
+                             lambda x: "path" if x else "none", None),
+    'savefig.extension': ('savefig.format', lambda x: x, None),
+    'axes.color_cycle': ('axes.prop_cycle', lambda x: cycler('color', x),
+                         lambda x: [c.get('color', None) for c in x]),
     }
 
 _deprecated_ignore_map = {
@@ -853,7 +868,7 @@ class RcParams(dict):
     def __setitem__(self, key, val):
         try:
             if key in _deprecated_map:
-                alt_key, alt_val = _deprecated_map[key]
+                alt_key, alt_val, inverse_alt = _deprecated_map[key]
                 warnings.warn(self.msg_depr % (key, alt_key))
                 key = alt_key
                 val = alt_val(val)
@@ -871,15 +886,22 @@ class RcParams(dict):
 See rcParams.keys() for a list of valid parameters.' % (key,))
 
     def __getitem__(self, key):
+        inverse_alt = None
         if key in _deprecated_map:
-            alt_key, alt_val = _deprecated_map[key]
+            alt_key, alt_val, inverse_alt = _deprecated_map[key]
             warnings.warn(self.msg_depr % (key, alt_key))
             key = alt_key
+
         elif key in _deprecated_ignore_map:
             alt = _deprecated_ignore_map[key]
             warnings.warn(self.msg_depr_ignore % (key, alt))
             key = alt
-        return dict.__getitem__(self, key)
+
+        val = dict.__getitem__(self, key)
+        if inverse_alt is not None:
+            return inverse_alt(val)
+        else:
+            return val
 
     # http://stackoverflow.com/questions/2390827
     # (how-to-properly-subclass-dict-and-override-get-set)
@@ -974,7 +996,11 @@ def _open_file_or_url(fname):
         yield _url_lines(f)
         f.close()
     else:
-        with io.open(fname, encoding=locale.getdefaultlocale()[1]) as f:
+        fname = os.path.expanduser(fname)
+        encoding = locale.getdefaultlocale()[1]
+        if encoding is None:
+            encoding = "utf-8"
+        with io.open(fname, encoding=encoding) as f:
             yield f
 
 
@@ -990,23 +1016,30 @@ def _rc_params_in_file(fname, fail_on_error=False):
     cnt = 0
     rc_temp = {}
     with _open_file_or_url(fname) as fd:
-        for line in fd:
-            cnt += 1
-            strippedline = line.split('#', 1)[0].strip()
-            if not strippedline:
-                continue
-            tup = strippedline.split(':', 1)
-            if len(tup) != 2:
-                error_details = _error_details_fmt % (cnt, line, fname)
-                warnings.warn('Illegal %s' % error_details)
-                continue
-            key, val = tup
-            key = key.strip()
-            val = val.strip()
-            if key in rc_temp:
-                warnings.warn('Duplicate key in file "%s", line #%d' %
-                              (fname, cnt))
-            rc_temp[key] = (val, line, cnt)
+        try:
+            for line in fd:
+                cnt += 1
+                strippedline = line.split('#', 1)[0].strip()
+                if not strippedline:
+                    continue
+                tup = strippedline.split(':', 1)
+                if len(tup) != 2:
+                    error_details = _error_details_fmt % (cnt, line, fname)
+                    warnings.warn('Illegal %s' % error_details)
+                    continue
+                key, val = tup
+                key = key.strip()
+                val = val.strip()
+                if key in rc_temp:
+                    warnings.warn('Duplicate key in file "%s", line #%d' %
+                                  (fname, cnt))
+                rc_temp[key] = (val, line, cnt)
+        except UnicodeDecodeError:
+            warnings.warn(
+                ('Cannot decode configuration file %s with '
+                 'encoding %s, check LANG and LC_* variables')
+                % (fname, locale.getdefaultlocale()[1] or 'utf-8 (default)'))
+            raise
 
     config = RcParams()
 
@@ -1416,6 +1449,7 @@ default_test_modules = [
     'matplotlib.tests.test_lines',
     'matplotlib.tests.test_mathtext',
     'matplotlib.tests.test_mlab',
+    'matplotlib.tests.test_offsetbox',
     'matplotlib.tests.test_patches',
     'matplotlib.tests.test_path',
     'matplotlib.tests.test_patheffects',
@@ -1431,11 +1465,15 @@ default_test_modules = [
     'matplotlib.tests.test_subplots',
     'matplotlib.tests.test_table',
     'matplotlib.tests.test_text',
+    'matplotlib.tests.test_texmanager',
     'matplotlib.tests.test_ticker',
     'matplotlib.tests.test_tightlayout',
     'matplotlib.tests.test_transforms',
     'matplotlib.tests.test_triangulation',
+    'matplotlib.tests.test_units',
     'matplotlib.tests.test_widgets',
+    'matplotlib.tests.test_cycles',
+    'matplotlib.tests.test_labeled_data_unpacking',
     'matplotlib.sphinxext.tests.test_tinypages',
     'mpl_toolkits.tests.test_mplot3d',
     'mpl_toolkits.tests.test_axes_grid1',
@@ -1443,8 +1481,21 @@ default_test_modules = [
     ]
 
 
+def verify_test_dependencies():
+    try:
+        import nose
+        try:
+            from unittest import mock
+        except:
+            import mock
+    except ImportError:
+        print("matplotlib.test requires nose and mock to run.")
+        raise
+
+
 def test(verbosity=1):
     """run the matplotlib test suite"""
+    verify_test_dependencies()
     try:
         import faulthandler
     except ImportError:
@@ -1485,6 +1536,297 @@ def test(verbosity=1):
     return success
 
 test.__test__ = False  # nose: this function is not a test
+
+
+def _replacer(data, key):
+    # if key isn't a string don't bother
+    if not isinstance(key, six.string_types):
+        return key
+    # try to use __getitem__
+    try:
+        return data[key]
+    # key does not exist, silently fall back to key
+    except KeyError:
+        return key
+
+
+_DATA_DOC_APPENDIX = """
+
+Notes
+-----
+
+In addition to the above described arguments, this function can take a
+**data** keyword argument. If such a **data** argument is given, the
+following arguments are replaced by **data[<arg>]**:
+
+{replaced}
+"""
+
+
+def unpack_labeled_data(replace_names=None, replace_all_args=False,
+                        label_namer=None, positional_parameter_names=None):
+    """
+    A decorator to add a 'data' kwarg to any a function.  The signature
+    of the input function must include the ax argument at the first position ::
+
+       def foo(ax, *args, **kwargs)
+
+    so this is suitable for use with Axes methods.
+
+    Parameters
+    ----------
+    replace_names : list of strings, optional, default: None
+        The list of parameter names which arguments should be replaced by
+        `data[name]`. If None, all arguments are replaced if they are
+        included in `data`.
+    replace_all_args : bool, default: False
+        If True, all arguments in *args get replaced, even if they are not
+        in replace_names.
+    label_namer : string, optional, default: None
+        The name of the parameter which argument should be used as label, if
+        label is not set. If None, the label keyword argument is not set.
+    positional_parameter_names : list of strings or callable, optional
+        The full list of positional parameter names (excluding an explicit
+        `ax`/'self' argument at the first place and including all possible
+        positional parameter in `*args`), in the right order. Can also include
+        all other keyword parameter. Only needed if the wrapped function does
+        contain `*args` and (replace_names is not None or replace_all_args is
+        False). If it is a callable, it will be called with the actual
+        tuple of *args and the data and should return a list like
+        above.
+        NOTE: callables should only be used when the names and order of *args
+        can only be determined at runtime. Please use list of names
+        when the order and names of *args is clear before runtime!
+    """
+    if replace_names is not None:
+        replace_names = set(replace_names)
+
+    def param(func):
+        new_sig = None
+        python_has_signature = major >= 3 and minor1 >= 3
+        python_has_wrapped = major >= 3 and minor1 >= 2
+
+        # if in a legacy version of python and IPython is already imported
+        # try to use their back-ported signature
+        if not python_has_signature and 'IPython' in sys.modules:
+            try:
+                import IPython.utils.signatures
+                signature = IPython.utils.signatures.signature
+                Parameter = IPython.utils.signatures.Parameter
+            except ImportError:
+                pass
+            else:
+                python_has_signature = True
+        else:
+            if python_has_signature:
+                signature = inspect.signature
+                Parameter = inspect.Parameter
+
+        if not python_has_signature:
+            arg_spec = inspect.getargspec(func)
+            _arg_names = arg_spec.args
+            _has_varargs = arg_spec.varargs is not None
+            _has_varkwargs = arg_spec.keywords is not None
+        else:
+            sig = signature(func)
+            _has_varargs = False
+            _has_varkwargs = False
+            _arg_names = []
+            params = list(sig.parameters.values())
+            for p in params:
+                if p.kind is Parameter.VAR_POSITIONAL:
+                    _has_varargs = True
+                elif p.kind is Parameter.VAR_KEYWORD:
+                    _has_varkwargs = True
+                else:
+                    _arg_names.append(p.name)
+            data_param = Parameter('data',
+                                   Parameter.KEYWORD_ONLY,
+                                   default=None)
+            if _has_varkwargs:
+                params.insert(-1, data_param)
+            else:
+                params.append(data_param)
+            new_sig = sig.replace(parameters=params)
+        # Import-time check: do we have enough information to replace *args?
+        arg_names_at_runtime = False
+        # there can't be any positional arguments behind *args and no
+        # positional args can end up in **kwargs, so only *varargs make
+        # problems.
+        # http://stupidpythonideas.blogspot.de/2013/08/arguments-and-parameters.html
+        if not _has_varargs:
+            # all args are "named", so no problem
+            # remove the first "ax" / self arg
+            arg_names = _arg_names[1:]
+        else:
+            # Here we have "unnamed" variables and we need a way to determine
+            # whether to replace a arg or not
+            if replace_names is None:
+                # all argnames should be replaced
+                arg_names = None
+            elif len(replace_names) == 0:
+                # No argnames should be replaced
+                arg_names = []
+            elif len(_arg_names) > 1 and (positional_parameter_names is None):
+                # we got no manual parameter names but more than an 'ax' ...
+                if len(set(replace_names) - set(_arg_names[1:])) == 0:
+                    # all to be replaced arguments are in the list
+                    arg_names = _arg_names[1:]
+                else:
+                    msg = ("Got unknown 'replace_names' and wrapped function "
+                           "'%s' uses '*args', need "
+                           "'positional_parameter_names'!")
+                    raise AssertionError(msg % func.__name__)
+            else:
+                if positional_parameter_names is not None:
+                    if callable(positional_parameter_names):
+                        # determined by the function at runtime
+                        arg_names_at_runtime = True
+                        # so that we don't compute the label_pos at import time
+                        arg_names = []
+                    else:
+                        arg_names = positional_parameter_names
+                else:
+                    if replace_all_args:
+                        arg_names = []
+                    else:
+                        msg = ("Got 'replace_names' and wrapped function "
+                               "'%s' uses *args, need "
+                               "'positional_parameter_names' or "
+                               "'replace_all_args'!")
+                        raise AssertionError(msg % func.__name__)
+
+        # compute the possible label_namer and label position in positional
+        # arguments
+        label_pos = 9999  # bigger than all "possible" argument lists
+        label_namer_pos = 9999  # bigger than all "possible" argument lists
+        if (label_namer and  # we actually want a label here ...
+                arg_names and  # and we can determine a label in *args ...
+                (label_namer in arg_names)):  # and it is in *args
+            label_namer_pos = arg_names.index(label_namer)
+            if "label" in arg_names:
+                label_pos = arg_names.index("label")
+
+        # Check the case we know a label_namer but we can't find it the
+        # arg_names... Unfortunately the label_namer can be in **kwargs,
+        # which we can't detect here and which results in a non-set label
+        # which might surprise the user :-(
+        if label_namer and not arg_names_at_runtime and not _has_varkwargs:
+            if not arg_names:
+                msg = ("label_namer '%s' can't be found as the parameter "
+                       "without 'positional_parameter_names'.")
+                raise AssertionError(msg % label_namer)
+            elif label_namer not in arg_names:
+                msg = ("label_namer '%s' can't be found in the parameter "
+                       "names (known argnames: %s).")
+                raise AssertionError(msg % (label_namer, arg_names))
+            else:
+                # this is the case when the name is in arg_names
+                pass
+
+        @functools.wraps(func)
+        def inner(ax, *args, **kwargs):
+            # this is needed because we want to change these values if
+            # arg_names_at_runtime==True, but python does not allow assigning
+            # to a variable in a outer scope. So use some new local ones and
+            # set them to the already computed values.
+            _label_pos = label_pos
+            _label_namer_pos = label_namer_pos
+            _arg_names = arg_names
+
+            label = None
+
+            data = kwargs.pop('data', None)
+            if data is not None:
+                if arg_names_at_runtime:
+                    # update the information about replace names and
+                    # label position
+                    _arg_names = positional_parameter_names(args, data)
+                    if (label_namer and  # we actually want a label here ...
+                            _arg_names and  # and we can find a label in *args
+                            (label_namer in _arg_names)):  # and it is in *args
+                        _label_namer_pos = _arg_names.index(label_namer)
+                        if "label" in _arg_names:
+                            _label_pos = arg_names.index("label")
+
+                # save the current label_namer value so that it can be used as
+                # a label
+                if _label_namer_pos < len(args):
+                    label = args[_label_namer_pos]
+                else:
+                    label = kwargs.get(label_namer, None)
+                # ensure a string, as label can't be anything else
+                if not isinstance(label, six.string_types):
+                    label = None
+
+                if (replace_names is None) or (replace_all_args is True):
+                    # all should be replaced
+                    args = tuple(_replacer(data, a) for
+                                 j, a in enumerate(args))
+                else:
+                    # An arg is replaced if the arg_name of that position is
+                    #   in replace_names ...
+                    if len(_arg_names) < len(args):
+                        raise RuntimeError(
+                            "Got more args than function expects")
+                    args = tuple(_replacer(data, a)
+                                 if _arg_names[j] in replace_names else a
+                                 for j, a in enumerate(args))
+
+                if replace_names is None:
+                    # replace all kwargs ...
+                    kwargs = dict((k, _replacer(data, v))
+                                  for k, v in six.iteritems(kwargs))
+                else:
+                    # ... or only if a kwarg of that name is in replace_names
+                    kwargs = dict((k, _replacer(data, v)
+                                   if k in replace_names else v)
+                                  for k, v in six.iteritems(kwargs))
+
+            # replace the label if this func "wants" a label arg and the user
+            # didn't set one. Note: if the user puts in "label=None", it does
+            # *NOT* get replaced!
+            user_supplied_label = (
+                (len(args) >= _label_pos) or  # label is included in args
+                ('label' in kwargs)  # ... or in kwargs
+            )
+            if (label_namer and not user_supplied_label):
+                if _label_namer_pos < len(args):
+                    kwargs['label'] = get_label(args[_label_namer_pos], label)
+                elif label_namer in kwargs:
+                    kwargs['label'] = get_label(kwargs[label_namer], label)
+                else:
+                    import warnings
+                    msg = ("Tried to set a label via parameter '%s' in "
+                           "func '%s' but couldn't find such an argument. \n"
+                           "(This is a programming error, please report to "
+                           "the matplotlib list!)")
+                    warnings.warn(msg % (label_namer, func.__name__),
+                                  RuntimeWarning, stacklevel=2)
+            return func(ax, *args, **kwargs)
+        pre_doc = inner.__doc__
+        if pre_doc is None:
+            pre_doc = ''
+        else:
+            pre_doc = dedent(pre_doc)
+        _repl = ""
+        if replace_names is None:
+            _repl = "* All positional and all keyword arguments."
+        else:
+            if len(replace_names) != 0:
+                _repl = "* All arguments with the following names: '{names}'."
+            if replace_all_args:
+                _repl += "\n* All positional arguments."
+            _repl = _repl.format(names="', '".join(replace_names))
+        inner.__doc__ = (pre_doc +
+                         _DATA_DOC_APPENDIX.format(replaced=_repl))
+        if not python_has_wrapped:
+            inner.__wrapped__ = func
+        if new_sig is not None:
+            inner.__signature__ = new_sig
+        return inner
+    return param
+
 
 verbose.report('matplotlib version %s' % __version__)
 verbose.report('verbose.level %s' % verbose.level)

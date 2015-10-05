@@ -21,7 +21,7 @@ Naming Conventions
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
+from matplotlib.externals import six
 
 import os, sys, warnings, gzip
 
@@ -397,6 +397,8 @@ class GraphicsContextCairo(GraphicsContextBase):
         else:
             self.ctx.set_source_rgba(*self._rgb)
 
+    def get_rgb(self):
+        return self.ctx.get_source().get_rgba()[:3]
 
     def set_joinstyle(self, js):
         if js in ('miter', 'round', 'bevel'):

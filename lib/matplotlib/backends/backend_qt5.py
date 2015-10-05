@@ -1,12 +1,12 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-import six
+from matplotlib.externals import six
 
 import os
 import re
 import signal
 import sys
-from six import unichr
+from matplotlib.externals.six import unichr
 
 import matplotlib
 
@@ -239,15 +239,8 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         super(FigureCanvasQT, self).__init__(figure=figure)
         self.figure = figure
         self.setMouseTracking(True)
-        self._idle = True
-        # hide until we can test and fix
-        # self.startTimer(backend_IdleEvent.milliseconds)
         w, h = self.get_width_height()
         self.resize(w, h)
-
-    def __timerEvent(self, event):
-        # hide until we can test and fix
-        self.mpl_idle_event(event)
 
     def enterEvent(self, event):
         FigureCanvasBase.enter_notify_event(self, guiEvent=event)
@@ -340,8 +333,7 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         hinch = h / dpival
         self.figure.set_size_inches(winch, hinch)
         FigureCanvasBase.resize_event(self)
-        self.draw()
-        self.update()
+        self.draw_idle()
         QtWidgets.QWidget.resizeEvent(self, event)
 
     def sizeHint(self):
@@ -422,19 +414,6 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
 
     stop_event_loop.__doc__ = FigureCanvasBase.stop_event_loop_default.__doc__
 
-    def draw_idle(self):
-        'update drawing area only if idle'
-        d = self._idle
-        self._idle = False
-
-        def idle_draw(*args):
-            try:
-                self.draw()
-            finally:
-                self._idle = True
-        if d:
-            QtCore.QTimer.singleShot(0, idle_draw)
-
 
 class MainWindow(QtWidgets.QMainWindow):
     closing = QtCore.Signal()
@@ -488,6 +467,10 @@ class FigureManagerQT(FigureManagerBase):
         else:
             tbs_height = 0
 
+        # add text label to status bar
+        self.statusbar_label = QtWidgets.QLabel()
+        self.window.statusBar().addWidget(self.statusbar_label)
+
         # resize the main window so it will display the canvas with the
         # requested size:
         cs = canvas.sizeHint()
@@ -500,6 +483,7 @@ class FigureManagerQT(FigureManagerBase):
 
         if matplotlib.is_interactive():
             self.window.show()
+            self.canvas.draw_idle()
 
         def notify_axes_change(fig):
             # This will be called whenever the current axes is changed
@@ -509,8 +493,7 @@ class FigureManagerQT(FigureManagerBase):
 
     @QtCore.Slot()
     def _show_message(self, s):
-        # Fixes a PySide segfault.
-        self.window.statusBar().showMessage(s)
+        self.statusbar_label.setText(s)
 
     def full_screen_toggle(self):
         if self.window.isFullScreen():
@@ -626,6 +609,10 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
     if figureoptions is not None:
         def edit_parameters(self):
             allaxes = self.canvas.figure.get_axes()
+            if not allaxes:
+                QtWidgets.QMessageBox.warning(
+                    self.parent, "Error", "There are no axes to edit.")
+                return
             if len(allaxes) == 1:
                 axes = allaxes[0]
             else:
@@ -671,7 +658,7 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
         self._update_buttons_checked()
 
     def dynamic_update(self):
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def set_message(self, s):
         self.message.emit(s)
@@ -693,6 +680,9 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
 
         rect = [int(val)for val in (min(x0, x1), min(y0, y1), w, h)]
         self.canvas.drawRectangle(rect)
+
+    def remove_rubberband(self):
+        self.canvas.drawRectangle(None)
 
     def configure_subplots(self):
         image = os.path.join(matplotlib.rcParams['datapath'],
