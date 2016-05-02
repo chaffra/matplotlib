@@ -2215,7 +2215,7 @@ def frange(xini, xfin=None, delta=None, **kw):
         npts = kw['npts']
         delta = (xfin-xini)/float(npts-endpoint)
     except KeyError:
-        npts = int(round((xfin-xini)/delta)) + endpoint
+        npts = int(np.round((xfin-xini)/delta)) + endpoint
         # round finds the nearest, so the endpoint can be up to
         # delta/2 larger than xfin.
 
@@ -2833,7 +2833,14 @@ def csv2rec(fname, comments='#', skiprows=0, checkrows=0, delimiter=',',
             raise ValueError('invalid bool')
 
     dateparser = dateutil.parser.parse
-    mydateparser = with_default_value(dateparser, datetime.date(1, 1, 1))
+
+    def mydateparser(x):
+        # try and return a datetime object
+        d = dateparser(x, dayfirst=dayfirst, yearfirst=yearfirst)
+        return d
+
+    mydateparser = with_default_value(mydateparser, datetime.datetime(1, 1, 1))
+
     myfloat = with_default_value(float, np.nan)
     myint = with_default_value(int, -1)
     mystr = with_default_value(str, '')
@@ -3417,12 +3424,11 @@ def griddata(x, y, z, xi, yi, interp='nn'):
         try:
             from mpl_toolkits.natgrid import _natgrid
         except ImportError:
-            raise RuntimeError("To use interp='nn' (Natural Neighbor "
-                               "interpolation) in griddata, natgrid must be "
-                               "installed. Either install it from http://"
-                               "sourceforge.net/projects/matplotlib/files/"
-                               "matplotlib-toolkits, or use interp='linear' "
-                               "instead.")
+            raise RuntimeError(
+                "To use interp='nn' (Natural Neighbor interpolation) in "
+                "griddata, natgrid must be installed. Either install it "
+                "from http://github.com/matplotlib/natgrid or use "
+                "interp='linear' instead.")
 
         if xi.ndim == 2:
             # natgrid expects 1D xi and yi arrays.

@@ -40,11 +40,12 @@ exclude_patterns = ['api/api_changes/*', 'users/whats_new/*']
 try:
     from IPython.sphinxext import ipython_console_highlighting
 except ImportError:
-    extensions.append('matplotlib.sphinxext.ipython_console_highlighting')
+    raise ImportError(
+        "IPython must be installed to build the matplotlib docs")
 else:
-    print("Using IPython's ipython_console_highlighting directive")
     extensions.append('IPython.sphinxext.ipython_console_highlighting')
     extensions.append('IPython.sphinxext.ipython_directive')
+
 try:
     import numpydoc
 except ImportError:
@@ -114,10 +115,10 @@ default_role = 'obj'
 # Plot directive configuration
 # ----------------------------
 
-plot_formats = [('png', 80), ('hires.png', 200), ('pdf', 50)]
+plot_formats = [('svg', 72), ('png', 80)]
 
 # Subdirectories in 'examples/' directory of package and titles for gallery
-mpl_example_sections = (
+mpl_example_sections = [
     ('lines_bars_and_markers', 'Lines, bars, and markers'),
     ('shapes_and_collections', 'Shapes and collections'),
     ('statistics', 'Statistical plots'),
@@ -134,10 +135,11 @@ mpl_example_sections = (
     ('api', 'API'),
     ('pylab_examples', 'pylab examples'),
     ('mplot3d', 'mplot3d toolkit'),
-    ('axes_grid', 'axes_grid toolkit'),
+    ('axes_grid1', 'axes_grid1 toolkit'),
+    ('axisartist', 'axisartist toolkit'),
     ('units', 'units'),
     ('widgets', 'widgets'),
-    )
+    ]
 
 
 # Github extension
@@ -185,9 +187,12 @@ html_index = 'index.html'
 #html_sidebars = {}
 
 # Custom sidebar templates, maps page names to templates.
-html_sidebars = {'index': 'indexsidebar.html',
-                 }
-
+html_sidebars = {
+    'index': ['badgesidebar.html','donate_sidebar.html',
+              'indexsidebar.html', 'searchbox.html'],
+    '**': ['badgesidebar.html', 'localtoc.html',
+           'relations.html', 'sourcelink.html', 'searchbox.html']
+}
 
 # Additional templates that should be rendered to pages, maps page names to
 # template names.
@@ -209,6 +214,8 @@ html_use_opensearch = 'False'
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'Matplotlibdoc'
 
+# Path to favicon
+html_favicon = '_static/favicon.ico'
 
 # Options for LaTeX output
 # ------------------------

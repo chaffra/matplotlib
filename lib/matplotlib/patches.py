@@ -67,6 +67,10 @@ class Patch(artist.Artist):
     validCap = ('butt', 'round', 'projecting')
     validJoin = ('miter', 'round', 'bevel')
 
+    # Whether to draw an edge by default.  Set on a
+    # subclass-by-subclass basis.
+    _edge_default = False
+
     def __str__(self):
         return str(self.__class__).split('.')[-1]
 
@@ -110,11 +114,12 @@ class Patch(artist.Artist):
         else:
             self.set_edgecolor(edgecolor)
             self.set_facecolor(facecolor)
+
+        self.set_fill(fill)
         self.set_linewidth(linewidth)
         self.set_linestyle(linestyle)
         self.set_antialiased(antialiased)
         self.set_hatch(hatch)
-        self.set_fill(fill)
         self.set_capstyle(capstyle)
         self.set_joinstyle(joinstyle)
         self._combined_transform = transforms.IdentityTransform()
@@ -142,14 +147,13 @@ class Patch(artist.Artist):
 
         Returns T/F, {}
         """
-        # This is a general version of contains that should work on any
-        # patch with a path.  However, patches that have a faster
-        # algebraic solution to hit-testing should override this
-        # method.
         if six.callable(self._contains):
             return self._contains(self, mouseevent)
         if radius is None:
-            radius = self.get_linewidth()
+            if cbook.is_numlike(self._picker):
+                radius = self._picker
+            else:
+                radius = self.get_linewidth()
         inside = self.get_path().contains_point(
             (mouseevent.x, mouseevent.y), self.get_transform(), radius)
         return inside, {}
@@ -160,7 +164,10 @@ class Patch(artist.Artist):
         (transformed with its transform attribute).
         """
         if radius is None:
-            radius = self.get_linewidth()
+            if cbook.is_numlike(self._picker):
+                radius = self._picker
+            else:
+                radius = self.get_linewidth()
         return self.get_path().contains_point(point,
                                               self.get_transform(),
                                               radius)
@@ -337,7 +344,14 @@ class Patch(artist.Artist):
         ACCEPTS: float or None for default
         """
         if w is None:
-            w = mpl.rcParams['patch.linewidth']
+            if (not self._fill or
+                self._edge_default or
+                mpl.rcParams['_internal.classic_mode']):
+                w = mpl.rcParams['patch.linewidth']
+                if w is None:
+                    w = mpl.rcParams['axes.linewidth']
+            else:
+                w = 0
 
         self._linewidth = float(w)
 
@@ -356,7 +370,7 @@ class Patch(artist.Artist):
         ===========================   =================
         ``'-'`` or ``'solid'``        solid line
         ``'--'`` or  ``'dashed'``     dashed line
-        ``'-.'`` or  ``'dash_dot'``   dash-dotted line
+        ``'-.'`` or  ``'dashdot'``    dash-dotted line
         ``':'`` or ``'dotted'``       dotted line
         ===========================   =================
 
@@ -670,15 +684,6 @@ class Rectangle(Patch):
         self._update_patch_transform()
         return self._rect_transform
 
-    def contains(self, mouseevent):
-        # special case the degenerate rectangle
-        if self._width == 0 or self._height == 0:
-            return False, {}
-
-        x, y = self.get_transform().inverted().transform_point(
-            (mouseevent.x, mouseevent.y))
-        return (x >= 0.0 and x <= 1.0 and y >= 0.0 and y <= 1.0), {}
-
     def get_x(self):
         "Return the left coord of the rectangle"
         return self._x
@@ -855,6 +860,8 @@ class PathPatch(Patch):
     """
     A general polycurve path patch.
     """
+    _edge_default = True
+
     def __str__(self):
         return "Poly((%g, %g) ...)" % tuple(self._path.vertices[0])
 
@@ -1126,6 +1133,8 @@ class FancyArrow(Polygon):
     """
     Like Arrow, but lets you set head width and head height independently.
     """
+
+    _edge_default = True
 
     def __str__(self):
         return "FancyArrow()"
@@ -1415,12 +1424,6 @@ class Ellipse(Patch):
     def get_patch_transform(self):
         self._recompute_transform()
         return self._patch_transform
-
-    def contains(self, ev):
-        if ev.x is None or ev.y is None:
-            return False, {}
-        x, y = self.get_transform().inverted().transform_point((ev.x, ev.y))
-        return (x * x + y * y) <= 1.0, {}
 
 
 class Circle(Ellipse):
@@ -1876,7 +1879,7 @@ class _Style(object):
 class BoxStyle(_Style):
     """
     :class:`BoxStyle` is a container class which defines several
-    boxstyle classes, which are used for :class:`FancyBoxPatch`.
+    boxstyle classes, which are used for :class:`FancyBboxPatch`.
 
     A style object can be created as::
 
@@ -2288,9 +2291,9 @@ class BoxStyle(_Style):
 
             # the sizes of the vertical and horizontal sawtooth are
             # separately adjusted to fit the given box size.
-            dsx_n = int(round((width - tooth_size) / (tooth_size * 2))) * 2
+            dsx_n = int(np.round((width - tooth_size) / (tooth_size * 2))) * 2
             dsx = (width - tooth_size) / dsx_n
-            dsy_n = int(round((height - tooth_size) / (tooth_size * 2))) * 2
+            dsy_n = int(np.round((height - tooth_size) / (tooth_size * 2))) * 2
             dsy = (height - tooth_size) / dsy_n
 
             x0, y0 = x0 - pad + tooth_size2, y0 - pad + tooth_size2
@@ -2410,6 +2413,8 @@ class FancyBboxPatch(Patch):
 
     """
 
+    _edge_default = True
+
     def __str__(self):
         return self.__class__.__name__ \
                            + "(%g,%g;%gx%g)" % (self._x, self._y,
@@ -2462,6 +2467,7 @@ class FancyBboxPatch(Patch):
 
         self._mutation_scale = mutation_scale
         self._mutation_aspect = mutation_aspect
+
         self.stale = True
 
     @docstring.dedent_interpd
@@ -3005,15 +3011,21 @@ class ConnectionStyle(_Style):
 
         def __init__(self, armA=0., armB=0., fraction=0.3, angle=None):
             """
-            *armA* : minimum length of armA
+            Parameters
+            ----------
+            armA : float
+                minimum length of armA
 
-            *armB* : minimum length of armB
+            armB : float
+                minimum length of armB
 
-            *fraction* : a fraction of the distance between two points that
-                         will be added to armA and armB.
+            fraction : float
+                a fraction of the distance between two points that
+                will be added to armA and armB.
 
-            *angle* : angle of the connecting line (if None, parallel to A
-                      and B)
+            angle : float or None
+                angle of the connecting line (if None, parallel
+                to A and B)
             """
             self.armA = armA
             self.armB = armB
@@ -3948,6 +3960,7 @@ class FancyArrowPatch(Patch):
     """
     A fancy arrow patch. It draws an arrow using the :class:ArrowStyle.
     """
+    _edge_default = True
 
     def __str__(self):
 
@@ -4044,7 +4057,7 @@ class FancyArrowPatch(Patch):
     def set_dpi_cor(self, dpi_cor):
         """
         dpi_cor is currently used for linewidth-related things and
-        shink factor. Mutation scale is not affected by this.
+        shrink factor. Mutation scale is not affected by this.
         """
 
         self._dpi_cor = dpi_cor
@@ -4053,14 +4066,14 @@ class FancyArrowPatch(Patch):
     def get_dpi_cor(self):
         """
         dpi_cor is currently used for linewidth-related things and
-        shink factor. Mutation scale is not affected by this.
+        shrink factor. Mutation scale is not affected by this.
         """
 
         return self._dpi_cor
 
     def set_positions(self, posA, posB):
-        """ set the begin end end positions of the connecting
-        path. Use current vlaue if None.
+        """ set the begin and end positions of the connecting
+        path. Use current value if None.
         """
         if posA is not None:
             self._posA_posB[0] = posA

@@ -55,6 +55,7 @@ from matplotlib import rcParams
 from matplotlib import is_interactive
 from matplotlib import get_backend
 from matplotlib._pylab_helpers import Gcf
+from matplotlib import lines
 
 from matplotlib.transforms import Bbox, TransformedBbox, Affine2D
 
@@ -514,7 +515,7 @@ class RendererBase(object):
         """
         return 1.0
 
-    def draw_image(self, gc, x, y, im):
+    def draw_image(self, gc, x, y, im, trans=None):
         """
         Draw the image instance into the current axes;
 
@@ -530,7 +531,14 @@ class RendererBase(object):
             is the distance from bottom
 
         *im*
-            the :class:`matplotlib._image.Image` instance
+            An NxMx4 array of RGBA pixels (of dtype uint8).
+
+        *trans*
+            If the concrete backend is written such that
+            `option_scale_image` returns `True`, an affine
+            transformation may also be passed to `draw_image`.  The
+            backend should apply the transformation to the image
+            before applying the translation of `x` and `y`.
         """
         raise NotImplementedError
 
@@ -771,14 +779,6 @@ class GraphicsContextBase(object):
     An abstract base class that provides color, line styles, etc...
     """
 
-    # a mapping from dash styles to suggested offset, dash pairs
-    dashd = {
-        'solid': (None, None),
-        'dashed': (0, (6.0, 6.0)),
-        'dashdot': (0, (3.0, 5.0, 1.0, 5.0)),
-        'dotted': (0, (1.0, 3.0)),
-    }
-
     def __init__(self):
         self._alpha = 1.0
         self._forced_alpha = False  # if True, _alpha overrides A from RGBA
@@ -792,6 +792,7 @@ class GraphicsContextBase(object):
         self._linewidth = 1
         self._rgb = (0.0, 0.0, 0.0, 1.0)
         self._hatch = None
+        self._hatch_linewidth = rcParams['hatch.linewidth']
         self._url = None
         self._gid = None
         self._snap = None
@@ -870,7 +871,16 @@ class GraphicsContextBase(object):
 
         Default value is None
         """
-        return self._dashes
+        if rcParams['_internal.classic_mode']:
+            return self._dashes
+        else:
+            scale = max(1.0, self.get_linewidth())
+            offset, dashes = self._dashes
+            if offset is not None:
+                offset = offset * scale
+            if dashes is not None:
+                dashes = [x * scale for x in dashes]
+            return offset, dashes
 
     def get_forced_alpha(self):
         """
@@ -1047,21 +1057,12 @@ class GraphicsContextBase(object):
     def set_linestyle(self, style):
         """
         Set the linestyle to be one of ('solid', 'dashed', 'dashdot',
-        'dotted'). One may specify customized dash styles by providing
-        a tuple of (offset, dash pairs). For example, the predefiend
-        linestyles have following values.:
-
-         'dashed'  : (0, (6.0, 6.0)),
-         'dashdot' : (0, (3.0, 5.0, 1.0, 5.0)),
-         'dotted'  : (0, (1.0, 3.0)),
+        'dotted'). These are defined in the rcParams
+        `lines.dashed_pattern`, `lines.dashdot_pattern` and
+        `lines.dotted_pattern`.  One may also specify customized dash
+        styles by providing a tuple of (offset, dash pairs).
         """
-
-        if style in self.dashd:
-            offset, dashes = self.dashd[style]
-        elif isinstance(style, tuple):
-            offset, dashes = style
-        else:
-            raise ValueError('Unrecognized linestyle: %s' % str(style))
+        offset, dashes = lines.get_dash_pattern(style)
 
         self._linestyle = style
         self.set_dashes(offset, dashes)
@@ -1110,6 +1111,12 @@ class GraphicsContextBase(object):
         if self._hatch is None:
             return None
         return Path.hatch(self._hatch, density)
+
+    def get_hatch_linewidth(self):
+        """
+        Gets the linewidth to use for hatching.
+        """
+        return self._hatch_linewidth
 
     def get_sketch_params(self):
         """
@@ -2078,7 +2085,7 @@ class FigureCanvasBase(object):
                          'Supported formats: '
                          '%s.' % (format, ', '.join(formats)))
 
-    def print_figure(self, filename, dpi=None, facecolor='w', edgecolor='w',
+    def print_figure(self, filename, dpi=None, facecolor=None, edgecolor=None,
                      orientation='portrait', format=None, **kwargs):
         """
         Render the figure to hardcopy. Set the figure patch face and edge
@@ -2098,10 +2105,10 @@ class FigureCanvasBase(object):
             the dots per inch to save the figure in; if None, use savefig.dpi
 
         *facecolor*
-            the facecolor of the figure
+            the facecolor of the figure; if None, defaults to savefig.facecolor
 
         *edgecolor*
-            the edgecolor of the figure
+            the edgecolor of the figure; if None, defaults to savefig.edgecolor
 
         *orientation*
             landscape' | 'portrait' (not supported on all backends)
@@ -2141,6 +2148,14 @@ class FigureCanvasBase(object):
 
         if dpi is None:
             dpi = rcParams['savefig.dpi']
+
+        if dpi == 'figure':
+            dpi = self.figure.dpi
+
+        if facecolor is None:
+            facecolor = rcParams['savefig.facecolor']
+        if edgecolor is None:
+            edgecolor = rcParams['savefig.edgecolor']
 
         origDPI = self.figure.dpi
         origfacecolor = self.figure.get_facecolor()

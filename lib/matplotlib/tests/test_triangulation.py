@@ -10,10 +10,12 @@ from nose.tools import assert_equal, assert_raises, assert_true, assert_false
 from numpy.testing import assert_array_equal, assert_array_almost_equal,\
     assert_array_less
 import numpy.ma.testutils as matest
-from matplotlib.testing.decorators import image_comparison
+from matplotlib.testing.decorators import cleanup, image_comparison
 import matplotlib.cm as cm
 from matplotlib.path import Path
 
+import sys
+on_win = (sys.platform == 'win32')
 
 def test_delaunay():
     # No duplicate points, regular grid.
@@ -770,7 +772,8 @@ def test_tri_smooth_contouring():
 
 
 @image_comparison(baseline_images=['tri_smooth_gradient'],
-                  extensions=['png'], remove_text=True)
+                  extensions=['png'], remove_text=True,
+                  tol=0.015 if on_win else 0)
 def test_tri_smooth_gradient():
     # Image comparison based on example trigradient_demo.
 
@@ -1019,6 +1022,16 @@ def test_trianalyzer_mismatched_indices():
     # numpy >= 1.10 raises a VisibleDeprecationWarning in the following line
     # prior to the fix.
     triang2 = analyser._get_compressed_triangulation()
+
+
+@cleanup
+def test_tricontourf_decreasing_levels():
+    # github issue 5477.
+    x = [0.0, 1.0, 1.0]
+    y = [0.0, 0.0, 1.0]
+    z = [0.2, 0.4, 0.6]
+    plt.figure()
+    assert_raises(ValueError, plt.tricontourf, x, y, z, [1.0, 0.0])
 
 
 if __name__ == '__main__':

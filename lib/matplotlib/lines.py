@@ -30,7 +30,28 @@ from matplotlib.markers import MarkerStyle
 # Imported here for backward compatibility, even though they don't
 # really belong.
 from matplotlib.markers import TICKLEFT, TICKRIGHT, TICKUP, TICKDOWN
-from matplotlib.markers import CARETLEFT, CARETRIGHT, CARETUP, CARETDOWN
+from matplotlib.markers import (
+    CARETLEFT, CARETRIGHT, CARETUP, CARETDOWN,
+    CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE)
+from matplotlib import _path
+
+
+def get_dash_pattern(style):
+    """
+    Given a dash pattern name from 'solid', 'dashed', 'dashdot' or
+    'dotted', returns the (offset, dashes) pattern.
+    """
+    if style == 'solid':
+        offset, dashes = None, None
+    elif style in ['dashed', 'dashdot', 'dotted']:
+        offset = 0
+        dashes = tuple(rcParams['lines.{}_pattern'.format(style)])
+    elif isinstance(style, tuple):
+        offset, dashes = style
+    else:
+        raise ValueError('Unrecognized linestyle: %s' % str(style))
+
+    return offset, dashes
 
 
 def segment_hits(cx, cy, x, y, radius):
@@ -329,6 +350,10 @@ class Line2D(Artist):
         self._linestyles = None
         self._drawstyle = None
         self._linewidth = None
+
+        self._dashSeq = None
+        self._dashOffset = 0
+
         self.set_linestyle(linestyle)
         self.set_drawstyle(drawstyle)
         self.set_linewidth(linewidth)
@@ -346,8 +371,6 @@ class Line2D(Artist):
         self.set_markevery(markevery)
         self.set_antialiased(antialiased)
         self.set_markersize(markersize)
-
-        self._dashSeq = None
 
         self._markeredgecolor = None
         self._markeredgewidth = None
@@ -703,9 +726,7 @@ class Line2D(Artist):
     def _is_sorted(self, x):
         """return True if x is sorted in ascending order"""
         # We don't handle the monotonically decreasing case.
-        if len(x) < 2:
-            return True
-        return np.nanmin(x[1:] - x[:-1]) >= 0
+        return _path.is_sorted(x)
 
     @allow_rasterization
     def draw(self, renderer):
@@ -721,10 +742,8 @@ class Line2D(Artist):
             i0, = self._x_filled.searchsorted([x0], 'left')
             i1, = self._x_filled.searchsorted([x1], 'right')
             subslice = slice(max(i0 - 1, 0), i1 + 1)
-            # Don't remake the Path unless it will be sufficiently smaller.
-            if subslice.start > 100 or len(self._x) - subslice.stop > 100:
-                self.ind_offset = subslice.start
-                self._transform_path(subslice)
+            self.ind_offset = subslice.start
+            self._transform_path(subslice)
 
         transf_path = self._get_transformed_path()
 
@@ -777,7 +796,7 @@ class Line2D(Artist):
             self._draw_pointlabels(renderer, gc, tpath, affine.frozen())
             gc.restore()
 
-        if self._marker:
+        if self._marker and self._markersize > 0:
             gc = renderer.new_gc()
             self._set_gc_clip(gc)
             rgbaFace = self._get_rgba_face()
@@ -866,12 +885,12 @@ class Line2D(Artist):
     def get_markeredgecolor(self):
         mec = self._markeredgecolor
         if (is_string_like(mec) and mec == 'auto'):
-            if self._marker.get_marker() in ('.', ','):
-                return self._color
-            if self._marker.is_filled() and self.get_fillstyle() != 'none':
-                return 'k'  # Bad hard-wired default...
-            else:
-                return self._color
+            if rcParams['_internal.classic_mode']:
+                if self._marker.get_marker() in ('.', ','):
+                    return self._color
+                if self._marker.is_filled() and self.get_fillstyle() != 'none':
+                     return 'k'  # Bad hard-wired default...
+            return self._color
         else:
             return mec
 
@@ -982,6 +1001,11 @@ class Line2D(Artist):
         ACCEPTS: ['default' | 'steps' | 'steps-pre' | 'steps-mid' |
                   'steps-post']
         """
+        if drawstyle is None:
+            drawstyle = 'default'
+        if drawstyle not in self.drawStyles:
+            raise ValueError('Unrecognized drawstyle ' +
+                             ' '.join(self.drawStyleKeys))
         if self._drawstyle != drawstyle:
             self.stale = True
         self._drawstyle = drawstyle
@@ -1008,7 +1032,7 @@ class Line2D(Artist):
         ===========================   =================
         ``'-'`` or ``'solid'``        solid line
         ``'--'`` or  ``'dashed'``     dashed line
-        ``'-.'`` or  ``'dash_dot'``   dash-dotted line
+        ``'-.'`` or  ``'dashdot'``    dash-dotted line
         ``':'`` or ``'dotted'``       dotted line
         ``'None'``                    draw nothing
         ``' '``                       draw nothing
@@ -1046,6 +1070,7 @@ class Line2D(Artist):
                 raise ValueError()
 
             self.set_dashes(ls[1])
+            self._dashOffset = ls[0]
             self._linestyle = "--"
             return
 
@@ -1066,7 +1091,7 @@ class Line2D(Artist):
                 ls = ls_mapper_r[ls]
             except KeyError:
                 raise ValueError(("You passed in an invalid linestyle, "
-                                  "`{}`.  See "
+                                  "`{0}`.  See "
                                   "docs of Line2D.set_linestyle for "
                                   "valid values.").format(ls))
 
@@ -1269,7 +1294,7 @@ class Line2D(Artist):
     def _draw_dashed(self, renderer, gc, path, trans):
         gc.set_linestyle('dashed')
         if self._dashSeq is not None:
-            gc.set_dashes(0, self._dashSeq)
+            gc.set_dashes(self._dashOffset, self._dashSeq)
 
         renderer.draw_path(gc, path, trans)
 
@@ -1293,6 +1318,7 @@ class Line2D(Artist):
         self._markeredgecolor = other._markeredgecolor
         self._markeredgewidth = other._markeredgewidth
         self._dashSeq = other._dashSeq
+        self._dashOffset = other._dashOffset
         self._dashcapstyle = other._dashcapstyle
         self._dashjoinstyle = other._dashjoinstyle
         self._solidcapstyle = other._solidcapstyle

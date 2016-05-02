@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Use backend agg to access the figure canvas as an RGB string and then
 convert it to an array and pass it to Pillow for rendering.
@@ -13,7 +12,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 try:
     from PIL import Image
 except ImportError:
-    raise SystemExit("PIL must be installed to run this example")
+    raise SystemExit("Pillow must be installed to run this example")
 
 plt.plot([1, 2, 3])
 

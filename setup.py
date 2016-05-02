@@ -4,11 +4,12 @@ setup.cfg.template for more information.
 """
 
 from __future__ import print_function, absolute_import
-
+from string import Template
 # This needs to be the very first thing to use distribute
 from distribute_setup import use_setuptools
 use_setuptools()
 from setuptools.command.test import test as TestCommand
+from setuptools.command.build_ext import build_ext as BuildExtCommand
 
 import sys
 
@@ -67,6 +68,7 @@ mpl_packages = [
     'Required dependencies and extensions',
     setupext.Numpy(),
     setupext.Dateutil(),
+    setupext.FuncTools32(),
     setupext.Pytz(),
     setupext.Cycler(),
     setupext.Tornado(),
@@ -110,7 +112,9 @@ mpl_packages = [
     setupext.DviPng(),
     setupext.Ghostscript(),
     setupext.LaTeX(),
-    setupext.PdfToPs()
+    setupext.PdfToPs(),
+    'Optional package data',
+    setupext.Dlls(),
     ]
 
 
@@ -119,122 +123,46 @@ classifiers = [
     'Intended Audience :: Science/Research',
     'License :: OSI Approved :: Python Software Foundation License',
     'Programming Language :: Python',
-    'Programming Language :: Python :: 2',
+    'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.3',
+    'Programming Language :: Python :: 3.4',
+    'Programming Language :: Python :: 3.5',
     'Topic :: Scientific/Engineering :: Visualization',
     ]
 
 
-class NoseTestCommand(TestCommand):
-    """Invoke unit tests using nose after an in-place build."""
-
-    description = "Invoke unit tests using nose after an in-place build."
-    user_options = [
-        ("pep8-only", None, "pep8 checks"),
-        ("omit-pep8", None, "Do not perform pep8 checks"),
-        ("nocapture", None, "do not capture stdout (nosetests)"),
-        ("nose-verbose", None, "be verbose (nosetests)"),
-        ("processes=", None, "number of processes (nosetests)"),
-        ("process-timeout=", None, "process timeout (nosetests)"),
-        ("with-coverage", None, "with coverage"),
-        ("detailed-error-msg", None, "detailed error message (nosetest)"),
-        ("tests=", None, "comma separated selection of tests (nosetest)"),
-    ]
-
-    def initialize_options(self):
-        self.pep8_only = None
-        self.omit_pep8 = None
-
-        # parameters passed to nose tests
-        self.processes = None
-        self.process_timeout = None
-        self.nose_verbose = None
-        self.nocapture = None
-        self.with_coverage = None
-        self.detailed_error_msg = None
-        self.tests = None
-
-    def finalize_options(self):
-        self.test_args = []
-        if self.pep8_only:
-            self.pep8_only = True
-        if self.omit_pep8:
-            self.omit_pep8 = True
-
-        if self.pep8_only and self.omit_pep8:
-            from distutils.errors import DistutilsOptionError
-            raise DistutilsOptionError(
-                "You are using several options for the test command in an "
-                "incompatible manner. Please use either --pep8-only or "
-                "--omit-pep8"
-            )
-
-        if self.processes:
-            self.test_args.append("--processes={prc}".format(
-                prc=self.processes))
-
-        if self.process_timeout:
-            self.test_args.append("--process-timeout={tout}".format(
-                tout=self.process_timeout))
-
-        if self.nose_verbose:
-            self.test_args.append("--verbose")
-
-        if self.nocapture:
-            self.test_args.append("--nocapture")
-
-        if self.with_coverage:
-            self.test_args.append("--with-coverage")
-
-        if self.detailed_error_msg:
-            self.test_args.append("-d")
-
-        if self.tests:
-            self.test_args.append("--tests={names}".format(names=self.tests))
-
+class NoopTestCommand(TestCommand):
     def run(self):
-        if self.distribution.install_requires:
-            self.distribution.fetch_build_eggs(
-                self.distribution.install_requires)
-        if self.distribution.tests_require:
-            self.distribution.fetch_build_eggs(self.distribution.tests_require)
+        print("Matplotlib does not support running tests with "
+              "'python setup.py test'. Please run 'python tests.py'")
 
-        self.announce('running unittests with nose')
-        self.with_project_on_sys_path(self.run_tests)
 
-    def run_tests(self):
-        import matplotlib
-        matplotlib.use('agg')
-        import nose
-        from matplotlib.testing.noseclasses import KnownFailure
-        from matplotlib import default_test_modules as testmodules
-        from matplotlib import font_manager
-        import time
-        # Make sure the font caches are created before starting any possibly
-        # parallel tests
-        if font_manager._fmcache is not None:
-            while not os.path.exists(font_manager._fmcache):
-                time.sleep(0.5)
-        plugins = [KnownFailure]
+class BuildExtraLibraries(BuildExtCommand):
+    def run(self):
+        for package in good_packages:
+            package.do_custom_build()
 
-        # Nose doesn't automatically instantiate all of the plugins in the
-        # child processes, so we have to provide the multiprocess plugin
-        # with a list.
-        from nose.plugins import multiprocess
-        multiprocess._instantiate_plugins = plugins
+        return BuildExtCommand.run(self)
 
-        if self.omit_pep8:
-            testmodules.remove('matplotlib.tests.test_coding_standards')
-        elif self.pep8_only:
-            testmodules = ['matplotlib.tests.test_coding_standards']
-
-        nose.main(addplugins=[x() for x in plugins],
-                  defaultTest=testmodules,
-                  argv=['nosetests'] + self.test_args,
-                  exit=True)
 
 cmdclass = versioneer.get_cmdclass()
-cmdclass['test'] = NoseTestCommand
+cmdclass['test'] = NoopTestCommand
+cmdclass['build_ext'] = BuildExtraLibraries
+
+
+# patch bdist_wheel for a bug on windows
+# https://bitbucket.org/pypa/wheel/issues/91/cannot-create-a-file-when-that-file
+if os.name == 'nt':
+    try:
+        from wheel.bdist_wheel import bdist_wheel
+    except ImportError:
+        # No wheel installed, so we also can't run that command...
+        pass
+    else:
+        # patched_bdist_wheel has a run() method, which works on windows
+        from patched_bdist_wheel import patched_bdist_wheel
+        cmdclass['bdist_wheel'] = patched_bdist_wheel
 
 # One doesn't normally see `if __name__ == '__main__'` blocks in a setup.py,
 # however, this is needed on Windows to avoid creating infinite subprocesses
@@ -250,7 +178,6 @@ if __name__ == '__main__':
     package_dir = {'': 'lib'}
     install_requires = []
     setup_requires = []
-    tests_require = []
     default_backend = None
 
     # Go through all of the packages and figure out which ones we are
@@ -297,8 +224,6 @@ if __name__ == '__main__':
     # Now collect all of the information we need to build all of the
     # packages.
     for package in good_packages:
-        if isinstance(package, str):
-            continue
         packages.extend(package.get_packages())
         namespace_packages.extend(package.get_namespace_packages())
         py_modules.extend(package.get_py_modules())
@@ -311,7 +236,6 @@ if __name__ == '__main__':
             package_data[key] = list(set(val + package_data[key]))
         install_requires.extend(package.get_install_requires())
         setup_requires.extend(package.get_setup_requires())
-        tests_require.extend(package.get_tests_require())
 
     # Write the default matplotlibrc file
     if default_backend is None:
@@ -320,8 +244,9 @@ if __name__ == '__main__':
         default_backend = setupext.options['backend']
     with open('matplotlibrc.template') as fd:
         template = fd.read()
+    template = Template(template)
     with open('lib/matplotlib/mpl-data/matplotlibrc', 'w') as fd:
-        fd.write(template % {'backend': default_backend})
+        fd.write(template.safe_substitute(TEMPLATE_BACKEND=default_backend))
 
     # Build in verbose mode if requested
     if setupext.options['verbose']:
@@ -348,7 +273,7 @@ if __name__ == '__main__':
         version=__version__,
         description="Python plotting package",
         author="John D. Hunter, Michael Droettboom",
-        author_email="mdroe@stsci.edu",
+        author_email="matplotlib-users@python.org",
         url="http://matplotlib.org",
         long_description="""
         matplotlib strives to produce publication quality 2D graphics
@@ -366,12 +291,11 @@ if __name__ == '__main__':
         package_dir=package_dir,
         package_data=package_data,
         classifiers=classifiers,
-        download_url="https://downloads.sourceforge.net/project/matplotlib/matplotlib/matplotlib-{0}/matplotlib-{0}.tar.gz".format(__version__),
+        download_url="http://matplotlib.org/users/installing.html",
 
         # List third-party Python packages that we require
         install_requires=install_requires,
         setup_requires=setup_requires,
-        tests_require=tests_require,
 
         # matplotlib has C/C++ extensions, so it's not zip safe.
         # Telling setuptools this prevents it from doing an automatic

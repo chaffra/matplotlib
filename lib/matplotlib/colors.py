@@ -31,6 +31,12 @@ the colors.  For the basic built-in colors, you can use a single letter
     - k: black
     - w: white
 
+To use the colors that are part of the active color cycle in the current style,
+use `C` followed by a digit.  For example:
+
+    - `C0`: The first color in the cycle
+    - `C1`: The second color in the cycle
+
 Gray shades can be given as a string encoding a float in the 0-1 range, e.g.::
 
     color = '0.75'
@@ -51,168 +57,35 @@ from __future__ import (absolute_import, division, print_function,
 
 from matplotlib.externals import six
 from matplotlib.externals.six.moves import zip
-
 import warnings
 import re
 import numpy as np
 from numpy import ma
 import matplotlib.cbook as cbook
+from ._color_data import XKCD_COLORS, CSS4_COLORS
 
-cnames = {
-    'aliceblue':            '#F0F8FF',
-    'antiquewhite':         '#FAEBD7',
-    'aqua':                 '#00FFFF',
-    'aquamarine':           '#7FFFD4',
-    'azure':                '#F0FFFF',
-    'beige':                '#F5F5DC',
-    'bisque':               '#FFE4C4',
-    'black':                '#000000',
-    'blanchedalmond':       '#FFEBCD',
-    'blue':                 '#0000FF',
-    'blueviolet':           '#8A2BE2',
-    'brown':                '#A52A2A',
-    'burlywood':            '#DEB887',
-    'cadetblue':            '#5F9EA0',
-    'chartreuse':           '#7FFF00',
-    'chocolate':            '#D2691E',
-    'coral':                '#FF7F50',
-    'cornflowerblue':       '#6495ED',
-    'cornsilk':             '#FFF8DC',
-    'crimson':              '#DC143C',
-    'cyan':                 '#00FFFF',
-    'darkblue':             '#00008B',
-    'darkcyan':             '#008B8B',
-    'darkgoldenrod':        '#B8860B',
-    'darkgray':             '#A9A9A9',
-    'darkgreen':            '#006400',
-    'darkkhaki':            '#BDB76B',
-    'darkmagenta':          '#8B008B',
-    'darkolivegreen':       '#556B2F',
-    'darkorange':           '#FF8C00',
-    'darkorchid':           '#9932CC',
-    'darkred':              '#8B0000',
-    'darksage':             '#598556',
-    'darksalmon':           '#E9967A',
-    'darkseagreen':         '#8FBC8F',
-    'darkslateblue':        '#483D8B',
-    'darkslategray':        '#2F4F4F',
-    'darkturquoise':        '#00CED1',
-    'darkviolet':           '#9400D3',
-    'deeppink':             '#FF1493',
-    'deepskyblue':          '#00BFFF',
-    'dimgray':              '#696969',
-    'dodgerblue':           '#1E90FF',
-    'firebrick':            '#B22222',
-    'floralwhite':          '#FFFAF0',
-    'forestgreen':          '#228B22',
-    'fuchsia':              '#FF00FF',
-    'gainsboro':            '#DCDCDC',
-    'ghostwhite':           '#F8F8FF',
-    'gold':                 '#FFD700',
-    'goldenrod':            '#DAA520',
-    'gray':                 '#808080',
-    'green':                '#008000',
-    'greenyellow':          '#ADFF2F',
-    'honeydew':             '#F0FFF0',
-    'hotpink':              '#FF69B4',
-    'indianred':            '#CD5C5C',
-    'indigo':               '#4B0082',
-    'ivory':                '#FFFFF0',
-    'khaki':                '#F0E68C',
-    'lavender':             '#E6E6FA',
-    'lavenderblush':        '#FFF0F5',
-    'lawngreen':            '#7CFC00',
-    'lemonchiffon':         '#FFFACD',
-    'lightblue':            '#ADD8E6',
-    'lightcoral':           '#F08080',
-    'lightcyan':            '#E0FFFF',
-    'lightgoldenrodyellow': '#FAFAD2',
-    'lightgreen':           '#90EE90',
-    'lightgray':            '#D3D3D3',
-    'lightpink':            '#FFB6C1',
-    'lightsage':            '#BCECAC',
-    'lightsalmon':          '#FFA07A',
-    'lightseagreen':        '#20B2AA',
-    'lightskyblue':         '#87CEFA',
-    'lightslategray':       '#778899',
-    'lightsteelblue':       '#B0C4DE',
-    'lightyellow':          '#FFFFE0',
-    'lime':                 '#00FF00',
-    'limegreen':            '#32CD32',
-    'linen':                '#FAF0E6',
-    'magenta':              '#FF00FF',
-    'maroon':               '#800000',
-    'mediumaquamarine':     '#66CDAA',
-    'mediumblue':           '#0000CD',
-    'mediumorchid':         '#BA55D3',
-    'mediumpurple':         '#9370DB',
-    'mediumseagreen':       '#3CB371',
-    'mediumslateblue':      '#7B68EE',
-    'mediumspringgreen':    '#00FA9A',
-    'mediumturquoise':      '#48D1CC',
-    'mediumvioletred':      '#C71585',
-    'midnightblue':         '#191970',
-    'mintcream':            '#F5FFFA',
-    'mistyrose':            '#FFE4E1',
-    'moccasin':             '#FFE4B5',
-    'navajowhite':          '#FFDEAD',
-    'navy':                 '#000080',
-    'oldlace':              '#FDF5E6',
-    'olive':                '#808000',
-    'olivedrab':            '#6B8E23',
-    'orange':               '#FFA500',
-    'orangered':            '#FF4500',
-    'orchid':               '#DA70D6',
-    'palegoldenrod':        '#EEE8AA',
-    'palegreen':            '#98FB98',
-    'paleturquoise':        '#AFEEEE',
-    'palevioletred':        '#DB7093',
-    'papayawhip':           '#FFEFD5',
-    'peachpuff':            '#FFDAB9',
-    'peru':                 '#CD853F',
-    'pink':                 '#FFC0CB',
-    'plum':                 '#DDA0DD',
-    'powderblue':           '#B0E0E6',
-    'purple':               '#800080',
-    'red':                  '#FF0000',
-    'rosybrown':            '#BC8F8F',
-    'royalblue':            '#4169E1',
-    'saddlebrown':          '#8B4513',
-    'salmon':               '#FA8072',
-    'sage':                 '#87AE73',
-    'sandybrown':           '#FAA460',
-    'seagreen':             '#2E8B57',
-    'seashell':             '#FFF5EE',
-    'sienna':               '#A0522D',
-    'silver':               '#C0C0C0',
-    'skyblue':              '#87CEEB',
-    'slateblue':            '#6A5ACD',
-    'slategray':            '#708090',
-    'snow':                 '#FFFAFA',
-    'springgreen':          '#00FF7F',
-    'steelblue':            '#4682B4',
-    'tan':                  '#D2B48C',
-    'teal':                 '#008080',
-    'thistle':              '#D8BFD8',
-    'tomato':               '#FF6347',
-    'turquoise':            '#40E0D0',
-    'violet':               '#EE82EE',
-    'wheat':                '#F5DEB3',
-    'white':                '#FFFFFF',
-    'whitesmoke':           '#F5F5F5',
-    'yellow':               '#FFFF00',
-    'yellowgreen':          '#9ACD32'}
+# for back copatibility
+cnames = CSS4_COLORS
 
-
-# add british equivs
-for k, v in list(six.iteritems(cnames)):
-    if k.find('gray') >= 0:
-        k = k.replace('gray', 'grey')
-        cnames[k] = v
+COLOR_NAMES = {'xkcd': XKCD_COLORS,
+               'css4': CSS4_COLORS}
 
 
 def is_color_like(c):
     'Return *True* if *c* can be converted to *RGB*'
+
+    # Special-case the N-th color cycle syntax, because its parsing
+    # needs to be deferred.  We may be reading a value from rcParams
+    # here before the color_cycle rcParam has been parsed.
+    if isinstance(c, bytes):
+        match = re.match(b'^C[0-9]$', c)
+        if match is not None:
+            return True
+    elif isinstance(c, six.text_type):
+        match = re.match('^C[0-9]$', c)
+        if match is not None:
+            return True
+
     try:
         colorConverter.to_rgb(c)
         return True
@@ -251,16 +124,44 @@ class ColorConverter(object):
     *colorConverter*, is needed.
     """
     colors = {
-        'b': (0.0, 0.0, 1.0),
-        'g': (0.0, 0.5, 0.0),
-        'r': (1.0, 0.0, 0.0),
-        'c': (0.0, 0.75, 0.75),
+        'b': (0, 0, 1),
+        'g': (0, 0.5, 0),
+        'r': (1, 0, 0),
+        'c': (0, 0.75, 0.75),
         'm': (0.75, 0, 0.75),
         'y': (0.75, 0.75, 0),
-        'k': (0.0, 0.0, 0.0),
-        'w': (1.0, 1.0, 1.0), }
+        'k': (0, 0, 0),
+        'w': (1, 1, 1)}
+
+    _prop_cycler = None
 
     cache = {}
+    CN_LOOKUPS = [COLOR_NAMES[k] for k in ['css4', 'xkcd']]
+
+    @classmethod
+    def _get_nth_color(cls, val):
+        """
+        Get the Nth color in the current color cycle.  If N is greater
+        than the number of colors in the cycle, it is wrapped around.
+        """
+        from matplotlib.rcsetup import cycler
+        from matplotlib import rcParams
+
+        prop_cycler = rcParams['axes.prop_cycle']
+        if prop_cycler is None and 'axes.color_cycle' in rcParams:
+            clist = rcParams['axes.color_cycle']
+            prop_cycler = cycler('color', clist)
+
+        colors = prop_cycler._transpose()['color']
+        return colors[val % len(colors)]
+
+    @classmethod
+    def _parse_nth_color(cls, val):
+        match = re.match('^C[0-9]$', val)
+        if match is not None:
+            return cls._get_nth_color(int(val[1]))
+
+        raise ValueError("Not a color cycle color")
 
     def to_rgb(self, arg):
         """
@@ -299,7 +200,14 @@ class ColorConverter(object):
                 argl = arg.lower()
                 color = self.colors.get(argl, None)
                 if color is None:
-                    str1 = cnames.get(argl, argl)
+                    try:
+                        argl = self._parse_nth_color(arg)
+                    except ValueError:
+                        pass
+                    for cmapping in self.CN_LOOKUPS:
+                        str1 = cmapping.get(argl, argl)
+                        if str1 != argl:
+                            break
                     if str1.startswith('#'):
                         color = hex2color(str1)
                     else:
@@ -347,6 +255,9 @@ class ColorConverter(object):
         except AttributeError:
             pass
 
+        if alpha is not None and (alpha < 0.0 or alpha > 1.0):
+            raise ValueError("alpha must be in range 0-1")
+
         try:
             if not cbook.is_string_like(arg) and cbook.iterable(arg):
                 if len(arg) == 4:
@@ -355,8 +266,6 @@ class ColorConverter(object):
                             'number in rbga sequence outside 0-1 range')
                     if alpha is None:
                         return tuple(arg)
-                    if alpha < 0.0 or alpha > 1.0:
-                        raise ValueError("alpha must be in range 0-1")
                     return arg[0], arg[1], arg[2], alpha
                 if len(arg) == 3:
                     r, g, b = arg
@@ -659,6 +568,31 @@ class Colormap(object):
         return (np.alltrue(self._lut[:, 0] == self._lut[:, 1]) and
                 np.alltrue(self._lut[:, 0] == self._lut[:, 2]))
 
+    def _resample(self, lutsize):
+        """
+        Return a new color map with *lutsize* entries.
+        """
+        raise NotImplementedError()
+
+    def reversed(self, name=None):
+        """
+        Make a reversed instance of the Colormap.
+
+        .. note :: Function not implemented for base class.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name for the reversed colormap. If it's None the
+            name will be the name of the parent colormap + "_r".
+
+        Notes
+        -----
+        See :meth:`LinearSegmentedColormap.reversed` and
+        :meth:`ListedColormap.reversed`
+        """
+        raise NotImplementedError()
+
 
 class LinearSegmentedColormap(Colormap):
     """Colormap objects based on lookup tables using linear segments.
@@ -772,6 +706,46 @@ class LinearSegmentedColormap(Colormap):
 
         return LinearSegmentedColormap(name, cdict, N, gamma)
 
+    def _resample(self, lutsize):
+        """
+        Return a new color map with *lutsize* entries.
+        """
+        return LinearSegmentedColormap(self.name, self._segmentdata, lutsize)
+
+    def reversed(self, name=None):
+        """
+        Make a reversed instance of the Colormap.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name for the reversed colormap. If it's None the
+            name will be the name of the parent colormap + "_r".
+
+        Returns
+        -------
+        LinearSegmentedColormap
+            The reversed colormap.
+        """
+        if name is None:
+            name = self.name + "_r"
+
+        # Function factory needed to deal with 'late binding' issue.
+        def factory(dat):
+            def func_r(x):
+                return dat(1.0 - x)
+            return func_r
+
+        data_r = dict()
+        for key, data in six.iteritems(self._segmentdata):
+            if six.callable(data):
+                data_r[key] = factory(data)
+            else:
+                new_data = [(1.0 - x, y1, y0) for x, y0, y1 in reversed(data)]
+                data_r[key] = new_data
+
+        return LinearSegmentedColormap(name, data_r, self.N, self._gamma)
+
 
 class ListedColormap(Colormap):
     """Colormap object generated from a list of colors.
@@ -809,7 +783,8 @@ class ListedColormap(Colormap):
         if N is None:
             N = len(self.colors)
         else:
-            if cbook.is_string_like(self.colors):
+            if (cbook.is_string_like(self.colors) and
+                    cbook.is_hashable(self.colors)):
                 self.colors = [self.colors] * N
                 self.monochrome = True
             elif cbook.iterable(self.colors):
@@ -835,6 +810,34 @@ class ListedColormap(Colormap):
         self._lut[:-3] = rgba
         self._isinit = True
         self._set_extremes()
+
+    def _resample(self, lutsize):
+        """
+        Return a new color map with *lutsize* entries.
+        """
+        colors = self(np.linspace(0, 1, lutsize))
+        return ListedColormap(colors, name=self.name)
+
+    def reversed(self, name=None):
+        """
+        Make a reversed instance of the Colormap.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name for the reversed colormap. If it's None the
+            name will be the name of the parent colormap + "_r".
+
+        Returns
+        -------
+        ListedColormap
+            A reversed instance of the colormap.
+        """
+        if name is None:
+            name = self.name + "_r"
+
+        colors_r = list(reversed(self.colors))
+        return ListedColormap(colors_r, name=name, N=self.N)
 
 
 class Normalize(object):
@@ -886,8 +889,11 @@ class Normalize(object):
             is_scalar = False
             result = ma.asarray(value)
             if result.dtype.kind == 'f':
-                if isinstance(value, np.ndarray):
-                    result = result.copy()
+                # this is overkill for lists of floats, but required
+                # to support pd.Series as input until we can reliable
+                # determine if result and value share memory in all cases
+                # (list, tuple, deque, ndarray, Series, ...)
+                result = result.copy()
             elif result.dtype.itemsize > 2:
                 result = result.astype(np.float)
             else:
@@ -1577,7 +1583,7 @@ class LightSource(object):
 
         return intensity
 
-    def shade(self, data, cmap, norm=None, blend_mode='hsv', vmin=None,
+    def shade(self, data, cmap, norm=None, blend_mode='overlay', vmin=None,
               vmax=None, vert_exag=1, dx=1, dy=1, fraction=1, **kwargs):
         """
         Combine colormapped data values with an illumination intensity map
@@ -1597,15 +1603,16 @@ class LightSource(object):
             The normalization used to scale values before colormapping. If
             None, the input will be linearly scaled between its min and max.
         blend_mode : {'hsv', 'overlay', 'soft'} or callable, optional
-            The type of blending used to combine the colormapped data values
-            with the illumination intensity.  For backwards compatibility, this
-            defaults to "hsv". Note that for most topographic surfaces,
+            The type of blending used to combine the colormapped data
+            values with the illumination intensity.  Default is
+            "overlay".  Note that for most topographic surfaces,
             "overlay" or "soft" appear more visually realistic. If a
-            user-defined function is supplied, it is expected to combine an
-            MxNx3 RGB array of floats (ranging 0 to 1) with an MxNx1 hillshade
-            array (also 0 to 1).  (Call signature `func(rgb, illum, **kwargs)`)
-            Additional kwargs supplied to this function will be passed on to
-            the *blend_mode* function.
+            user-defined function is supplied, it is expected to
+            combine an MxNx3 RGB array of floats (ranging 0 to 1) with
+            an MxNx1 hillshade array (also 0 to 1).  (Call signature
+            `func(rgb, illum, **kwargs)`) Additional kwargs supplied
+            to this function will be passed on to the *blend_mode*
+            function.
         vmin : scalar or None, optional
             The minimum value used in colormapping *data*. If *None* the
             minimum value in *data* is used. If *norm* is specified, then this

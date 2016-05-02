@@ -272,7 +272,7 @@ class FigureCanvasTkAgg(FigureCanvasAgg):
         dpival = self.figure.dpi
         winch = width/dpival
         hinch = height/dpival
-        self.figure.set_size_inches(winch, hinch)
+        self.figure.set_size_inches(winch, hinch, forward=False)
 
 
         self._tkcanvas.delete(self._tkphoto)
@@ -609,6 +609,9 @@ class FigureManagerTkAgg(FigureManagerBase):
             self.window.update()
         else:
             self.canvas.draw_idle()
+        # Raise the new window.
+        self.canvas.manager.window.attributes('-topmost', 1)
+        self.canvas.manager.window.attributes('-topmost', 0)
         self._shown = True
 
     def destroy(self, *args):

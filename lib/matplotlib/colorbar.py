@@ -341,6 +341,7 @@ class ColorbarBase(cm.ScalarMappable):
         Calculate any free parameters based on the current cmap and norm,
         and do all the drawing.
         '''
+
         self._process_values()
         self._find_range()
         X, Y = self._mesh()
@@ -395,6 +396,10 @@ class ColorbarBase(cm.ScalarMappable):
         if update_ticks:
             self.update_ticks()
         self.stale = True
+
+    def get_ticks(self, minor=False):
+        """Return the x ticks as a list of locations"""
+        return self._tick_data_values
 
     def set_ticklabels(self, ticklabels, update_ticks=True):
         """
@@ -580,7 +585,7 @@ class ColorbarBase(cm.ScalarMappable):
             else:
                 b = self._boundaries[self._inside]
                 locator = ticker.FixedLocator(b, nbins=10)
-        if isinstance(self.norm, colors.NoNorm):
+        if isinstance(self.norm, colors.NoNorm) and self.boundaries is None:
             intv = self._values[0], self._values[-1]
         else:
             intv = self.vmin, self.vmax
@@ -598,6 +603,7 @@ class ColorbarBase(cm.ScalarMappable):
         else:
             eps = (intv[1] - intv[0]) * 1e-10
             b = b[(b <= intv[1] + eps) & (b >= intv[0] - eps)]
+        self._tick_data_values = b
         ticks = self._locate(b)
         formatter.set_locs(b)
         ticklabels = [formatter(t, i) for i, t in enumerate(b)]

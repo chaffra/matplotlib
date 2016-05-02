@@ -40,7 +40,7 @@ assumed.  If you want to use a custom time zone, pass a
 locators you create.  See `pytz <http://pythonhosted.org/pytz/>`_ for
 information on :mod:`pytz` and timezone handling.
 
-The `dateutil module <http://labix.org/python-dateutil>`_ provides
+The `dateutil module <https://dateutil.readthedocs.org>`_ provides
 additional code to handle date ticking, making it easy to place ticks
 on any kinds of dates.  See examples below.
 
@@ -88,7 +88,7 @@ Here are all the date tickers:
       :class:`matplotlib.dates.rrulewrapper`.  The
       :class:`rrulewrapper` is a simple wrapper around a
       :class:`dateutil.rrule` (`dateutil
-      <http://labix.org/python-dateutil>`_) which allow almost
+      <https://dateutil.readthedocs.org>`_) which allow almost
       arbitrary date tick specifications.  See `rrule example
       <../examples/pylab_examples/date_demo_rrule.html>`_.
 
@@ -113,8 +113,8 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 from matplotlib.externals import six
-from matplotlib.externals.six.moves import xrange, zip
-
+from matplotlib.externals.six.moves import zip
+from matplotlib import rcParams
 import re
 import time
 import math
@@ -281,7 +281,7 @@ def _from_ordinalf(x, tz=None):
     elif dt.microsecond > 999990:
         dt += datetime.timedelta(microseconds=1e6 - dt.microsecond)
 
-    return dt
+    return dt.astimezone(tz)
 
 
 # a version of _from_ordinalf that can operate on numpy arrays
@@ -609,7 +609,7 @@ class IndexDateFormatter(ticker.Formatter):
 
     def __call__(self, x, pos=0):
         'Return the label for time *x* at position *pos*'
-        ind = int(round(x))
+        ind = int(np.round(x))
         if ind >= len(self.t) or ind <= 0:
             return ''
 
@@ -629,12 +629,12 @@ class AutoDateFormatter(ticker.Formatter):
     format string.  The default looks like this::
 
         self.scaled = {
-           365.0  : '%Y',
-           30.    : '%b %Y',
-           1.0    : '%b %d %Y',
-           1./24. : '%H:%M:%S',
-           1. / (24. * 60.): '%H:%M:%S.%f',
-           }
+            DAYS_PER_YEAR: rcParams['date.autoformat.year'],
+            DAYS_PER_MONTH: rcParams['date.autoformat.month'],
+            1.0: rcParams['date.autoformat.day'],
+            1. / HOURS_PER_DAY: rcParams['date.autoformat.hour'],
+            1. / (MINUTES_PER_DAY): rcParams['date.autoformat.minute'],
+            1. / (SEC_PER_DAY): rcParams['date.autoformat.second']}
 
 
     The algorithm picks the key in the dictionary that is >= the
@@ -642,7 +642,8 @@ class AutoDateFormatter(ticker.Formatter):
     dictionary by doing::
 
 
-    >>> formatter = AutoDateFormatter()
+    >>> locator = AutoDateLocator()
+    >>> formatter = AutoDateFormatter(locator)
     >>> formatter.scaled[1/(24.*60.)] = '%M:%S' # only show min and sec
 
     A custom :class:`~matplotlib.ticker.FuncFormatter` can also be used.
@@ -685,11 +686,14 @@ class AutoDateFormatter(ticker.Formatter):
         self._tz = tz
         self.defaultfmt = defaultfmt
         self._formatter = DateFormatter(self.defaultfmt, tz)
-        self.scaled = {DAYS_PER_YEAR: '%Y',
-                       DAYS_PER_MONTH: '%b %Y',
-                       1.0: '%b %d %Y',
-                       1. / HOURS_PER_DAY: '%H:%M:%S',
-                       1. / (MINUTES_PER_DAY): '%H:%M:%S.%f'}
+        self.scaled = {DAYS_PER_YEAR: rcParams['date.autoformatter.year'],
+                       DAYS_PER_MONTH: rcParams['date.autoformatter.month'],
+                       1.0: rcParams['date.autoformatter.day'],
+                       1. / HOURS_PER_DAY: rcParams['date.autoformatter.hour'],
+                       1. / (MINUTES_PER_DAY):
+                           rcParams['date.autoformatter.minute'],
+                       1. / (SEC_PER_DAY):
+                           rcParams['date.autoformatter.second']}
 
     def __call__(self, x, pos=None):
         locator_unit_scale = float(self._locator._get_unit())
@@ -707,7 +711,7 @@ class AutoDateFormatter(ticker.Formatter):
         elif six.callable(fmt):
             result = fmt(x, pos)
         else:
-            raise TypeError('Unexpected type passed to {!r}.'.formatter(self))
+            raise TypeError('Unexpected type passed to {0!r}.'.format(self))
 
         return result
 
@@ -827,7 +831,7 @@ class RRuleLocator(DateLocator):
             # The magic number!
             stop = _from_ordinalf(3652059.9999999)
 
-        self.rule.set(dtstart=start, until=stop, count=self.MAXTICKS + 1)
+        self.rule.set(dtstart=start, until=stop)
 
         # estimate the number of ticks very approximately so we don't
         # have to do a very expensive (and potentially near infinite)
@@ -1561,8 +1565,8 @@ class DateConverter(units.ConversionInterface):
             x = x.ravel()
 
         try:
-            x = x[0]
-        except (TypeError, IndexError):
+            x = cbook.safe_first_element(x)
+        except (TypeError, StopIteration):
             pass
 
         try:

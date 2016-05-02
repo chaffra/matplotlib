@@ -162,7 +162,7 @@ def test_ellipse():
     extents = [int(e) for e in tool.extents]
     assert extents == [70, 129, 70, 130], extents
 
-    assert tool.geometry.shape == (2, 74)
+    assert tool.geometry.shape == (2, 73)
     assert_allclose(tool.geometry[:, 0], [70., 100])
 
 
@@ -257,3 +257,17 @@ def test_lasso_selector():
     check_lasso_selector()
     check_lasso_selector(useblit=False, lineprops=dict(color='red'))
     check_lasso_selector(useblit=True, button=1)
+
+
+@cleanup
+def test_CheckButtons():
+    ax = get_ax()
+    check = widgets.CheckButtons(ax, ('a', 'b', 'c'), (True, False, True))
+    assert check.get_status() == [True, False, True]
+    check.set_active(0)
+    assert check.get_status() == [False, False, True]
+
+    def clicked_function():
+        pass
+    cid = check.on_clicked(clicked_function)
+    check.disconnect(cid)

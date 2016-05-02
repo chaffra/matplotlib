@@ -28,6 +28,7 @@ import matplotlib.backend_bases as backend_bases
 import matplotlib.path as mpath
 from matplotlib import _path
 import matplotlib.mlab as mlab
+import matplotlib.lines as mlines
 
 
 CIRCLE_AREA_FACTOR = 1.0 / np.sqrt(np.pi)
@@ -88,6 +89,10 @@ class Collection(artist.Artist, cm.ScalarMappable):
     #: Each kind of collection defines this based on its arguments.
     _transforms = np.empty((0, 3, 3))
 
+    # Whether to draw an edge by default.  Set on a
+    # subclass-by-subclass basis.
+    _edge_default = False
+
     def __init__(self,
                  edgecolors=None,
                  facecolors=None,
@@ -146,7 +151,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         except TypeError:
             if cbook.iterable(val) and len(val):
                 try:
-                    float(val[0])
+                    float(cbook.safe_first_element(val))
                 except (TypeError, ValueError):
                     pass  # raise below
                 else:
@@ -159,7 +164,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         if not cbook.iterable(val):
             val = (val,)
         try:
-            bool(val[0])
+            bool(cbook.safe_first_element(val))
         except (TypeError, IndexError):
             raise TypeError('val must be a bool or nonzero sequence of them')
         return val
@@ -476,7 +481,15 @@ class Collection(artist.Artist, cm.ScalarMappable):
         ACCEPTS: float or sequence of floats
         """
         if lw is None:
-            lw = mpl.rcParams['patch.linewidth']
+            if (self._edge_default or
+                    mpl.rcParams['_internal.classic_mode'] or
+                    not self._is_filled):
+                lw = mpl.rcParams['patch.linewidth']
+                if lw is None:
+                    lw = mpl.rcParams['lines.linewidth']
+            else:
+                lw = 0
+
         self._linewidths = self._get_value(lw)
         self.stale = True
 
@@ -497,7 +510,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         ===========================   =================
         ``'-'`` or ``'solid'``        solid line
         ``'--'`` or  ``'dashed'``     dashed line
-        ``'-.'`` or  ``'dash_dot'``   dash-dotted line
+        ``'-.'`` or  ``'dashdot'``    dash-dotted line
         ``':'`` or ``'dotted'``       dotted line
         ===========================   =================
 
@@ -519,23 +532,16 @@ class Collection(artist.Artist, cm.ScalarMappable):
             The line style.
         """
         try:
-            dashd = backend_bases.GraphicsContextBase.dashd
-            if cbook.is_string_like(ls):
+            if cbook.is_string_like(ls) and cbook.is_hashable(ls):
                 ls = cbook.ls_mapper.get(ls, ls)
-                if ls in dashd:
-                    dashes = [dashd[ls]]
-                else:
-                    raise ValueError()
+                dashes = [mlines.get_dash_pattern(ls)]
             elif cbook.iterable(ls):
                 try:
                     dashes = []
                     for x in ls:
                         if cbook.is_string_like(x):
                             x = cbook.ls_mapper.get(x, x)
-                            if x in dashd:
-                                dashes.append(dashd[x])
-                            else:
-                                raise ValueError()
+                            dashes.append(mlines.get_dash_pattern(x))
                         elif cbook.iterable(x) and len(x) == 2:
                             dashes.append(x)
                         else:
@@ -1046,6 +1052,8 @@ class LineCollection(Collection):
     number of segments.
     """
 
+    _edge_default = True
+
     def __init__(self, segments,     # Can be None.
                  linewidths=None,
                  colors=None,
@@ -1216,6 +1224,8 @@ class EventCollection(LineCollection):
     an axis, such as time or length.  Events do not have an amplitude.  They
     are displayed as v
     '''
+
+    _edge_default = True
 
     def __init__(self,
                  positions,     # Can be None.

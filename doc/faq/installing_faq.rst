@@ -246,8 +246,8 @@ You can now install matplotlib and all its dependencies with::
 
     pip install matplotlib
 
-Macports
-^^^^^^^^
+Macports Python
+^^^^^^^^^^^^^^^
 
 For Python 2.7::
 
@@ -259,8 +259,8 @@ For Python 3.4::
     sudo port install py34-pip
     sudo pip-3.4 install matplotlib
 
-Homebrew
-^^^^^^^^
+Homebrew Python
+^^^^^^^^^^^^^^^
 
 For Python 2.7::
 
@@ -390,8 +390,8 @@ Standalone binary installers for Windows
 
 If you have already installed Python and numpy, you can use one of the
 matplotlib binary installers for windows -- you can get these from the
-`download <http://matplotlib.org/downloads.html>`_ site.  Chose the files with
-an ``.exe`` extension that match your version of Python (e.g., ``py2.7`` if you
-installed Python 2.7).  If you haven't already installed Python, you can get
-the official version from the `Python web site
-<http://python.org/download/>`_.
+`the PyPI matplotlib page <http://pypi.python.org/pypi/matplotlib>`_
+site.  Choose the files with an ``.exe`` extension that match your
+version of Python (e.g., ``py2.7`` if you installed Python 2.7).  If
+you haven't already installed Python, you can get the official version
+from the `Python web site <http://python.org/download/>`_.

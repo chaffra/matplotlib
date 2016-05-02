@@ -29,7 +29,11 @@ function getSnippet(id, url) {
     // Synchronous request, wait till we have it all
     req.open('GET', url, false);
     req.send(null);
-    element.innerHTML = req.responseText;
+    if (req.status == 200) {
+      element.innerHTML = req.responseText;
+    } else {
+      element.innerHTML = "<mark>Could not find Snippet to insert at " + url + "</mark>"
+    }
   }
 }
 </script>
@@ -89,18 +93,18 @@ function getSnippet(id, url) {
       If you have benefited from John's many contributions, please say
       thanks in the way that would matter most to him.  Please consider
       making a donation to
-      the <a href="http://numfocus.org/johnhunter/">John Hunter Memorial
-      Fund</a>.</p>
+      the <a href="http://numfocus.org/johnhunter/">John Hunter Technology
+      Fellowship</a>.</p>
     </td>
    </tr>
   </table>
 </div>
 
-  <h1>Download</h1>
+  <h1>Installation</h1>
 
   Visit the
-  <a href="http://matplotlib.org/downloads.html">matplotlib downloads
-  page</a>.
+  <a href="http://matplotlib.org/users/installing.html">matplotlib
+  installation instructions.</a>.
 
   <h1>Documentation</h1>
 
@@ -131,8 +135,8 @@ Foundation Code of Conduct</a> in everything we do.</p>
 the <a href="{{ pathto('api/index') }}">api</a> docs,
 <a href="http://matplotlib.1069221.n5.nabble.com/matplotlib-users-f3.html">mailing
 list archives</a>, and join the matplotlib
-mailing lists <a href="https://mail.python.org/mailman/listinfo/matplotlib-users">Users</a>, 
-<a href="https://mail.python.org/mailman/listinfo/matplotlib-announce">Announce</a> and 
+mailing lists <a href="https://mail.python.org/mailman/listinfo/matplotlib-users">Users</a>,
+<a href="https://mail.python.org/mailman/listinfo/matplotlib-announce">Announce</a> and
 <a href="https://mail.python.org/mailman/listinfo/matplotlib-devel">Devel</a>.
 Check out the matplotlib questions
 on <a href="http://stackoverflow.com/questions/tagged/matplotlib">stackoverflow</a>.
@@ -147,21 +151,30 @@ but it is a good idea to ping us on the mailing list too.</p>
 
 <p>To keep up to date with what's going on in matplotlib, see
 the <a href="{{ pathto('users/whats_new.html', 1) }}">what's new
-page</a>, the more detailed <a href="{{ pathto('_static/CHANGELOG', 1)
-}}">changelog</a> or browse
-the <a href="https://github.com/matplotlib/matplotlib">source
+page</a> or browse the <a href="https://github.com/matplotlib/matplotlib">source
 code</a>.  Anything that could require changes to your existing code
 is logged in the <a href="{{ pathto('api/api_changes.html', 1) }}">api
 changes</a> file.</p>
 
 <h1>Toolkits</h1>
 
-<p>There are several matplotlib add-on <a href="{{ pathto('mpl_toolkits/index') }}">toolkits</a>,
-including a choice of two projection and mapping toolkits <a href="http://matplotlib.org/basemap">basemap</a> and
-<a href="http://scitools.org.uk/cartopy/docs/latest">cartopy</a>,
-3d plotting with <a href="{{ pathto('mpl_toolkits/mplot3d/index') }}">mplot3d</a>,
-axes and axis helpers in <a href="{{ pathto('mpl_toolkits/axes_grid/index') }}">axes_grid</a> and more.
+<p>Matplotlib ships with several add-on <a href="{{ pathto('mpl_toolkits/index') }}">toolkits</a>,
+    Including 3d plotting with <a href="{{ pathto('mpl_toolkits/mplot3d/index') }}">mplot3d</a>,
+    axes helpers in <a href="{{ pathto('mpl_toolkits/axes_grid1/index') }}">axes_grid1</a> and
+    axis helpers in <a href="{{ pathto('mpl_toolkits/axisartist/index') }}">axisartist</a>.
  </p>
+
+<h1>Third party packages</h1>
+
+<p>A large number of <a href="{{ pathto('thirdpartypackages/index') }}">third party packages</a>
+    extend and build on Matplotlib functionality, including several higher-level plotting interfaces
+    <a href="http://web.stanford.edu/~mwaskom/software/seaborn">seaborn</a>,
+    <a href="http://holoviews.org">holoviews</a>,
+    <a href="http://ggplot.yhathq.com">ggplot</a>, and
+    two projection and mapping toolkits
+    <a href="http://matplotlib.org/basemap">basemap</a> and
+    <a href="http://scitools.org.uk/cartopy/docs/latest">cartopy</a>.
+</p>
 
 <h1>Citing matplotlib</h1>
 
@@ -178,8 +191,10 @@ axes and axis helpers in <a href="{{ pathto('mpl_toolkits/axes_grid/index') }}">
   <h1>Open source</h1>
 
 <p>
-Please consider <a href="http://sourceforge.net/project/project_donations.php?group_id=80706">donating</a>
-to support matplotlib development or to the <a href="http://numfocus.org/johnhunter/">John Hunter Memorial Fund</a>.
+Please
+consider <a href="https://www.flipcause.com/widget/MjI1OA==">donating
+to the matplotlib project</a> through the Numfocus organization or to
+the <a href="http://numfocus.org/johnhunter/">John Hunter Technology Fellowship</a>.
 </p>
 
 <p>
@@ -190,6 +205,13 @@ The matplotlib <a href="{{ pathto('users/license') }}">license</a> is based on t
 <p>
 There is an active developer community and a long list of people
 who have made significant <a href="{{ pathto('users/credits') }}">contributions</a>.
+</p>
+
+<p>
+Matplotlib is hosted on <a href="https://github.com/matplotlib/matplotlib">Github</a>.
+<a href="https://github.com/matplotlib/matplotlib/issues">Issues</a> and
+<a href="https://github.com/matplotlib/matplotlib/pulls">Pull requests</a>
+are tracked at Github too.
 </p>
 
 

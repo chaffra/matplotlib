@@ -280,10 +280,8 @@ class RendererWx(RendererBase):
             b = 0
             w = self.width
             h = self.height
-        rows, cols, image_str = im.as_rgba_str()
-        image_array = np.fromstring(image_str, np.uint8)
-        image_array.shape = rows, cols, 4
-        bitmap = wxc.BitmapFromBuffer(cols, rows, image_array)
+        rows, cols = im.shape[:2]
+        bitmap = wxc.BitmapFromBuffer(cols, rows, im.tostring())
         gc = self.get_gc()
         gc.select()
         gc.gfx_ctx.DrawBitmap(bitmap, int(l), int(self.height - b),
@@ -834,9 +832,6 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
                 # not called from OnPaint use a ClientDC
                 drawDC = wx.ClientDC(self)
 
-            # ensure that canvas has no 'left' over stuff when resizing frame
-            drawDC.Clear()
-
             # following is for 'WX' backend on Windows
             # the bitmap can not be in use by another DC,
             # see GraphicsContextWx._cache
@@ -988,7 +983,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         dpival = self.figure.dpi
         winch = self._width / dpival
         hinch = self._height / dpival
-        self.figure.set_size_inches(winch, hinch)
+        self.figure.set_size_inches(winch, hinch, forward=False)
 
         # Rendering will happen on the associated paint event
         # so no need to do anything here except to make sure
@@ -1332,12 +1327,13 @@ class FigureFrameWx(wx.Frame):
             # Rationale for line above: see issue 2941338.
         except AttributeError:
             pass  # classic toolbar lacks the attribute
-        wx.Frame.Destroy(self, *args, **kwargs)
-        if self.toolbar is not None:
-            self.toolbar.Destroy()
-        wxapp = wx.GetApp()
-        if wxapp:
-            wxapp.Yield()
+        if not self.IsBeingDeleted():
+            wx.Frame.Destroy(self, *args, **kwargs)
+            if self.toolbar is not None:
+                self.toolbar.Destroy()
+            wxapp = wx.GetApp()
+            if wxapp:
+                wxapp.Yield()
         return True
 
 
@@ -1371,6 +1367,7 @@ class FigureManagerWx(FigureManagerBase):
 
     def show(self):
         self.frame.Show()
+        self.canvas.draw()
 
     def destroy(self, *args):
         DEBUG_MSG("destroy()", 1, self)
@@ -1578,6 +1575,12 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
         self.canvas = canvas
         self._idle = True
         self.statbar = None
+        self.prevZoomRect = None
+        # for now, use alternate zoom-rectangle drawing on all
+        # Macs. N.B. In future versions of wx it may be possible to
+        # detect Retina displays with window.GetContentScaleFactor()
+        # and/or dc.GetContentScaleFactor()
+        self.retinaFix = 'wxMac' in wx.PlatformInfo
 
     def get_canvas(self, frame, fig):
         return FigureCanvasWx(frame, -1, fig)
@@ -1688,16 +1691,44 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
 
     def press(self, event):
         if self._active == 'ZOOM':
-            self.wxoverlay = wx.Overlay()
+            if not self.retinaFix:
+                self.wxoverlay = wx.Overlay()
+            else:
+                self.savedRetinaImage = self.canvas.copy_from_bbox(
+                    self.canvas.figure.gca().bbox)
+                self.zoomStartX = event.xdata
+                self.zoomStartY = event.ydata
 
     def release(self, event):
         if self._active == 'ZOOM':
             # When the mouse is released we reset the overlay and it
             # restores the former content to the window.
-            self.wxoverlay.Reset()
-            del self.wxoverlay
+            if not self.retinaFix:
+                self.wxoverlay.Reset()
+                del self.wxoverlay
+            else:
+                del self.savedRetinaImage
+                if self.prevZoomRect:
+                    self.prevZoomRect.pop(0).remove()
+                    self.prevZoomRect = None
 
     def draw_rubberband(self, event, x0, y0, x1, y1):
+        if self.retinaFix:  # On Macs, use the following code
+            # wx.DCOverlay does not work properly on Retina displays.
+            rubberBandColor = '#C0C0FF'
+            if self.prevZoomRect:
+                self.prevZoomRect.pop(0).remove()
+            self.canvas.restore_region(self.savedRetinaImage)
+            X0, X1 = self.zoomStartX, event.xdata
+            Y0, Y1 = self.zoomStartY, event.ydata
+            lineX = (X0, X0, X1, X1, X0)
+            lineY = (Y0, Y1, Y1, Y0, Y0)
+            self.prevZoomRect = self.canvas.figure.gca().plot(
+                lineX, lineY, '-', color=rubberBandColor)
+            self.canvas.figure.gca().draw_artist(self.prevZoomRect[0])
+            self.canvas.blit(self.canvas.figure.gca().bbox)
+            return
+
         # Use an Overlay to draw a rubberband-like bounding box.
 
         dc = wx.ClientDC(self.canvas)

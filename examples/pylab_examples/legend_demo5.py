@@ -41,7 +41,7 @@ class HandlerDashedLines(HandlerLineCollection):
                 lw = orig_handle.get_linewidths()[i]
             except IndexError:
                 lw = orig_handle.get_linewidths()[0]
-            if dashes[0] != None:
+            if dashes[0] is not None:
                 legline.set_dashes(dashes[1])
             legline.set_color(color)
             legline.set_transform(trans)
@@ -52,7 +52,7 @@ class HandlerDashedLines(HandlerLineCollection):
 x = np.linspace(0, 5, 100)
 
 plt.figure()
-colors = ['red', 'orange', 'yellow', 'green', 'blue']
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color'][:5]
 styles = ['solid', 'dashed', 'dashed', 'dashed', 'solid']
 lines = []
 for i, color, style in zip(range(5), colors, styles):

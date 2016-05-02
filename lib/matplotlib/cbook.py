@@ -12,6 +12,7 @@ from __future__ import (absolute_import, division, print_function,
 from matplotlib.externals import six
 from matplotlib.externals.six.moves import xrange, zip
 from itertools import repeat
+import collections
 
 import datetime
 import errno
@@ -191,20 +192,7 @@ def deprecated(since, message='', name='', alternative='', pending=False,
         import textwrap
 
         if isinstance(func, classmethod):
-            try:
-                func = func.__func__
-            except AttributeError:
-                # classmethods in Python2.6 and below lack the __func__
-                # attribute so we need to hack around to get it
-                method = func.__get__(None, object)
-                if hasattr(method, '__func__'):
-                    func = method.__func__
-                elif hasattr(method, 'im_func'):
-                    func = method.im_func
-                else:
-                    # Nothing we can do really...  just return the original
-                    # classmethod
-                    return func
+            func = func.__func__
             is_classmethod = True
         else:
             is_classmethod = False
@@ -727,6 +715,17 @@ def is_sequence_of_strings(obj):
     return True
 
 
+def is_hashable(obj):
+    """
+    Returns true if *obj* can be hashed
+    """
+    try:
+        hash(obj)
+    except TypeError:
+        return False
+    return True
+
+
 def is_writable_file_like(obj):
     'return true if *obj* looks like a file object with a *write* method'
     return hasattr(obj, 'write') and six.callable(obj.write)
@@ -1012,19 +1011,16 @@ def mkdirs(newdir, mode=0o777):
         > mkdir -p NEWDIR
         > chmod MODE NEWDIR
     """
-    try:
-        if not os.path.exists(newdir):
-            parts = os.path.split(newdir)
-            for i in range(1, len(parts) + 1):
-                thispart = os.path.join(*parts[:i])
-                if not os.path.exists(thispart):
-                    os.makedirs(thispart, mode)
-
-    except OSError as err:
-        # Reraise the error unless it's about an already existing directory
-        if err.errno != errno.EEXIST or not os.path.isdir(newdir):
-            raise
-
+    # this functionality is now in core python as of 3.2
+    # LPY DROP
+    if six.PY3:
+        os.makedirs(newdir, mode=mode, exist_ok=True)
+    else:
+        try:
+            os.makedirs(newdir, mode=mode)
+        except OSError as exception:
+            if exception.errno != errno.EEXIST:
+                raise
 
 class GetRealpathAndStat(object):
     def __init__(self):
@@ -1408,12 +1404,6 @@ class Stack(object):
                 self.push(thiso)
 
 
-def popall(seq):
-    'empty a list'
-    for i in xrange(len(seq)):
-        seq.pop()
-
-
 def finddir(o, match, case=False):
     """
     return all attributes of *o* which match string in match.  if case
@@ -1440,51 +1430,6 @@ def restrict_dict(d, keys):
     """
     return dict([(k, v) for (k, v) in six.iteritems(d) if k in keys])
 
-
-def report_memory(i=0):  # argument may go away
-    'return the memory consumed by process'
-    from matplotlib.compat.subprocess import Popen, PIPE
-    pid = os.getpid()
-    if sys.platform == 'sunos5':
-        try:
-            a2 = Popen('ps -p %d -o osz' % pid, shell=True,
-                       stdout=PIPE).stdout.readlines()
-        except OSError:
-            raise NotImplementedError(
-                "report_memory works on Sun OS only if "
-                "the 'ps' program is found")
-        mem = int(a2[-1].strip())
-    elif sys.platform.startswith('linux'):
-        try:
-            a2 = Popen('ps -p %d -o rss,sz' % pid, shell=True,
-                       stdout=PIPE).stdout.readlines()
-        except OSError:
-            raise NotImplementedError(
-                "report_memory works on Linux only if "
-                "the 'ps' program is found")
-        mem = int(a2[1].split()[1])
-    elif sys.platform.startswith('darwin'):
-        try:
-            a2 = Popen('ps -p %d -o rss,vsz' % pid, shell=True,
-                       stdout=PIPE).stdout.readlines()
-        except OSError:
-            raise NotImplementedError(
-                "report_memory works on Mac OS only if "
-                "the 'ps' program is found")
-        mem = int(a2[1].split()[0])
-    elif sys.platform.startswith('win'):
-        try:
-            a2 = Popen(["tasklist", "/nh", "/fi", "pid eq %d" % pid],
-                       stdout=PIPE).stdout.read()
-        except OSError:
-            raise NotImplementedError(
-                "report_memory works on Windows only if "
-                "the 'tasklist' program is found")
-        mem = int(a2.strip().split()[-2].replace(',', ''))
-    else:
-        raise NotImplementedError(
-            "We don't have a memory monitor for %s" % sys.platform)
-    return mem
 
 _safezip_msg = 'In safezip, len(args[0])=%d but len(args[%d])=%d'
 
@@ -1515,58 +1460,6 @@ def safe_masked_invalid(x):
     except TypeError:
         return x
     return xm
-
-
-class MemoryMonitor(object):
-    def __init__(self, nmax=20000):
-        self._nmax = nmax
-        self._mem = np.zeros((self._nmax,), np.int32)
-        self.clear()
-
-    def clear(self):
-        self._n = 0
-        self._overflow = False
-
-    def __call__(self):
-        mem = report_memory()
-        if self._n < self._nmax:
-            self._mem[self._n] = mem
-            self._n += 1
-        else:
-            self._overflow = True
-        return mem
-
-    def report(self, segments=4):
-        n = self._n
-        segments = min(n, segments)
-        dn = int(n / segments)
-        ii = list(xrange(0, n, dn))
-        ii[-1] = n - 1
-        print()
-        print('memory report: i, mem, dmem, dmem/nloops')
-        print(0, self._mem[0])
-        for i in range(1, len(ii)):
-            di = ii[i] - ii[i - 1]
-            if di == 0:
-                continue
-            dm = self._mem[ii[i]] - self._mem[ii[i - 1]]
-            print('%5d %5d %3d %8.3f' % (ii[i], self._mem[ii[i]],
-                                         dm, dm / float(di)))
-        if self._overflow:
-            print("Warning: array size was too small for the number of calls.")
-
-    def xy(self, i0=0, isub=1):
-        x = np.arange(i0, self._n, isub)
-        return x, self._mem[i0:self._n:isub]
-
-    def plot(self, i0=0, isub=1, fig=None):
-        if fig is None:
-            from .pylab import figure
-            fig = figure()
-
-        ax = fig.add_subplot(111)
-        ax.plot(*self.xy(i0, isub))
-        fig.canvas.draw()
 
 
 def print_cycles(objects, outstream=sys.stdout, show_progress=False):
@@ -1672,7 +1565,7 @@ class Grouper(object):
         False
 
     """
-    def __init__(self, init=[]):
+    def __init__(self, init=()):
         mapping = self._mapping = {}
         for x in init:
             mapping[ref(x)] = [ref(x)]
@@ -1723,6 +1616,14 @@ class Grouper(object):
             return mapping[ref(a)] is mapping[ref(b)]
         except KeyError:
             return False
+
+    def remove(self, a):
+        self.clean()
+
+        mapping = self._mapping
+        seta = mapping.pop(ref(a), None)
+        if seta is not None:
+            seta.remove(ref(a))
 
     def __iter__(self):
         """
@@ -1870,39 +1771,46 @@ def delete_masked_points(*args):
     return margs
 
 
-def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
-    '''
-    Returns list of dictionaries of staticists to be use to draw a series of
-    box and whisker plots. See the `Returns` section below to the required
-    keys of the dictionary. Users can skip this function and pass a user-
-    defined set of dictionaries to the new `axes.bxp` method instead of
-    relying on MPL to do the calcs.
+def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None,
+                  autorange=False):
+    """
+    Returns list of dictionaries of statistics used to draw a series
+    of box and whisker plots. The `Returns` section enumerates the
+    required keys of the dictionary. Users can skip this function and
+    pass a user-defined set of dictionaries to the new `axes.bxp` method
+    instead of relying on MPL to do the calculations.
 
     Parameters
     ----------
     X : array-like
-        Data that will be represented in the boxplots. Should have 2 or fewer
-        dimensions.
+        Data that will be represented in the boxplots. Should have 2 or
+        fewer dimensions.
 
     whis : float, string, or sequence (default = 1.5)
-        As a float, determines the reach of the whiskers past the first and
-        third quartiles (e.g., Q3 + whis*IQR, QR = interquartile range, Q3-Q1).
-        Beyond the whiskers, data are considered outliers and are plotted as
-        individual points. Set this to an unreasonably high value to force the
-        whiskers to show the min and max data. Alternatively, set this to an
-        ascending sequence of percentile (e.g., [5, 95]) to set the whiskers
-        at specific percentiles of the data. Finally, can  `whis` be the
-        string 'range' to force the whiskers to the min and max of the data.
-        In the edge case that the 25th and 75th percentiles are equivalent,
-        `whis` will be automatically set to 'range'
+        As a float, determines the reach of the whiskers past the first
+        and third quartiles (e.g., Q3 + whis*IQR, QR = interquartile
+        range, Q3-Q1). Beyond the whiskers, data are considered outliers
+        and are plotted as individual points. This can be set this to an
+        ascending sequence of percentile (e.g., [5, 95]) to set the
+        whiskers at specific percentiles of the data. Finally, `whis`
+        can be the string ``'range'`` to force the whiskers to the
+        minimum and maximum of the data. In the edge case that the 25th
+        and 75th percentiles are equivalent, `whis` can be automatically
+        set to ``'range'`` via the `autorange` option.
 
-    bootstrap : int or None (default)
-        Number of times the confidence intervals around the median should
-        be bootstrapped (percentile method).
+    bootstrap : int, optional
+        Number of times the confidence intervals around the median
+        should be bootstrapped (percentile method).
 
-    labels : sequence
-        Labels for each dataset. Length must be compatible with dimensions
-        of `X`
+    labels : array-like, optional
+        Labels for each dataset. Length must be compatible with
+        dimensions of `X`.
+
+    autorange : bool, optional (False)
+        When `True` and the data are distributed such that the  25th and
+        75th percentiles are equal, ``whis`` is set to ``'range'`` such
+        that the whisker ends are at the minimum and maximum of the
+        data.
 
     Returns
     -------
@@ -1927,8 +1835,8 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
 
     Notes
     -----
-    Non-bootstrapping approach to confidence interval uses Gaussian-based
-    asymptotic approximation:
+    Non-bootstrapping approach to confidence interval uses Gaussian-
+    based asymptotic approximation:
 
     .. math::
 
@@ -1938,7 +1846,7 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
     McGill, R., Tukey, J.W., and Larsen, W.A. (1978) "Variations of
     Boxplots", The American Statistician, 32:12-16.
 
-    '''
+    """
 
     def _bootstrap_median(data, N=5000):
         # determine 95% confidence intervals of the median
@@ -2018,7 +1926,7 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None):
 
         # interquartile range
         stats['iqr'] = q3 - q1
-        if stats['iqr'] == 0:
+        if stats['iqr'] == 0 and autorange:
             whis = 'range'
 
         # conf. interval around median
@@ -2531,6 +2439,121 @@ def index_of(y):
         return np.arange(y.shape[0], dtype=float), y
 
 
+def safe_first_element(obj):
+    if isinstance(obj, collections.Iterator):
+        raise RuntimeError("matplotlib does not support generators "
+                           "as input")
+    return next(iter(obj))
+
+
+def normalize_kwargs(kw, alias_mapping=None, required=(), forbidden=(),
+                     allowed=None):
+    """Helper function to normalize kwarg inputs
+
+    The order they are resolved are:
+
+     1. aliasing
+     2. required
+     3. forbidden
+     4. allowed
+
+    This order means that only the canonical names need appear in
+    `allowed`, `forbidden`, `required`
+
+    Parameters
+    ----------
+
+    alias_mapping, dict, optional
+        A mapping between a canonical name to a list of
+        aliases, in order of precedence from lowest to highest.
+
+        If the canonical value is not in the list it is assumed to have
+        the highest priority.
+
+    required : iterable, optional
+        A tuple of fields that must be in kwargs.
+
+    forbidden : iterable, optional
+        A list of keys which may not be in kwargs
+
+    allowed : tuple, optional
+        A tuple of allowed fields.  If this not None, then raise if
+        `kw` contains any keys not in the union of `required`
+        and `allowed`.  To allow only the required fields pass in
+        ``()`` for `allowed`
+
+    Raises
+    ------
+    TypeError
+        To match what python raises if invalid args/kwargs are passed to
+        a callable.
+
+    """
+    # deal with default value of alias_mapping
+    if alias_mapping is None:
+        alias_mapping = dict()
+
+    # make a local so we can pop
+    kw = dict(kw)
+    # output dictionary
+    ret = dict()
+
+    # hit all alias mappings
+    for canonical, alias_list in six.iteritems(alias_mapping):
+
+        # the alias lists are ordered from lowest to highest priority
+        # so we know to use the last value in this list
+        tmp = []
+        seen = []
+        for a in alias_list:
+            try:
+                tmp.append(kw.pop(a))
+                seen.append(a)
+            except KeyError:
+                pass
+        # if canonical is not in the alias_list assume highest priority
+        if canonical not in alias_list:
+            try:
+                tmp.append(kw.pop(canonical))
+                seen.append(canonical)
+            except KeyError:
+                pass
+        # if we found anything in this set of aliases put it in the return
+        # dict
+        if tmp:
+            ret[canonical] = tmp[-1]
+            if len(tmp) > 1:
+                warnings.warn("Saw kwargs {seen!r} which are all aliases for "
+                              "{canon!r}.  Kept value from {used!r}".format(
+                                  seen=seen, canon=canonical, used=seen[-1]))
+
+    # at this point we know that all keys which are aliased are removed, update
+    # the return dictionary from the cleaned local copy of the input
+    ret.update(kw)
+
+    fail_keys = [k for k in required if k not in ret]
+    if fail_keys:
+        raise TypeError("The required keys {keys!r} "
+                        "are not in kwargs".format(keys=fail_keys))
+
+    fail_keys = [k for k in forbidden if k in ret]
+    if fail_keys:
+        raise TypeError("The forbidden keys {keys!r} "
+                        "are in kwargs".format(keys=fail_keys))
+
+    if allowed is not None:
+        allowed_set = set(required) | set(allowed)
+        fail_keys = [k for k in ret if k not in allowed_set]
+        if fail_keys:
+            raise TypeError("kwargs contains {keys!r} which are not in "
+                            "the required {req!r} or "
+                            "allowed {allow!r} keys".format(
+                                keys=fail_keys, req=required,
+                                allow=allowed))
+
+    return ret
+
+
 def get_label(y, default_name):
     try:
         return y.name
@@ -2553,3 +2576,63 @@ except AttributeError:
 else:
     def _putmask(a, mask, values):
         return np.copyto(a, values, where=mask)
+
+_lockstr = """\
+LOCKERROR: matplotlib is trying to acquire the lock {!r}
+and has failed.  This maybe due to any other process holding this
+lock.  If you are sure no other matplotlib process in running try
+removing this folder(s) and trying again.
+"""
+
+
+class Locked(object):
+    """
+    Context manager to handle locks.
+
+    Based on code from conda.
+
+    (c) 2012-2013 Continuum Analytics, Inc. / http://continuum.io
+    All Rights Reserved
+
+    conda is distributed under the terms of the BSD 3-clause license.
+    Consult LICENSE_CONDA or http://opensource.org/licenses/BSD-3-Clause.
+    """
+    LOCKFN = '.matplotlib_lock'
+
+    def __init__(self, path):
+        self.path = path
+        self.end = "-" + str(os.getpid())
+        self.lock_path = os.path.join(self.path, self.LOCKFN + self.end)
+        self.pattern = os.path.join(self.path, self.LOCKFN + '-*')
+        self.remove = True
+
+    def __enter__(self):
+        retries = 50
+        sleeptime = 1
+        while retries:
+            files = glob.glob(self.pattern)
+            if files and not files[0].endswith(self.end):
+                time.sleep(sleeptime)
+                sleeptime *= 1.1
+                retries -= 1
+            else:
+                break
+        else:
+            err_str = _lockstr.format(self.pattern)
+            raise RuntimeError(err_str)
+
+        if not files:
+            try:
+                os.makedirs(self.lock_path)
+            except OSError:
+                pass
+        else:  # PID lock already here --- someone else will remove it.
+            self.remove = False
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.remove:
+            for path in self.lock_path, self.path:
+                try:
+                    os.rmdir(path)
+                except OSError:
+                    pass

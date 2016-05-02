@@ -166,8 +166,8 @@ def convert(filename, cache):
     """
     base, extension = filename.rsplit('.', 1)
     if extension not in converter:
-        raise ImageComparisonFailure(
-            "Don't know how to convert %s files to png" % extension)
+        from nose import SkipTest
+        raise SkipTest("Don't know how to convert %s files to png" % extension)
     newname = base + '_' + extension + '.png'
     if not os.path.exists(filename):
         raise IOError("'%s' does not exist" % filename)
@@ -242,6 +242,11 @@ def crop_to_same(actual_path, actual_image, expected_path, expected_image):
 
 def calculate_rms(expectedImage, actualImage):
     "Calculate the per-pixel errors, then compute the root mean square error."
+    if expectedImage.shape != actualImage.shape:
+        raise ImageComparisonFailure(
+            "image sizes do not match expected size: {0} "
+            "actual size {1}".format(expectedImage.shape, actualImage.shape))
+
     num_values = np.prod(expectedImage.shape)
     abs_diff_image = abs(expectedImage - actualImage)
 
@@ -318,6 +323,12 @@ def compare_images(expected, actual, tol, in_decorator=False):
     actualImage, expectedImage = crop_to_same(
         actual, actualImage, expected, expectedImage)
 
+    diff_image = make_test_filename(actual, 'failed-diff')
+
+    if tol <= 0.0:
+        if np.array_equal(expectedImage, actualImage):
+            return None
+
     # convert to signed integers, so that the images can be subtracted without
     # overflow
     expectedImage = expectedImage.astype(np.int16)
@@ -325,11 +336,7 @@ def compare_images(expected, actual, tol, in_decorator=False):
 
     rms = calculate_rms(expectedImage, actualImage)
 
-    diff_image = make_test_filename(actual, 'failed-diff')
-
     if rms <= tol:
-        if os.path.exists(diff_image):
-            os.unlink(diff_image)
         return None
 
     save_diff_image(expected, actual, diff_image)

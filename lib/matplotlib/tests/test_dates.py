@@ -71,7 +71,7 @@ def test_date_axhline():
     fig.subplots_adjust(left=0.25)
 
 
-@image_comparison(baseline_images=['date_axvline'], tol=16,
+@image_comparison(baseline_images=['date_axvline'],
                   extensions=['png'])
 def test_date_axvline():
     # test ax hline with date inputs
@@ -199,7 +199,7 @@ def test_date_formatter_strftime():
             expanded_formatter = mdates.DateFormatter(locale_d_fmt)
             assert_equal(locale_formatter.strftime(dt),
                          expanded_formatter.strftime(dt))
-        except ImportError:
+        except (ImportError, AttributeError):
             pass
 
     for year in range(1, 3000, 71):

@@ -14,6 +14,35 @@ How-To
 Plotting: howto
 ===============
 
+.. _howto-datetime64:
+
+Plot `numpy.datetime64` values
+------------------------------
+
+For matplotlib to plot dates (or any scalar with units) a converter
+to float needs to be registered with the `matplolib.units` module.  The
+current best converters for `datetime64` values are in `pandas`.  Simply
+importing `pandas` ::
+
+  import pandas as pd
+
+should be sufficient as `pandas` will try to install the converters
+on import.  If that does not work, or you need to reset `munits.registry`
+you can explicitly install the `pandas` converters by ::
+
+  from pandas.tseries import converter as pdtc
+  pdtc.register()
+
+If you only want to use the `pandas` converter for `datetime64` values ::
+
+  from pandas.tseries import converter as pdtc
+  import matplotlib.units as munits
+  import numpy as np
+
+  munits.registry[np.datetime64] = pdtc.DatetimeConverter()
+
+
+
 .. _howto-findobj:
 
 Find all objects in a figure of a certain type
@@ -597,7 +626,7 @@ in these environments.  Most importantly, you need to decide what
 kinds of images you want to generate (PNG, PDF, SVG) and configure the
 appropriate default backend.  For 99% of users, this will be the Agg
 backend, which uses the C++
-`antigrain <http://agg.sourceforge.net/antigrain.com/index.html>`_
+`antigrain <http://antigrain.com>`_
 rendering engine to make nice PNGs.  The Agg backend is also
 configured to recognize requests to generate other output formats
 (PDF, PS, EPS, SVG).  The easiest way to configure matplotlib to use
@@ -632,11 +661,12 @@ or by saving to a file handle::
     fig.savefig(sys.stdout)
 
 Here is an example using `Pillow <http://python-imaging.github.io/>`_.
-First, the figure is saved to a StringIO object which is then fed to
+First, the figure is saved to a BytesIO object which is then fed to
 Pillow for further processing::
 
-    import StringIO, Image
-    imgdata = StringIO.StringIO()
+    from io import BytesIO
+    from PIL import Image
+    imgdata = BytesIO()
     fig.savefig(imgdata, format='png')
     imgdata.seek(0)  # rewind the data
     im = Image.open(imgdata)

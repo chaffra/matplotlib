@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 from __future__ import print_function, division
 """
 This is used to drive many of the examples across the backends, for
@@ -127,7 +125,6 @@ files['pylab'] = [
     'barcode_demo.py',
     'boxplot_demo.py',
     'broken_barh.py',
-    'clippedline.py',
     'cohere_demo.py',
     'color_by_yvalue.py',
     'color_demo.py',

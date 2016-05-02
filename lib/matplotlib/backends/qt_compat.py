@@ -13,10 +13,11 @@ from matplotlib import rcParams, verbose
 QT_API_PYQT = 'PyQt4'       # API is not set here; Python 2.x default is V 1
 QT_API_PYQTv2 = 'PyQt4v2'   # forced to Version 2 API
 QT_API_PYSIDE = 'PySide'    # only supports Version 2 API
-QT_API_PYQT5 = 'PyQt5'       # use PyQt5 API; Version 2 with module shim
+QT_API_PYQT5 = 'PyQt5'      # use PyQt5 API; Version 2 with module shim
+QT_API_PYSIDE2 = 'PySide2'  # Version 2 API with module shim
 
 ETS = dict(pyqt=(QT_API_PYQTv2, 4), pyside=(QT_API_PYSIDE, 4),
-           pyqt5=(QT_API_PYQT5, 5))
+           pyqt5=(QT_API_PYQT5, 5), pyside2=(QT_API_PYSIDE2, 5))
 # ETS is a dict of env variable to (QT_API, QT_MAJOR_VERSION)
 # If the ETS QT_API environment variable is set, use it, but only
 # if the varible if of the same major QT version.  Note that
@@ -42,7 +43,23 @@ else:
 
 QT_API = None
 
-if (QT_API_ENV is not None):
+# check if any binding is already imported, if so silently ignore the
+# rcparams/ENV settings and use what ever is already imported.
+if 'PySide' in sys.modules:
+    # user has imported PySide before importing mpl
+    QT_API = QT_API_PYSIDE
+
+if 'PyQt4' in sys.modules:
+    # user has imported PyQt4 before importing mpl
+    # this case also handles the PyQt4v2 case as once sip is imported
+    # the API versions can not be changed so do not try
+    QT_API = QT_API_PYQT
+
+if 'PyQt5' in sys.modules:
+    # the user has imported PyQt5 before importing mpl
+    QT_API = QT_API_PYQT5
+
+if (QT_API_ENV is not None) and QT_API is None:
     try:
         QT_ENV_MAJOR_VERSION = ETS[QT_API_ENV][1]
     except KeyError:
@@ -61,15 +78,12 @@ if QT_API is None:
     elif rcParams['backend'] == 'Qt4Agg':
         QT_API = rcParams['backend.qt4']
     else:
-        # A different backend was specified, but we still got here because a Qt
-        # related file was imported. This is allowed, so lets try and guess
-        # what we should be using.
-        if "PyQt4" in sys.modules or "PySide" in sys.modules:
-            # PyQt4 or PySide is actually used.
-            QT_API = rcParams['backend.qt4']
-        else:
-            # This is a fallback: PyQt5
-            QT_API = rcParams['backend.qt5']
+        # A non-Qt backend was specified, no version of the Qt
+        # bindings is imported, but we still got here because a Qt
+        # related file was imported. This is allowed, fall back to Qt5
+        # using which ever binding the rparams ask for.
+
+        QT_API = rcParams['backend.qt5']
 
 # We will define an appropriate wrapper for the differing versions
 # of file dialog.
@@ -139,30 +153,39 @@ if _sip_imported:
             # call to getapi() can fail in older versions of sip
             def _getSaveFileName(*args, **kwargs):
                 return QtGui.QFileDialog.getSaveFileName(*args, **kwargs), None
-
-    else:
-        raise RuntimeError("PyQt{4,5} bindings found despite sip importing\n"
-                           "Please install PyQt4 or PyQt5, uninstall sip or "
-                           "explicitly set the pyside backend.")
-
-    # Alias PyQt-specific functions for PySide compatibility.
-    QtCore.Signal = QtCore.pyqtSignal
     try:
-        QtCore.Slot = QtCore.pyqtSlot
-    except AttributeError:
-        # Not a perfect match but works in simple cases
-        QtCore.Slot = QtCore.pyqtSignature
+        # Alias PyQt-specific functions for PySide compatibility.
+        QtCore.Signal = QtCore.pyqtSignal
+        try:
+            QtCore.Slot = QtCore.pyqtSlot
+        except AttributeError:
+            # Not a perfect match but works in simple cases
+            QtCore.Slot = QtCore.pyqtSignature
 
-    QtCore.Property = QtCore.pyqtProperty
-    __version__ = QtCore.PYQT_VERSION_STR
+        QtCore.Property = QtCore.pyqtProperty
+        __version__ = QtCore.PYQT_VERSION_STR
+    except NameError:
+        # QtCore did not get imported, fall back to pyside
+        QT_API = QT_API_PYSIDE
 
-else:  # try importing pyside
+
+if QT_API == QT_API_PYSIDE2:
+    try:
+        from PySide2 import QtCore, QtGui, QtWidgets, __version__
+        _getSaveFileName = QtWidgets.QFileDialog.getSaveFileName
+    except ImportError:
+        # tried PySide2, failed, fall back to PySide
+        QT_API = rcParams['backend.qt4']
+        QT_RC_MAJOR_VERSION = 4
+        QT_API = QT_API_PYSIDE
+
+if QT_API == QT_API_PYSIDE:  # try importing pyside
     try:
         from PySide import QtCore, QtGui, __version__, __version_info__
     except ImportError:
         raise ImportError(
             "Matplotlib qt-based backends require an external PyQt4, PyQt5,\n"
-            "or PySide package to be installed, but it was not found.")
+            "PySide or PySide2 package to be installed, but it was not found.")
 
     if __version_info__ < (1, 0, 3):
         raise ImportError(
