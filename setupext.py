@@ -981,19 +981,14 @@ class FreeType(SetupPackage):
     name = "freetype"
 
     def check(self):
-<<<<<<< HEAD
-        if sys.platform == 'win32' and not MSYS:
-            check_include_file(get_include_dirs(), 'ft2build.h', 'freetype')
-=======
         if options.get('local_freetype'):
             return "Using local version for testing"
 
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and not MSYS:
             try:
                 check_include_file(get_include_dirs(), 'ft2build.h', 'freetype')
             except CheckFailed:
                 check_include_file(get_include_dirs(), 'freetype2\\ft2build.h', 'freetype')
->>>>>>> 20c29618918a83bba40d3c6a9a3b79644af05816
             return 'Using unknown version found on system.'
         
         #env = os.environ.copy()
@@ -1765,19 +1760,12 @@ class BackendTkAgg(OptionalBackendPackage):
         return tcl_lib, tcl_inc, 'tcl', tk_lib, tk_inc, 'tk'
 
     def add_flags(self, ext):
-<<<<<<< HEAD
         if sys.platform == 'win32' and not MSYS:
-            major, minor1, minor2, s, tmp = sys.version_info
-            if sys.version_info[0:2] < (3, 4):
-                ext.include_dirs.extend(['win32_static/include/tcl85'])
-=======
-        if sys.platform == 'win32':
             if os.getenv('CONDA_DEFAULT_ENV'):
                 # We are in conda and conda builds against tcl85 for all versions
                 # includes are directly in the conda\library\include dir and
                 # libs in DLL or lib
                 ext.include_dirs.extend(['include'])
->>>>>>> 20c29618918a83bba40d3c6a9a3b79644af05816
                 ext.libraries.extend(['tk85', 'tcl85'])
                 ext.library_dirs.extend(['dlls']) # or lib?
             else:
