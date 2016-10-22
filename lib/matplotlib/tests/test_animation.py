@@ -1,21 +1,19 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
+import six
 
 import os
 import sys
 import tempfile
 import numpy as np
 from numpy.testing import assert_equal
-from nose import with_setup
 from nose.tools import assert_false, assert_true
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from matplotlib import animation
-from matplotlib.testing.noseclasses import KnownFailureTest
-from matplotlib.testing.decorators import cleanup
-from matplotlib.testing.decorators import CleanupTest
+from ..testing import xfail, skip
+from ..testing.decorators import cleanup
 
 
 class NullMovieWriter(animation.AbstractMovieWriter):
@@ -29,6 +27,8 @@ class NullMovieWriter(animation.AbstractMovieWriter):
     signature, and it doesn't define an isAvailable() method, so
     it cannot be added to the 'writers' registry.
     """
+
+    frame_size_can_vary = True
 
     def setup(self, fig, outfile, dpi, *args):
         self.fig = fig
@@ -58,14 +58,13 @@ def test_null_movie_writer():
 
     num_frames = 5
     filename = "unused.null"
-    fps = 30
     dpi = 50
     savefig_kwargs = dict(foo=0)
 
     anim = animation.FuncAnimation(fig, animate, init_func=init,
                                    frames=num_frames)
     writer = NullMovieWriter()
-    anim.save(filename, fps=fps, dpi=dpi, writer=writer,
+    anim.save(filename, dpi=dpi, writer=writer,
               savefig_kwargs=savefig_kwargs)
 
     assert_equal(writer.fig, fig)
@@ -111,9 +110,15 @@ def test_save_animation_smoketest():
 
 @cleanup
 def check_save_animation(writer, extension='mp4'):
+    try:
+        # for ImageMagick the rcparams must be patched to account for
+        # 'convert' being a built in MS tool, not the imagemagick
+        # tool.
+        writer._init_from_registry()
+    except AttributeError:
+        pass
     if not animation.writers.is_available(writer):
-        raise KnownFailureTest("writer '%s' not available on this system"
-                               % writer)
+        skip("writer '%s' not available on this system" % writer)
     fig, ax = plt.subplots()
     line, = ax.plot([], [])
 
@@ -137,9 +142,8 @@ def check_save_animation(writer, extension='mp4'):
     try:
         anim.save(F.name, fps=30, writer=writer, bitrate=500)
     except UnicodeDecodeError:
-        raise KnownFailureTest("There can be errors in the numpy " +
-                               "import stack, " +
-                               "see issues #1891 and #2679")
+        xfail("There can be errors in the numpy import stack, "
+              "see issues #1891 and #2679")
     finally:
         try:
             os.remove(F.name)

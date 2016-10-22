@@ -1,8 +1,8 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
-from matplotlib.externals.six.moves import xrange
+import six
+from six.moves import xrange
 try:
     # mock in python 3.3+
     from unittest import mock
@@ -255,6 +255,15 @@ def test_legend_stackplot():
     ax.set_xlim((0, 10))
     ax.set_ylim((0, 70))
     ax.legend(loc=0)
+
+
+@cleanup
+def test_cross_figure_patch_legend():
+    fig, ax = plt.subplots()
+    fig2, ax2 = plt.subplots()
+
+    brs = ax.bar(range(3), range(3))
+    fig2.legend(brs, 'foo')
 
 
 @cleanup

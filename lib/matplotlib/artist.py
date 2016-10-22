@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
+import six
 from collections import OrderedDict
 
 import re
@@ -426,7 +426,8 @@ class Artist(object):
                 self._picker is not None)
 
     def pick(self, mouseevent):
-        """
+        """Process pick event
+
         call signature::
 
           pick(mouseevent)

@@ -17,15 +17,11 @@ metrics for those fonts.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
+import six
 
 import os, sys
-from matplotlib.externals.six import unichr
+from six import unichr
 from math import ceil
-try:
-    set
-except NameError:
-    from sets import Set as set
 import unicodedata
 from warnings import warn
 
@@ -1123,7 +1119,7 @@ class StandardPsFonts(Fonts):
         cached_font = self.fonts.get(basename)
         if cached_font is None:
             fname = os.path.join(self.basepath, basename + ".afm")
-            with open(fname, 'r') as fd:
+            with open(fname, 'rb') as fd:
                 cached_font = AFM(fd)
             cached_font.fname = fname
             self.fonts[basename] = cached_font
@@ -3342,12 +3338,12 @@ class MathTextParser(object):
         """
         x, depth = self.to_mask(texstr, dpi=dpi, fontsize=fontsize)
 
-        r, g, b = mcolors.colorConverter.to_rgb(color)
+        r, g, b, a = mcolors.to_rgba(color)
         RGBA = np.zeros((x.shape[0], x.shape[1], 4), dtype=np.uint8)
-        RGBA[:,:,0] = int(255*r)
-        RGBA[:,:,1] = int(255*g)
-        RGBA[:,:,2] = int(255*b)
-        RGBA[:,:,3] = x
+        RGBA[:, :, 0] = 255 * r
+        RGBA[:, :, 1] = 255 * g
+        RGBA[:, :, 2] = 255 * b
+        RGBA[:, :, 3] = x
         return RGBA, depth
 
     def to_png(self, filename, texstr, color='black', dpi=120, fontsize=14):

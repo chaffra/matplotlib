@@ -165,8 +165,8 @@ Example usage::
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
-from matplotlib.externals.six.moves import map, xrange, zip
+import six
+from six.moves import map, xrange, zip
 
 import copy
 import csv
@@ -175,14 +175,12 @@ import os
 import warnings
 
 import numpy as np
-from matplotlib import verbose
 
 import matplotlib.cbook as cbook
 from matplotlib import docstring
 from matplotlib.path import Path
 import math
 
-ma = np.ma
 
 if six.PY3:
     long = int
@@ -517,7 +515,7 @@ def detrend_linear(y):
     if not y.ndim:
         return np.array(0., dtype=y.dtype)
 
-    x = np.arange(y.size, dtype=np.float_)
+    x = np.arange(y.size, dtype=float)
 
     C = np.cov(x, y, bias=1)
     b = C[0, 1]/C[0, 0]
@@ -1241,78 +1239,65 @@ def specgram(x, NFFT=None, Fs=None, detrend=None, window=None,
     """
     Compute a spectrogram.
 
-    Call signature::
-
-        specgram(x, NFFT=256, Fs=2,detrend=mlab.detrend_none,
-                window=mlab.window_hanning, noverlap=128,
-                cmap=None, xextent=None, pad_to=None, sides='default',
-                scale_by_freq=None, mode='default')
-
-    Compute and plot a spectrogram of data in *x*.  Data are split into
-    *NFFT* length segments and the spectrum of each section is
-    computed.  The windowing function *window* is applied to each
+    Compute and plot a spectrogram of data in x.  Data are split into
+    NFFT length segments and the spectrum of each section is
+    computed.  The windowing function window is applied to each
     segment, and the amount of overlap of each segment is
-    specified with *noverlap*.
+    specified with noverlap.
 
-      *x*: 1-D array or sequence
-        Array or sequence containing the data
+    Parameters
+    ----------
+    x : array_like
+        1-D array or sequence.
 
     %(Spectral)s
 
     %(PSD)s
 
-      *mode*: [ 'default' | 'psd' | 'complex' | 'magnitude'
-                'angle' | 'phase' ]
+    noverlap : int, optional
+        The number of points of overlap between blocks.  The default
+        value is 128.
+    mode : str, optional
+        What sort of spectrum to use, default is 'psd'.
+            'psd'
+                Returns the power spectral density.
 
-          What sort of spectrum to use.  Default is 'psd'. which takes the
-          power spectral density.  'complex' returns the complex-valued
-          frequency spectrum.  'magnitude' returns the magnitude spectrum.
-          'angle' returns the phase spectrum without unwrapping.  'phase'
-          returns the phase spectrum with unwrapping.
+            'complex'
+                Returns the complex-valued frequency spectrum.
 
-      *noverlap*: integer
-          The number of points of overlap between blocks.  The default value
-          is 128.
+            'magnitude'
+                Returns the magnitude spectrum.
 
-    Returns the tuple (*spectrum*, *freqs*, *t*):
+            'angle'
+                Returns the phase spectrum without unwrapping.
 
-      *spectrum*: 2-D array
-        columns are the periodograms of successive segments
+            'phase'
+                Returns the phase spectrum with unwrapping.
 
-      *freqs*: 1-D array
-        The frequencies corresponding to the rows in *spectrum*
+    Returns
+    -------
+    spectrum : array_like
+        2-D array, columns are the periodograms of successive segments.
 
-      *t*: 1-D array
-        The times corresponding to midpoints of segments (i.e the columns
-        in *spectrum*).
+    freqs : array_like
+        1-D array, frequencies corresponding to the rows in *spectrum*.
 
-    .. note::
+    t : array_like
+        1-D array, the times corresponding to midpoints of segments
+        (i.e the columns in *spectrum*).
 
-        *detrend* and *scale_by_freq* only apply when *mode* is set to
-        'psd'
+    See Also
+    --------
+    psd : differs in the overlap and in the return values.
+    complex_spectrum : similar, but with complex valued frequencies.
+    magnitude_spectrum : similar single segment when mode is 'magnitude'.
+    angle_spectrum : similar to single segment when mode is 'angle'.
+    phase_spectrum : similar to single segment when mode is 'phase'.
 
-    .. seealso::
+    Notes
+    -----
+    detrend and scale_by_freq only apply when *mode* is set to 'psd'.
 
-        :func:`psd`
-            :func:`psd` differs in the default overlap; in returning
-            the mean of the segment periodograms; and in not returning
-            times.
-
-        :func:`complex_spectrum`
-            A single spectrum, similar to having a single segment when
-            *mode* is 'complex'.
-
-        :func:`magnitude_spectrum`
-            A single spectrum, similar to having a single segment when
-            *mode* is 'magnitude'.
-
-        :func:`angle_spectrum`
-            A single spectrum, similar to having a single segment when
-            *mode* is 'angle'.
-
-        :func:`phase_spectrum`
-            A single spectrum, similar to having a single segment when
-            *mode* is 'phase'.
     """
     if noverlap is None:
         noverlap = 128
@@ -1570,7 +1555,7 @@ def entropy(y, bins):
       Sanalytic = 0.5 * ( 1.0 + log(2*pi*sigma**2.0) )
     """
     n, bins = np.histogram(y, bins)
-    n = n.astype(np.float_)
+    n = n.astype(float)
 
     n = np.take(n, np.nonzero(n)[0])         # get the positive
 
@@ -1829,7 +1814,7 @@ def center_matrix(M, dim=0):
     If *dim* = 1 operate on columns instead of rows.  (*dim* is
     opposite to the numpy axis kwarg.)
     """
-    M = np.asarray(M, np.float_)
+    M = np.asarray(M, float)
     if dim:
         M = (M - M.mean(axis=0)) / M.std(axis=0)
     else:
@@ -1887,9 +1872,9 @@ def rk4(derivs, y0, t):
     try:
         Ny = len(y0)
     except TypeError:
-        yout = np.zeros((len(t),), np.float_)
+        yout = np.zeros((len(t),), float)
     else:
-        yout = np.zeros((len(t), Ny), np.float_)
+        yout = np.zeros((len(t), Ny), float)
 
     yout[0] = y0
     i = 0
@@ -1969,9 +1954,9 @@ def dist_point_to_segment(p, s0, s1):
     This algorithm from
     http://softsurfer.com/Archive/algorithm_0102/algorithm_0102.htm#Distance%20to%20Ray%20or%20Segment
     """
-    p = np.asarray(p, np.float_)
-    s0 = np.asarray(s0, np.float_)
-    s1 = np.asarray(s1, np.float_)
+    p = np.asarray(p, float)
+    s0 = np.asarray(s0, float)
+    s1 = np.asarray(s1, float)
     v = s1 - s0
     w = p - s0
 
@@ -2033,7 +2018,7 @@ def movavg(x, n):
     """
     Compute the len(*n*) moving average of *x*.
     """
-    w = np.empty((n,), dtype=np.float_)
+    w = np.empty((n,), dtype=float)
     w[:] = 1.0/n
     return np.convolve(x, w, mode='valid')
 
@@ -2387,8 +2372,10 @@ def rec_append_fields(rec, names, arrs, dtypes=None):
             dtypes = dtypes * len(arrs)
         else:
             raise ValueError("dtypes must be None, a single dtype or a list")
-
-    newdtype = np.dtype(rec.dtype.descr + list(zip(names, dtypes)))
+    old_dtypes = rec.dtype.descr
+    if six.PY2:
+        old_dtypes = [(name.encode('utf-8'), dt) for name, dt in old_dtypes]
+    newdtype = np.dtype(old_dtypes + list(zip(names, dtypes)))
     newrec = np.recarray(rec.shape, dtype=newdtype)
     for field in rec.dtype.fields:
         newrec[field] = rec[field]
@@ -2596,8 +2583,10 @@ def rec_join(key, r1, r2, jointype='inner', defaults=None, r1postfix='1',
               if desc[0] not in key]
     r2desc = [(mapped_r2field(desc[0]), desc[1]) for desc in r2.dtype.descr
               if desc[0] not in key]
-    newdtype = np.dtype(keydesc + r1desc + r2desc)
-
+    all_dtypes = keydesc + r1desc + r2desc
+    if six.PY2:
+        all_dtypes = [(name.encode('utf-8'), dt) for name, dt in all_dtypes]
+    newdtype = np.dtype(all_dtypes)
     newrec = np.recarray((common_len + left_len + right_len,), dtype=newdtype)
 
     if defaults is not None:
@@ -2613,7 +2602,7 @@ def rec_join(key, r1, r2, jointype='inner', defaults=None, r1postfix='1',
 
     if jointype != 'inner' and defaults is not None:
         # fill in the defaults enmasse
-        newrec_fields = list(six.iterkeys(newrec.dtype.fields.keys))
+        newrec_fields = list(six.iterkeys(newrec.dtype.fields))
         for k, v in six.iteritems(defaults):
             if k in newrec_fields:
                 newrec[k] = v
@@ -2980,13 +2969,7 @@ def csv2rec(fname, comments='#', skiprows=0, checkrows=0, delimiter=',',
         return None
 
     if use_mrecords and np.any(rowmasks):
-        try:
-            from numpy.ma import mrecords
-        except ImportError:
-            raise RuntimeError('numpy 1.05 or later is required for masked '
-                               'array support')
-        else:
-            r = mrecords.fromrecords(rows, names=names, mask=rowmasks)
+        r = np.ma.mrecords.fromrecords(rows, names=names, mask=rowmasks)
     else:
         r = np.rec.fromrecords(rows, names=names)
     return r
@@ -3185,35 +3168,19 @@ def rec2txt(r, header=None, padding=3, precision=3, fields=None):
         return atype
 
     def get_justify(colname, column, precision):
-        ntype = type(column[0])
+        ntype = column.dtype
 
-        if (ntype == np.str or ntype == np.str_ or ntype == np.string0 or
-                ntype == np.string_):
-            length = max(len(colname), column.itemsize)
+        if np.issubdtype(ntype, str) or np.issubdtype(ntype, bytes):
+            fixed_width = int(ntype.str[2:])
+            length = max(len(colname), fixed_width)
             return 0, length+padding, "%s"  # left justify
 
-        if (ntype == np.int or ntype == np.int16 or ntype == np.int32 or
-                ntype == np.int64 or ntype == np.int8 or ntype == np.int_):
+        if np.issubdtype(ntype, np.int):
             length = max(len(colname),
                          np.max(list(map(len, list(map(str, column))))))
             return 1, length+padding, "%d"  # right justify
 
-        # JDH: my powerbook does not have np.float96 using np 1.3.0
-        """
-        In [2]: np.__version__
-        Out[2]: '1.3.0.dev5948'
-
-        In [3]: !uname -a
-        Darwin Macintosh-5.local 9.4.0 Darwin Kernel Version 9.4.0: Mon Jun
-        9 19:30:53 PDT 2008; root:xnu-1228.5.20~1/RELEASE_I386 i386 i386
-
-        In [4]: np.float96
-        ---------------------------------------------------------------------------
-        AttributeError                           Traceback (most recent call la
-        """
-        if (ntype == np.float or ntype == np.float32 or ntype == np.float64 or
-                (hasattr(np, 'float96') and (ntype == np.float96)) or
-                ntype == np.float_):
+        if np.issubdtype(ntype, np.float):
             fmt = "%." + str(precision) + "f"
             length = max(
                 len(colname),
@@ -3542,10 +3509,10 @@ def slopes(x, y):
     Icelandic Meteorological Office, March 2006 halldor at vedur.is)
     """
     # Cast key variables as float.
-    x = np.asarray(x, np.float_)
-    y = np.asarray(y, np.float_)
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
 
-    yp = np.zeros(y.shape, np.float_)
+    yp = np.zeros(y.shape, float)
 
     dx = x[1:] - x[:-1]
     dy = y[1:] - y[:-1]
@@ -3599,18 +3566,18 @@ def stineman_interp(xi, x, y, yp=None):
     """
 
     # Cast key variables as float.
-    x = np.asarray(x, np.float_)
-    y = np.asarray(y, np.float_)
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
     if x.shape != y.shape:
         raise ValueError("'x' and 'y' must be of same shape")
 
     if yp is None:
         yp = slopes(x, y)
     else:
-        yp = np.asarray(yp, np.float_)
+        yp = np.asarray(yp, float)
 
-    xi = np.asarray(xi, np.float_)
-    yi = np.zeros(xi.shape, np.float_)
+    xi = np.asarray(xi, float)
+    yi = np.zeros(xi.shape, float)
 
     # calculate linear slopes
     dx = x[1:] - x[:-1]
@@ -3787,7 +3754,7 @@ class GaussianKDE(object):
                 dim, self.dim)
             raise ValueError(msg)
 
-        result = np.zeros((num_m,), dtype=np.float)
+        result = np.zeros((num_m,), dtype=float)
 
         if num_m >= self.num_dp:
             # there are more points than data, so loop over data
@@ -3840,8 +3807,8 @@ def poly_below(xmin, xs, ys):
       xv, yv = poly_below(0, x, y)
       ax.fill(xv, yv)
     """
-    if ma.isMaskedArray(xs) or ma.isMaskedArray(ys):
-        numpy = ma
+    if any(isinstance(var, np.ma.MaskedArray) for var in [xs, ys]):
+        numpy = np.ma
     else:
         numpy = np
 
@@ -3869,9 +3836,8 @@ def poly_between(x, ylower, yupper):
     Return value is *x*, *y* arrays for use with
     :meth:`matplotlib.axes.Axes.fill`.
     """
-    if (ma.isMaskedArray(ylower) or ma.isMaskedArray(yupper) or
-            ma.isMaskedArray(x)):
-        numpy = ma
+    if any(isinstance(var, np.ma.MaskedArray) for var in [ylower, yupper, x]):
+        numpy = np.ma
     else:
         numpy = np
 

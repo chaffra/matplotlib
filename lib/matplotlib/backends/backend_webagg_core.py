@@ -13,12 +13,12 @@ Displays Agg images in the browser, with interactivity
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
+import six
 
 import io
 import json
 import os
-import time
+import datetime
 import warnings
 
 import numpy as np
@@ -501,6 +501,7 @@ class FigureManagerWebAgg(backend_bases.FigureManagerBase):
         with io.open(os.path.join(
                 os.path.dirname(__file__),
                 "web_backend",
+                "js",
                 "mpl.js"), encoding='utf8') as fd:
             output.write(fd.read())
 

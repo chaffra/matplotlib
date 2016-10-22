@@ -20,6 +20,19 @@ def test_bar3d():
         ax.bar(xs, ys, zs=z, zdir='y', color=cs, alpha=0.8)
 
 
+@cleanup
+def test_bar3d_dflt_smoke():
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    x = np.arange(4)
+    y = np.arange(5)
+    x2d, y2d = np.meshgrid(x, y)
+    x2d, y2d = x2d.ravel(), y2d.ravel()
+    z = x2d + y2d
+    ax.bar3d(x2d, y2d, x2d * 0, 1, 1, z)
+    fig.canvas.draw()
+
+
 @image_comparison(baseline_images=['contour3d'], remove_text=True)
 def test_contour3d():
     fig = plt.figure()
@@ -108,6 +121,17 @@ def test_scatter3d():
                c='r', marker='o')
     ax.scatter(np.arange(10, 20), np.arange(10, 20), np.arange(10, 20),
                c='b', marker='^')
+
+
+@image_comparison(baseline_images=['scatter3d_color'], remove_text=True,
+                  extensions=['png'])
+def test_scatter3d_color():
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(np.arange(10), np.arange(10), np.arange(10),
+               color='r', marker='o')
+    ax.scatter(np.arange(10, 20), np.arange(10, 20), np.arange(10, 20),
+               color='b', marker='s')
 
 
 @image_comparison(baseline_images=['surface3d'], remove_text=True)

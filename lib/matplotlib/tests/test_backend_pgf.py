@@ -2,13 +2,10 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
-
 import os
 import shutil
 
 import numpy as np
-import nose
 from nose.plugins.skip import SkipTest
 
 import matplotlib as mpl
@@ -17,7 +14,6 @@ from matplotlib.compat import subprocess
 from matplotlib.testing.compare import compare_images, ImageComparisonFailure
 from matplotlib.testing.decorators import (_image_directories, switch_backend,
                                            cleanup)
-
 
 baseline_dir, result_dir = _image_directories(lambda: 'dummy func')
 
@@ -97,6 +93,11 @@ def test_xelatex():
 @cleanup(style='classic')
 @switch_backend('pgf')
 def test_pdflatex():
+    import os
+    if os.environ.get('APPVEYOR', False):
+        from matplotlib.testing import xfail
+        xfail("pdflatex test does not work on appveyor due "
+              "to missing latex fonts")
     if not check_for('pdflatex'):
         raise SkipTest('pdflatex + pgf is required')
 

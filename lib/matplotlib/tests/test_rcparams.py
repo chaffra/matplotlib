@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
+import six
 
 import io
 import os
@@ -202,15 +202,11 @@ def test_legend_facecolor():
     get_func = 'get_facecolor'
     rcparam = 'legend.facecolor'
     test_values = [({rcparam: 'r'},
-                    mcolors.colorConverter.to_rgba('r')),
-                   ({rcparam: 'inherit',
-                     'axes.facecolor': 'r'
-                     },
-                    mcolors.colorConverter.to_rgba('r')),
-                   ({rcparam: 'g',
-                     'axes.facecolor': 'r'},
-                   mcolors.colorConverter.to_rgba('g'))
-                   ]
+                    mcolors.to_rgba('r')),
+                   ({rcparam: 'inherit', 'axes.facecolor': 'r'},
+                    mcolors.to_rgba('r')),
+                   ({rcparam: 'g', 'axes.facecolor': 'r'},
+                    mcolors.to_rgba('g'))]
     for rc_dict, target in test_values:
         yield _legend_rcparam_helper, rc_dict, target, get_func
 
@@ -219,15 +215,11 @@ def test_legend_edgecolor():
     get_func = 'get_edgecolor'
     rcparam = 'legend.edgecolor'
     test_values = [({rcparam: 'r'},
-                    mcolors.colorConverter.to_rgba('r')),
-                   ({rcparam: 'inherit',
-                     'axes.edgecolor': 'r'
-                     },
-                    mcolors.colorConverter.to_rgba('r')),
-                   ({rcparam: 'g',
-                     'axes.facecolor': 'r'},
-                   mcolors.colorConverter.to_rgba('g'))
-                   ]
+                    mcolors.to_rgba('r')),
+                   ({rcparam: 'inherit', 'axes.edgecolor': 'r'},
+                    mcolors.to_rgba('r')),
+                   ({rcparam: 'g', 'axes.facecolor': 'r'},
+                    mcolors.to_rgba('g'))]
     for rc_dict, target in test_values:
         yield _legend_rcparam_helper, rc_dict, target, get_func
 
@@ -348,6 +340,7 @@ def test_validators():
                   ('cycler(c=[1, 2, 3])', ValueError),  # invalid values
                   ("cycler(lw=['a', 'b', 'c'])", ValueError),  # invalid values
                   (cycler('waka', [1, 3, 5]), ValueError),  # not a property
+                  (cycler('color', ['C1', 'r', 'g']), ValueError)  # no CN
                  )
         },
         {'validator': validate_hatch,

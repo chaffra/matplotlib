@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
+import six
 import itertools
 from distutils.version import LooseVersion as V
 
@@ -18,6 +18,8 @@ import numpy as np
 from numpy.testing.utils import assert_array_equal, assert_array_almost_equal
 from nose.plugins.skip import SkipTest
 
+from matplotlib import cycler
+import matplotlib
 import matplotlib.colors as mcolors
 import matplotlib.cm as cm
 import matplotlib.cbook as cbook
@@ -155,12 +157,12 @@ def test_LogNorm():
 
 
 def test_PowerNorm():
-    a = np.array([0, 0.5, 1, 1.5], dtype=np.float)
+    a = np.array([0, 0.5, 1, 1.5], dtype=float)
     pnorm = mcolors.PowerNorm(1)
     norm = mcolors.Normalize()
     assert_array_almost_equal(norm(a), pnorm(a))
 
-    a = np.array([-0.5, 0, 2, 4, 8], dtype=np.float)
+    a = np.array([-0.5, 0, 2, 4, 8], dtype=float)
     expected = [0, 0, 1/16, 1/4, 1]
     pnorm = mcolors.PowerNorm(2, vmin=0, vmax=8)
     assert_array_almost_equal(pnorm(a), expected)
@@ -169,7 +171,7 @@ def test_PowerNorm():
     assert_array_almost_equal(a[1:], pnorm.inverse(pnorm(a))[1:])
 
     # Clip = True
-    a = np.array([-0.5, 0, 1, 8, 16], dtype=np.float)
+    a = np.array([-0.5, 0, 1, 8, 16], dtype=float)
     expected = [0, 0, 0, 1, 1]
     pnorm = mcolors.PowerNorm(2, vmin=2, vmax=8, clip=True)
     assert_array_almost_equal(pnorm(a), expected)
@@ -177,7 +179,7 @@ def test_PowerNorm():
     assert_equal(pnorm(a[-1]), expected[-1])
 
     # Clip = True at call time
-    a = np.array([-0.5, 0, 1, 8, 16], dtype=np.float)
+    a = np.array([-0.5, 0, 1, 8, 16], dtype=float)
     expected = [0, 0, 0, 1, 1]
     pnorm = mcolors.PowerNorm(2, vmin=2, vmax=8, clip=False)
     assert_array_almost_equal(pnorm(a, clip=True), expected)
@@ -187,10 +189,28 @@ def test_PowerNorm():
 
 def test_Normalize():
     norm = mcolors.Normalize()
-    vals = np.arange(-10, 10, 1, dtype=np.float)
+    vals = np.arange(-10, 10, 1, dtype=float)
     _inverse_tester(norm, vals)
     _scalar_tester(norm, vals)
     _mask_tester(norm, vals)
+
+    # Handle integer input correctly (don't overflow when computing max-min,
+    # i.e. 127-(-128) here).
+    vals = np.array([-128, 127], dtype=np.int8)
+    norm = mcolors.Normalize(vals.min(), vals.max())
+    assert_array_equal(np.asarray(norm(vals)), [0, 1])
+
+    # Don't lose precision on longdoubles (float128 on Linux):
+    # for array inputs...
+    vals = np.array([1.2345678901, 9.8765432109], dtype=np.longdouble)
+    norm = mcolors.Normalize(vals.min(), vals.max())
+    assert_array_equal(np.asarray(norm(vals)), [0, 1])
+    # and for scalar ones.
+    eps = np.finfo(np.longdouble).resolution
+    norm = plt.Normalize(1, 1 + 100 * eps)
+    # This returns exactly 0.5 when longdouble is extended precision (80-bit),
+    # but only a value close to it when it is quadruple precision (128-bit).
+    assert 0 < norm(1 + 50 * eps) < 1
 
 
 def test_SymLogNorm():
@@ -198,7 +218,7 @@ def test_SymLogNorm():
     Test SymLogNorm behavior
     """
     norm = mcolors.SymLogNorm(3, vmax=5, linscale=1.2)
-    vals = np.array([-30, -1, 2, 6], dtype=np.float)
+    vals = np.array([-30, -1, 2, 6], dtype=float)
     normed_vals = norm(vals)
     expected = [0., 0.53980074, 0.826991, 1.02758204]
     assert_array_almost_equal(normed_vals, expected)
@@ -258,7 +278,7 @@ def test_cmap_and_norm_from_levels_and_colors():
 def test_cmap_and_norm_from_levels_and_colors2():
     levels = [-1, 2, 2.5, 3]
     colors = ['red', (0, 1, 0), 'blue', (0.5, 0.5, 0.5), (0.0, 0.0, 0.0, 1.0)]
-    clr = mcolors.colorConverter.to_rgba_array(colors)
+    clr = mcolors.to_rgba_array(colors)
     bad = (0.1, 0.1, 0.1, 0.1)
     no_color = (0.0, 0.0, 0.0, 0.0)
     masked_value = 'masked_value'
@@ -335,13 +355,9 @@ def test_autoscale_masked():
 def test_colors_no_float():
     # Gray must be a string to distinguish 3-4 grays from RGB or RGBA.
 
-    def gray_from_float_rgb():
-        return mcolors.colorConverter.to_rgb(0.4)
-
     def gray_from_float_rgba():
-        return mcolors.colorConverter.to_rgba(0.4)
+        return mcolors.to_rgba(0.4)
 
-    assert_raises(ValueError, gray_from_float_rgb)
     assert_raises(ValueError, gray_from_float_rgba)
 
 
@@ -557,12 +573,8 @@ def test_light_source_planar_hillshading():
 
 
 def test_xkcd():
-    x11_blue = mcolors.rgb2hex(
-        mcolors.colorConverter.to_rgb('blue'))
-    assert x11_blue == '#0000ff'
-    XKCD_blue = mcolors.rgb2hex(
-        mcolors.colorConverter.to_rgb('XKCDblue'))
-    assert XKCD_blue == '#0343df'
+    assert mcolors.to_hex("blue") == "#0000ff"
+    assert mcolors.to_hex("xkcd:blue") == "#0343df"
 
 
 def _sph2cart(theta, phi):
@@ -607,6 +619,41 @@ def test_colormap_reversing():
             cmap._init()
             cmap_r._init()
         assert_array_almost_equal(cmap._lut[:-3], cmap_r._lut[-4::-1])
+
+
+@cleanup
+def test_cn():
+    matplotlib.rcParams['axes.prop_cycle'] = cycler('color',
+                                                    ['blue', 'r'])
+    assert mcolors.to_hex("C0") == '#0000ff'
+    assert mcolors.to_hex("C1") == '#ff0000'
+
+    matplotlib.rcParams['axes.prop_cycle'] = cycler('color',
+                                                    ['xkcd:blue', 'r'])
+    assert mcolors.to_hex("C0") == '#0343df'
+    assert mcolors.to_hex("C1") == '#ff0000'
+
+    matplotlib.rcParams['axes.prop_cycle'] = cycler('color', ['8e4585', 'r'])
+
+    assert mcolors.to_hex("C0") == '#8e4585'
+    # if '8e4585' gets parsed as a float before it gets detected as a hex
+    # colour it will be interpreted as a very large number.
+    # this mustn't happen.
+    assert mcolors.to_rgb("C0")[0] != np.inf
+
+
+def test_conversions():
+    # to_rgba_array("none") returns a (0, 4) array.
+    assert_array_equal(mcolors.to_rgba_array("none"), np.zeros((0, 4)))
+    # alpha is properly set.
+    assert_equal(mcolors.to_rgba((1, 1, 1), .5), (1, 1, 1, .5))
+    assert_equal(mcolors.to_rgba(".1", .5), (.1, .1, .1, .5))
+    # builtin round differs between py2 and py3.
+    assert_equal(mcolors.to_hex((.7, .7, .7)), "#b2b2b2")
+    # hex roundtrip.
+    hex_color = "#1234abcd"
+    assert_equal(mcolors.to_hex(mcolors.to_rgba(hex_color), keep_alpha=True),
+                 hex_color)
 
 
 if __name__ == '__main__':

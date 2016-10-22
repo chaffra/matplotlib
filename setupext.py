@@ -7,6 +7,7 @@ from distutils.util import get_platform
 import glob
 import multiprocessing
 import os
+import platform
 import re
 import subprocess
 from subprocess import check_output
@@ -439,6 +440,14 @@ class CheckFailed(Exception):
 
 class SetupPackage(object):
     optional = False
+    pkg_names = {
+        "apt-get": None,
+        "yum": None,
+        "dnf": None,
+        "brew": None,
+        "port": None,
+        "windows_url": None
+        }
 
     def check(self):
         """
@@ -558,6 +567,56 @@ class SetupPackage(object):
         """
         pass
 
+    def install_help_msg(self):
+        """
+        Do not override this method !
+
+        Generate the help message to show if the package is not installed.
+        To use this in subclasses, simply add the dictionary `pkg_names` as
+        a class variable:
+
+        pkg_names = {
+            "apt-get": <Name of the apt-get package>,
+            "yum": <Name of the yum package>,
+            "dnf": <Name of the dnf package>,
+            "brew": <Name of the brew package>,
+            "port": <Name of the port package>,
+            "windows_url": <The url which has installation instructions>
+            }
+
+        All the dictionary keys are optional. If a key is not present or has
+        the value `None` no message is provided for that platform.
+        """
+        def _try_managers(*managers):
+            for manager in managers:
+                pkg_name = self.pkg_names.get(manager, None)
+                if pkg_name:
+                    try:
+                        # `shutil.which()` can be used when Python 2.7 support
+                        # is dropped. It is available in Python 3.3+
+                        _ = check_output(["which", manager],
+                                         stderr=subprocess.STDOUT)
+                        return ('Try installing {0} with `{1} install {2}`'
+                                .format(self.name, manager, pkg_name))
+                    except subprocess.CalledProcessError:
+                        pass
+
+        message = None
+        if sys.platform == "win32":
+            url = self.pkg_names.get("windows_url", None)
+            if url:
+                message = ('Please check {0} for instructions to install {1}'
+                           .format(url, self.name))
+        elif sys.platform == "darwin":
+            message = _try_managers("brew", "port")
+        elif sys.platform.startswith("linux"):
+            release = platform.linux_distribution()[0].lower()
+            if release in ('debian', 'ubuntu'):
+                message = _try_managers('apt-get')
+            elif release in ('centos', 'redhat', 'fedora'):
+                message = _try_managers('dnf', 'yum')
+        return message
+
 
 class OptionalPackage(SetupPackage):
     optional = True
@@ -671,6 +730,8 @@ class Matplotlib(SetupPackage):
             'matplotlib.sphinxext',
             'matplotlib.style',
             'matplotlib.testing',
+            'matplotlib.testing.nose',
+            'matplotlib.testing.nose.plugins',
             'matplotlib.testing.jpl_units',
             'matplotlib.tri',
             ]
@@ -703,6 +764,7 @@ class Matplotlib(SetupPackage):
                 'backends/web_backend/jquery/css/themes/base/*.min.css',
                 'backends/web_backend/jquery/css/themes/base/images/*',
                 'backends/web_backend/css/*.*',
+                'backends/web_backend/js/*.js',
                 'backends/Matplotlib.nib/*',
                 'mpl-data/stylelib/*.mplstyle',
              ]}
@@ -979,6 +1041,14 @@ class LibAgg(SetupPackage):
 
 class FreeType(SetupPackage):
     name = "freetype"
+    pkg_names = {
+        "apt-get": "libfreetype6-dev",
+        "yum": "freetype-devel",
+        "dnf": "freetype-devel",
+        "brew": "freetype",
+        "port": "freetype",
+        "windows_url": "http://gnuwin32.sourceforge.net/packages/freetype.htm"
+        }
 
     def check(self):
         if options.get('local_freetype'):
@@ -1103,24 +1173,39 @@ class FreeType(SetupPackage):
                         pass
 
             if not os.path.isfile(tarball_path):
-                url_fmt = (
-                    'http://download.savannah.gnu.org/releases/freetype/{0}')
-                tarball_url = url_fmt.format(tarball)
 
-                print("Downloading {0}".format(tarball_url))
                 if sys.version_info[0] == 2:
                     from urllib import urlretrieve
                 else:
                     from urllib.request import urlretrieve
-
                 if not os.path.exists('build'):
                     os.makedirs('build')
-                urlretrieve(tarball_url, tarball_path)
+
+                sourceforge_url = (
+                    'http://downloads.sourceforge.net/project/freetype'
+                    '/freetype2/{0}/'.format(LOCAL_FREETYPE_VERSION)
+                )
+                url_fmts = (
+                    sourceforge_url + '{0}',
+                    'http://download.savannah.gnu.org/releases/freetype/{0}'
+                    )
+                for url_fmt in url_fmts:
+                    tarball_url = url_fmt.format(tarball)
+
+                    print("Downloading {0}".format(tarball_url))
+                    try:
+                        urlretrieve(tarball_url, tarball_path)
+                    except:
+                        print("Failed to download {0}".format(tarball_url))
+                    else:
+                        break
+                if not os.path.isfile(tarball_path):
+                    raise IOError("Failed to download freetype")
                 if get_file_hash(tarball_path) == LOCAL_FREETYPE_HASH:
                     try:
                         # this will fail on LPy, oh well
                         os.makedirs(tarball_cache_dir, exist_ok=True)
-                        shutil.copy(tarball_cache_path, tarball_path)
+                        shutil.copy(tarball_path, tarball_cache_path)
                         print('Cached tarball at: {}'
                               .format(tarball_cache_path))
                     except:
@@ -1198,6 +1283,14 @@ class FT2Font(SetupPackage):
 
 class Png(SetupPackage):
     name = "png"
+    pkg_names = {
+        "apt-get": "libpng12-dev",
+        "yum": "libpng-devel",
+        "dnf": "libpng-devel",
+        "brew": "libpng",
+        "port": "libpng",
+        "windows_url": "http://gnuwin32.sourceforge.net/packages/libpng.htm"
+        }
 
     def check(self):
         if sys.platform == 'win32' and not MSYS:
@@ -1338,21 +1431,6 @@ class Contour(SetupPackage):
         return ext
 
 
-class Delaunay(SetupPackage):
-    name = "delaunay"
-
-    def get_packages(self):
-        return ['matplotlib.delaunay']
-
-    def get_extension(self):
-        sources = ["_delaunay.cpp", "VoronoiDiagramGenerator.cpp",
-                   "delaunay_utils.cpp", "natneighbors.cpp"]
-        sources = [os.path.join('lib/matplotlib/delaunay', s) for s in sources]
-        ext = make_extension('matplotlib._delaunay', sources)
-        Numpy().add_flags(ext)
-        return ext
-
-
 class QhullWrap(SetupPackage):
     name = "qhull_wrap"
 
@@ -1379,11 +1457,31 @@ class Tri(SetupPackage):
         return ext
 
 
-class Externals(SetupPackage):
-    name = "externals"
+class Six(SetupPackage):
+    name = "six"
+    min_version = "1.10"
 
-    def get_packages(self):
-        return ['matplotlib.externals']
+    def check(self):
+        try:
+            import six
+        except ImportError:
+            return (
+                "six was not found."
+                "pip will attempt to install it "
+                "after matplotlib.")
+
+        if not is_min_version(six.__version__, self.min_version):
+            return ("The installed version of six is {inst_ver} but "
+                    "a the minimum required version is {min_ver}. "
+                    "pip/easy install will attempt to install a "
+                    "newer version."
+                    ).format(min_ver=self.min_version,
+                             inst_ver=six.__version__)
+
+        return "using six version %s" % six.__version__
+
+    def get_install_requires(self):
+        return ['six>={0}'.format(self.min_version)]
 
 
 class Pytz(SetupPackage):
@@ -1462,10 +1560,8 @@ class FuncTools32(SetupPackage):
                 import functools32
             except ImportError:
                 return (
-                    "functools32 was not found. It is required for for"
-                    "python versions prior to 3.2 "
-                    "pip/easy_install may attempt to install it "
-                    "after matplotlib.")
+                    "functools32 was not found. It is required for"
+                    "Python versions prior to 3.2")
 
             return "using functools32"
         else:
@@ -1474,6 +1570,30 @@ class FuncTools32(SetupPackage):
     def get_install_requires(self):
         if sys.version_info[:2] < (3, 2):
             return ['functools32']
+        else:
+            return []
+
+
+class Subprocess32(SetupPackage):
+    name = "subprocess32"
+
+    def check(self):
+        if sys.version_info[:2] < (3, 2):
+            try:
+                import subprocess32
+            except ImportError:
+                return (
+                    "subprocess32 was not found. It used "
+                    " for Python versions prior to 3.2 to improves"
+                    " functionality on Linux and OSX")
+
+            return "using subprocess32"
+        else:
+            return "Not required"
+
+    def get_install_requires(self):
+        if sys.version_info[:2] < (3, 2) and os.name == 'posix':
+            return ['subprocess32']
         else:
             return []
 
@@ -1496,6 +1616,7 @@ class Tornado(OptionalPackage):
 class Pyparsing(SetupPackage):
     name = "pyparsing"
     # pyparsing 2.0.4 has broken python 3 support.
+    # pyparsing 2.1.2 is broken in python3.4/3.3.
     def is_ok(self):
         # pyparsing 2.0.0 bug, but it may be patched in distributions
         try:
@@ -1530,14 +1651,16 @@ class Pyparsing(SetupPackage):
         return "using pyparsing version %s" % pyparsing.__version__
 
     def get_install_requires(self):
+        versionstring = 'pyparsing>=1.5.6,!=2.0.4,!=2.1.2,!=2.1.6'
         if self.is_ok():
-            return ['pyparsing>=1.5.6,!=2.0.4']
+            return [versionstring]
         else:
-            return ['pyparsing>=1.5.6,!=2.0.0,!=2.0.4']
+            return [versionstring + ',!=2.0.0']
 
 
 class BackendAgg(OptionalBackendPackage):
     name = "agg"
+    force = True
 
     def get_extension(self):
         sources = [
@@ -1555,7 +1678,9 @@ class BackendAgg(OptionalBackendPackage):
 
 class BackendTkAgg(OptionalBackendPackage):
     name = "tkagg"
+    force = True
 
+<<<<<<< HEAD
     def __init__(self):
         self.tcl_tk_cache = None
 
@@ -1587,6 +1712,10 @@ class BackendTkAgg(OptionalBackendPackage):
         BackendAgg.force = True
 
         return "version %s" % tk_v
+=======
+    def check(self):
+        return "installing; run-time loading from Python Tcl / Tk"
+>>>>>>> a00932ed2a3923858ed45d31354e3a42dcdf8f6d
 
     def get_extension(self):
         sources = [
@@ -1600,6 +1729,7 @@ class BackendTkAgg(OptionalBackendPackage):
         LibAgg().add_flags(ext, add_sources=False)
         return ext
 
+<<<<<<< HEAD
     def query_tcltk(self):
         """
         Tries to open a Tk window in order to query the Tk object
@@ -1859,6 +1989,13 @@ class BackendTkAgg(OptionalBackendPackage):
             ext.include_dirs.extend([tcl_inc_dir, tk_inc_dir])
             ext.library_dirs.extend([tcl_lib_dir, tk_lib_dir])
             ext.libraries.extend([tcl_lib, tk_lib])
+=======
+    def add_flags(self, ext):
+        ext.include_dirs.extend(['src'])
+        if sys.platform == 'win32':
+            # PSAPI library needed for finding Tcl / Tk at run time
+            ext.libraries.extend(['psapi'])
+>>>>>>> a00932ed2a3923858ed45d31354e3a42dcdf8f6d
 
 
 class BackendGtk(OptionalBackendPackage):
@@ -1972,8 +2109,6 @@ class BackendGtkAgg(BackendGtk):
             return super(BackendGtkAgg, self).check()
         except:
             raise
-        else:
-            BackendAgg.force = True
 
     def get_package_data(self):
         return {'matplotlib': ['mpl-data/*.glade']}
@@ -2049,7 +2184,6 @@ class BackendGtk3Agg(OptionalBackendPackage):
             p.join()
 
         if success:
-            BackendAgg.force = True
             return msg
         else:
             raise CheckFailed(msg)
@@ -2122,7 +2256,6 @@ class BackendGtk3Cairo(OptionalBackendPackage):
             p.join()
 
         if success:
-            BackendAgg.force = True
             return msg
         else:
             raise CheckFailed(msg)
@@ -2166,8 +2299,6 @@ class BackendWxAgg(OptionalBackendPackage):
             raise CheckFailed(
                 "Requires wxPython 2.8, found %s" % backend_version)
 
-        BackendAgg.force = True
-
         return "version %s" % backend_version
 
 
@@ -2202,7 +2333,7 @@ class Windowing(OptionalBackendPackage):
         config = self.get_config()
         if config is False:
             raise CheckFailed("skipping due to configuration")
-        return "installing"
+        return ""
 
     def get_extension(self):
         sources = [
@@ -2277,7 +2408,6 @@ def backend_pyside_internal_check(self):
     except ImportError:
         raise CheckFailed("PySide not found")
     else:
-        BackendAgg.force = True
         return ("Qt: %s, PySide: %s" %
                 (QtCore.__version__, __version__))
 
@@ -2294,7 +2424,6 @@ def backend_pyqt4_internal_check(self):
     except AttributeError:
         raise CheckFailed('PyQt4 not correctly imported')
     else:
-        BackendAgg.force = True
         return ("Qt: %s, PyQt: %s" % (self.convert_qt_version(qt_version), pyqt_version_str))
 
 
@@ -2330,7 +2459,6 @@ def backend_pyside2_internal_check(self):
     except ImportError:
         raise CheckFailed("PySide2 not found")
     else:
-        BackendAgg.force = True
         return ("Qt: %s, PySide2: %s" %
                 (QtCore.__version__, __version__))
 
@@ -2346,7 +2474,6 @@ def backend_pyqt5_internal_check(self):
     except AttributeError:
         raise CheckFailed('PyQt5 not correctly imported')
     else:
-        BackendAgg.force = True
         return ("Qt: %s, PyQt: %s" % (self.convert_qt_version(qt_version), pyqt_version_str))
 
 def backend_qt5_internal_check(self):
@@ -2409,6 +2536,7 @@ class Ghostscript(SetupPackage):
     optional = True
 
     def check(self):
+<<<<<<< HEAD
         try:
             if sys.platform == 'win32' and not MSYS:
                 command = 'gswin32c --version'
@@ -2421,11 +2549,23 @@ class Ghostscript(SetupPackage):
                                           stderr=subprocess.STDOUT)
             else:
                 command = 'gs --version'
+=======
+        if sys.platform == 'win32':
+            # mgs is the name in miktex
+            gs_execs = ['gswin32c', 'gswin64c', 'mgs', 'gs']
+        else:
+            gs_execs = ['gs']
+        for gs_exec in gs_execs:
+            try:
+                command = gs_exec + ' --version'
+>>>>>>> a00932ed2a3923858ed45d31354e3a42dcdf8f6d
                 output = check_output(command, shell=True,
                                       stderr=subprocess.STDOUT)
-            return "version %s" % output.decode()[:-1]
-        except (IndexError, ValueError, subprocess.CalledProcessError):
-            raise CheckFailed()
+                return "version %s" % output.decode()[:-1]
+            except (IndexError, ValueError, subprocess.CalledProcessError):
+                pass
+
+        raise CheckFailed()
 
 
 class LaTeX(SetupPackage):

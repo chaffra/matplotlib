@@ -27,10 +27,9 @@ matplotlib plots.
 seaborn
 =======
 
-`seaborn <http://web.stanford.edu/~mwaskom/software/seaborn>`_ is a high
-level interface for drawing statistical graphics with matplotlib. It
-aims to make visualization a central part of exploring and
-understanding complex datasets.
+`seaborn <https://seaborn.github.io/>`_ is a high level interface for drawing
+statistical graphics with matplotlib. It aims to make visualization a central
+part of exploring and understanding complex datasets.
 
 .. image:: /_static/seaborn.png
     :height: 157px
@@ -102,16 +101,6 @@ tools. An example plot from the
 Miscellaneous Toolkits
 **********************
 
-
-.. _toolkit_prettyplotlib:
-
-prettyplotlib
-=============
-
-`prettyplotlib <https://olgabot.github.io/prettyplotlib>`_ is an extension
-to matplotlib which changes many of the defaults to make plots some
-consider more attractive.
-
 .. _toolkit_probscale:
 
 mpl-probscale
@@ -144,6 +133,15 @@ toolkit written by Joe Kington to provide interactive "data cursors"
 (clickable annotation boxes) for matplotlib.
 
 
+.. _toolkit_mplcursors:
+
+mplcursors
+==========
+
+`mplcursors <https://mplcursors.readthedocs.io>`_ provides interactive
+data cursors for matplotlib.
+
+
 .. _toolkit_natgrid:
 
 Natgrid
@@ -169,3 +167,7 @@ mplstereonet
 pyupset
 ===============
 `pyUpSet <https://github.com/ImSoErgodic/py-upset>`_ is a static Python implementation of the `UpSet suite by Lex et al. <http://www.caleydo.org/tools/upset/>`_ to explore complex intersections of sets and data frames.
+
+Windrose
+===============
+`Windrose <https://github.com/scls19fr/windrose>`_ is a Python Matplotlib, Numpy library to manage wind data, draw windrose (also known as a polar rose plot), draw probability density function and fit Weibull distribution
