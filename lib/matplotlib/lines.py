@@ -402,13 +402,8 @@ class Line2D(Artist):
 
         self._color = None
         self.set_color(color)
-<<<<<<< HEAD
-        self._marker = MarkerStyle()
-        self.set_marker(marker)
-        self.set_pointlabels(pointlabels)
-=======
         self._marker = MarkerStyle(marker, fillstyle)
->>>>>>> a00932ed2a3923858ed45d31354e3a42dcdf8f6d
+        self.set_pointlabels(pointlabels)
 
         self._markevery = None
         self._markersize = None
@@ -810,12 +805,7 @@ class Line2D(Artist):
                 if self.get_sketch_params() is not None:
                     gc.set_sketch_params(*self.get_sketch_params())
 
-<<<<<<< HEAD
-                drawFunc(renderer, gc, tpath, affine.frozen())
-
-=======
                 line_func(renderer, gc, tpath, affine.frozen())
->>>>>>> a00932ed2a3923858ed45d31354e3a42dcdf8f6d
                 gc.restore()
                 
         if self._pointlabels is not None:
@@ -1280,15 +1270,8 @@ class Line2D(Artist):
         if seq == (None, None) or len(seq) == 0:
             self.set_linestyle('-')
         else:
-<<<<<<< HEAD
-            self.set_linestyle('--')
-        if self._dashSeq != seq:
-            self.stale = True
-        self._dashSeq = seq  # TODO: offset ignored for now
+            self.set_linestyle((0, seq))
 
-    def _draw_lines(self, renderer, gc, path, trans):
-        self._lineFunc(renderer, gc, path, trans)
-        
     def _draw_pointlabels(self, renderer, gc, path, trans):
         """
         Draws point labels using TextPath objects.
@@ -1328,30 +1311,6 @@ class Line2D(Artist):
                 renderer.draw_path(gc, text,
                                text_trans + transforms.Affine2D().translate(x, y),
                                rgbFace)
-
-    def _draw_steps_pre(self, renderer, gc, path, trans):
-        steps = np.vstack(pts_to_prestep(*self._xy.T)).T
-
-        path = Path(steps)
-        path = path.transformed(self.get_transform())
-        self._lineFunc(renderer, gc, path, IdentityTransform())
-
-    def _draw_steps_post(self, renderer, gc, path, trans):
-        steps = np.vstack(pts_to_poststep(*self._xy.T)).T
-
-        path = Path(steps)
-        path = path.transformed(self.get_transform())
-        self._lineFunc(renderer, gc, path, IdentityTransform())
-
-    def _draw_steps_mid(self, renderer, gc, path, trans):
-        steps = np.vstack(pts_to_midstep(*self._xy.T)).T
-
-        path = Path(steps)
-        path = path.transformed(self.get_transform())
-        self._lineFunc(renderer, gc, path, IdentityTransform())
-=======
-            self.set_linestyle((0, seq))
->>>>>>> a00932ed2a3923858ed45d31354e3a42dcdf8f6d
 
     def _draw_solid(self, renderer, gc, path, trans):
         gc.set_linestyle('solid')
