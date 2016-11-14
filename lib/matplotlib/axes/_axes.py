@@ -751,7 +751,7 @@ or tuple of floats
 
 
         Examples
-        ---------
+        --------
         * draw a thick red vline at *x* = 0 that spans the yrange::
 
             >>> axvline(linewidth=4, color='r')
@@ -919,7 +919,8 @@ or tuple of floats
         self.autoscale_view(scaley=False)
         return p
 
-    @_preprocess_data(replace_names=['y', 'xmin', 'xmax'], label_namer="y")
+    @_preprocess_data(replace_names=['y', 'xmin', 'xmax', 'colors'],
+                      label_namer='y')
     def hlines(self, y, xmin, xmax, colors='k', linestyles='solid',
                label='', **kwargs):
         """
@@ -972,17 +973,18 @@ or tuple of floats
         if not iterable(xmax):
             xmax = [xmax]
 
-        y = np.ravel(y)
+        y, xmin, xmax = cbook.delete_masked_points(y, xmin, xmax)
 
+        y = np.ravel(y)
         xmin = np.resize(xmin, y.shape)
         xmax = np.resize(xmax, y.shape)
 
         verts = [((thisxmin, thisy), (thisxmax, thisy))
                  for thisxmin, thisxmax, thisy in zip(xmin, xmax, y)]
-        coll = mcoll.LineCollection(verts, colors=colors,
-                                    linestyles=linestyles, label=label)
-        self.add_collection(coll, autolim=False)
-        coll.update(kwargs)
+        lines = mcoll.LineCollection(verts, colors=colors,
+                                     linestyles=linestyles, label=label)
+        self.add_collection(lines, autolim=False)
+        lines.update(kwargs)
 
         if len(y) > 0:
             minx = min(xmin.min(), xmax.min())
@@ -995,10 +997,10 @@ or tuple of floats
             self.update_datalim(corners)
             self.autoscale_view()
 
-        return coll
+        return lines
 
-    @_preprocess_data(replace_names=["x", "ymin", "ymax", "colors"],
-                         label_namer="x")
+    @_preprocess_data(replace_names=['x', 'ymin', 'ymax', 'colors'],
+                      label_namer='x')
     def vlines(self, x, ymin, ymax, colors='k', linestyles='solid',
                label='', **kwargs):
         """
@@ -1034,7 +1036,7 @@ or tuple of floats
         hlines : horizontal lines
 
         Examples
-        ---------
+        --------
         .. plot:: mpl_examples/pylab_examples/vline_hline_demo.py
 
         """
@@ -1053,6 +1055,8 @@ or tuple of floats
         if not iterable(ymax):
             ymax = [ymax]
 
+        x, ymin, ymax = cbook.delete_masked_points(x, ymin, ymax)
+
         x = np.ravel(x)
         ymin = np.resize(ymin, x.shape)
         ymax = np.resize(ymax, x.shape)
@@ -1060,23 +1064,22 @@ or tuple of floats
         verts = [((thisx, thisymin), (thisx, thisymax))
                  for thisx, thisymin, thisymax in zip(x, ymin, ymax)]
         #print 'creating line collection'
-        coll = mcoll.LineCollection(verts, colors=colors,
-                                    linestyles=linestyles, label=label)
-        self.add_collection(coll, autolim=False)
-        coll.update(kwargs)
+        lines = mcoll.LineCollection(verts, colors=colors,
+                                     linestyles=linestyles, label=label)
+        self.add_collection(lines, autolim=False)
+        lines.update(kwargs)
 
         if len(x) > 0:
-            minx = min(x)
-            maxx = max(x)
-
-            miny = min(min(ymin), min(ymax))
-            maxy = max(max(ymin), max(ymax))
+            minx = x.min()
+            maxx = x.max()
+            miny = min(ymin.min(), ymax.min())
+            maxy = max(ymin.max(), ymax.max())
 
             corners = (minx, miny), (maxx, maxy)
             self.update_datalim(corners)
             self.autoscale_view()
 
-        return coll
+        return lines
 
     @_preprocess_data(replace_names=["positions", "lineoffsets",
                                         "linelengths", "linewidths",
@@ -1088,12 +1091,6 @@ or tuple of floats
                   linestyles='solid', **kwargs):
         """
         Plot identical parallel lines at specific positions.
-
-        Call signature::
-
-          eventplot(positions, orientation='horizontal', lineoffsets=0,
-                    linelengths=1, linewidths=None, color =None,
-                    linestyles='solid'
 
         Plot parallel lines at the given positions.  positions should be a 1D
         or 2D array-like object, with each row corresponding to a row or column
@@ -1497,10 +1494,6 @@ or tuple of floats
         """
         Make a plot with log scaling on both the *x* and *y* axis.
 
-        Call signature::
-
-          loglog(*args, **kwargs)
-
         :func:`~matplotlib.pyplot.loglog` supports all the keyword
         arguments of :func:`~matplotlib.pyplot.plot` and
         :meth:`matplotlib.axes.Axes.set_xscale` /
@@ -1702,7 +1695,7 @@ or tuple of floats
           - `b` is the x-axis.
 
         Other parameters
-        -----------------
+        ----------------
         linestyle : `~matplotlib.lines.Line2D` prop, optional, default: None
             Only used if usevlines is False.
 
@@ -1766,7 +1759,7 @@ or tuple of floats
           - `b` is the x-axis (none, if plot is used).
 
         Other parameters
-        -----------------
+        ----------------
         linestyle : `~matplotlib.lines.Line2D` prop, optional, default: None
             Only used if usevlines is False.
 
@@ -2231,7 +2224,7 @@ or tuple of floats
             the x coordinates of the left sides of the bars
 
         Returns
-        --------
+        -------
         `matplotlib.patches.Rectangle` instances.
 
         Other parameters
@@ -2303,10 +2296,6 @@ or tuple of floats
     def broken_barh(self, xranges, yrange, **kwargs):
         """
         Plot horizontal bars.
-
-        Call signature::
-
-          broken_barh(self, xranges, yrange, **kwargs)
 
         A collection of horizontal bars spanning *yrange* with a sequence of
         *xranges*.
@@ -2493,15 +2482,6 @@ or tuple of floats
             frame=False):
         r"""
         Plot a pie chart.
-
-        Call signature::
-
-          pie(x, explode=None, labels=None,
-              colors=None,
-              autopct=None, pctdistance=0.6, shadow=False,
-              labeldistance=1.1, startangle=None, radius=None,
-              counterclock=True, wedgeprops=None, textprops=None,
-              center = (0, 0), frame = False )
 
         Make a pie chart of array *x*.  The fractional area of each
         wedge is given by x/sum(x).  If sum(x) <= 1, then the values
@@ -3111,17 +3091,6 @@ or tuple of floats
         """
         Make a box and whisker plot.
 
-        Call signature::
-
-          boxplot(self, x, notch=None, sym=None, vert=None, whis=None,
-                  positions=None, widths=None, patch_artist=False,
-                  bootstrap=None, usermedians=None, conf_intervals=None,
-                  meanline=False, showmeans=False, showcaps=True,
-                  showbox=True, showfliers=True, boxprops=None,
-                  labels=None, flierprops=None, medianprops=None,
-                  meanprops=None, capprops=None, whiskerprops=None,
-                  manage_xticks=True, autorange=False, zorder=None):
-
         Make a box and whisker plot for each column of ``x`` or each
         vector in sequence ``x``.  The box extends from the lower to
         upper quartile values of the data, with a line at the median.
@@ -3420,15 +3389,6 @@ or tuple of floats
             meanline=False, manage_xticks=True, zorder=None):
         """
         Drawing function for box and whisker plots.
-
-        Call signature::
-
-          bxp(self, bxpstats, positions=None, widths=None, vert=True,
-              patch_artist=False, shownotches=False, showmeans=False,
-              showcaps=True, showbox=True, showfliers=True,
-              boxprops=None, whiskerprops=None, flierprops=None,
-              medianprops=None, capprops=None, meanprops=None,
-              meanline=False, manage_xticks=True, zorder=None):
 
         Make a box and whisker plot for each column of *x* or each
         vector in sequence *x*.  The box extends from the lower to
@@ -3841,8 +3801,9 @@ or tuple of floats
                 verts=None, edgecolors=None,
                 **kwargs):
         """
-        Make a scatter plot of x vs y, where x and y are sequence like objects
-        of the same length.
+        Make a scatter plot of `x` vs `y`
+
+        Marker size is scaled by `s` and marker color is mapped to `c`
 
         Parameters
         ----------
@@ -3889,6 +3850,12 @@ or tuple of floats
 
         linewidths : scalar or array_like, optional, default: None
             If None, defaults to (lines.linewidth,).
+
+        verts : sequence of (x, y), optional
+            If `marker` is None, these vertices will be used to
+            construct the marker.  The center of the marker is located
+            at (0,0) in normalized units.  The overall marker is rescaled
+            by ``s``.
 
         edgecolors : color or sequence of color, optional, default: None
             If None, defaults to 'face'
@@ -3985,6 +3952,7 @@ or tuple of floats
 
         # np.ma.ravel yields an ndarray, not a masked array,
         # unless its argument is a masked array.
+        xy_shape = (np.shape(x), np.shape(y))
         x = np.ma.ravel(x)
         y = np.ma.ravel(y)
         if x.size != y.size:
@@ -4007,7 +3975,7 @@ or tuple of floats
         else:
             try:
                 c_array = np.asanyarray(c, dtype=float)
-                if c_array.size == x.size:
+                if c_array.shape in xy_shape:
                     c = np.ma.ravel(c_array)
                 else:
                     # Wrong size; it must not be intended for mapping.
@@ -4017,7 +3985,14 @@ or tuple of floats
                 c_array = None
 
         if c_array is None:
-            colors = c     # must be acceptable as PathCollection facecolors
+            try:
+                # must be acceptable as PathCollection facecolors
+                colors = mcolors.to_rgba_array(c)
+            except ValueError:
+                # c not acceptable as PathCollection facecolor
+                msg = ("c of shape {0} not acceptable as a color sequence "
+                       "for x with size {1}, y with size {2}")
+                raise ValueError(msg.format(c.shape, x.size, y.size))
         else:
             colors = None  # use cmap, norm after collection is created
 
@@ -4889,13 +4864,10 @@ or tuple of floats
                          label_namer=None)
     @docstring.dedent_interpd
     def fill_betweenx(self, y, x1, x2=0, where=None,
-                      step=None, **kwargs):
+                      step=None, interpolate=False, **kwargs):
         """
         Make filled polygons between two horizontal curves.
 
-        Call signature::
-
-          fill_betweenx(y, x1, x2=0, where=None, **kwargs)
 
         Create a :class:`~matplotlib.collections.PolyCollection`
         filling the regions between *x1* and *x2* where
@@ -4919,6 +4891,12 @@ or tuple of floats
 
         step : {'pre', 'post', 'mid'}, optional
             If not None, fill with step logic.
+
+        interpolate : bool, optional
+            If `True`, interpolate between the two lines to find the
+            precise point of intersection.  Otherwise, the start and
+            end points of the filled region will only occur on explicit
+            values in the *x* array.
 
         Notes
         -----
@@ -4988,13 +4966,37 @@ or tuple of floats
                 continue
 
             N = len(yslice)
-            Y = np.zeros((2 * N + 2, 2), float)
+            Y = np.zeros((2 * N + 2, 2), np.float)
+            if interpolate:
+                def get_interp_point(ind):
+                    im1 = max(ind - 1, 0)
+                    y_values = y[im1:ind + 1]
+                    diff_values = x1[im1:ind + 1] - x2[im1:ind + 1]
+                    x1_values = x1[im1:ind + 1]
 
-            # the purpose of the next two lines is for when x2 is a
-            # scalar like 0 and we want the fill to go all the way
-            # down to 0 even if none of the x1 sample points do
-            Y[0] = x2slice[0], yslice[0]
-            Y[N + 1] = x2slice[-1], yslice[-1]
+                    if len(diff_values) == 2:
+                        if np.ma.is_masked(diff_values[1]):
+                            return x1[im1], y[im1]
+                        elif np.ma.is_masked(diff_values[0]):
+                            return x1[ind], y[ind]
+
+                    diff_order = diff_values.argsort()
+                    diff_root_y = np.interp(
+                        0, diff_values[diff_order], y_values[diff_order])
+                    diff_root_x = np.interp(diff_root_y, y_values, x1_values)
+                    return diff_root_x, diff_root_y
+
+                start = get_interp_point(ind0)
+                end = get_interp_point(ind1)
+            else:
+                # the purpose of the next two lines is for when x2 is a
+                # scalar like 0 and we want the fill to go all the way
+                # down to 0 even if none of the x1 sample points do
+                start = x2slice[0], yslice[0]
+                end = x2slice[-1], yslice[-1]
+
+            Y[0] = start
+            Y[N + 1] = end
 
             Y[1:N + 1, 0] = x1slice
             Y[1:N + 1, 1] = yslice
@@ -5027,7 +5029,7 @@ or tuple of floats
         Display an image on the axes.
 
         Parameters
-        -----------
+        ----------
         X : array_like, shape (n, m) or (n, m, 3) or (n, m, 4)
             Display the image in `X` to current axes.  `X` may be an
             array or a PIL image. If `X` is an array, it
@@ -5110,7 +5112,7 @@ or tuple of floats
             when interpolation is one of: 'sinc', 'lanczos' or 'blackman'
 
         Returns
-        --------
+        -------
         image : `~matplotlib.image.AxesImage`
 
         Other parameters
@@ -6390,7 +6392,7 @@ or tuple of floats
                     xvals.append(x.copy())
                     yvals.append(y.copy())
 
-            #stepfill is closed, step is not
+            # stepfill is closed, step is not
             split = -1 if fill else 2 * len(bins)
             # add patches in reverse order so that when stacking,
             # items lower in the stack are plottted on top of
@@ -6412,9 +6414,13 @@ or tuple of floats
                 xmin0 = max(_saved_bounds[0]*0.9, minimum)
                 xmax = self.dataLim.intervalx[1]
                 for m in n:
-                    if np.sum(m) > 0:  # make sure there are counts
-                        xmin = np.amin(m[m != 0])
+                    # make sure there are counts
+                    if np.sum(m) > 0:
                         # filter out the 0 height bins
+                        xmin = np.amin(m[m != 0])
+                    # If no counts, set min to zero
+                    else:
+                        xmin = 0.0
                 xmin = max(xmin*0.9, minimum) if not input_empty else minimum
                 xmin = min(xmin0, xmin)
                 self.dataLim.intervalx = (xmin, xmax)
@@ -6423,9 +6429,13 @@ or tuple of floats
                 ymax = self.dataLim.intervaly[1]
 
                 for m in n:
-                    if np.sum(m) > 0:  # make sure there are counts
-                        ymin = np.amin(m[m != 0])
+                    # make sure there are counts
+                    if np.sum(m) > 0:
                         # filter out the 0 height bins
+                        ymin = np.amin(m[m != 0])
+                    # If no counts, set min to zero
+                    else:
+                        ymin = 0.0
                 ymin = max(ymin*0.9, minimum) if not input_empty else minimum
                 ymin = min(ymin0, ymin)
                 self.dataLim.intervaly = (ymin, ymax)
@@ -6517,7 +6527,7 @@ or tuple of floats
         The return value is ``(counts, xedges, yedges, Image)``.
 
         Other parameters
-        -----------------
+        ----------------
         kwargs : :meth:`pcolorfast` properties.
 
         See also
@@ -6578,70 +6588,75 @@ or tuple of floats
 
         If len(*x*) < *NFFT*, it will be zero padded to *NFFT*.
 
-          *x*: 1-D array or sequence
+        Parameters
+        ----------
+        x : 1-D array or sequence
             Array or sequence containing the data
 
         %(Spectral)s
 
         %(PSD)s
 
-          *noverlap*: integer
+        noverlap : integer
             The number of points of overlap between segments.
             The default value is 0 (no overlap).
 
-          *Fc*: integer
+        Fc : integer
             The center frequency of *x* (defaults to 0), which offsets
             the x extents of the plot to reflect the frequency range used
             when a signal is acquired and then filtered and downsampled to
             baseband.
 
-          *return_line*: bool
+        return_line : bool
             Whether to include the line object plotted in the returned values.
             Default is False.
 
-        If *return_line* is False, returns the tuple (*Pxx*, *freqs*).
-        If *return_line* is True, returns the tuple (*Pxx*, *freqs*. *line*):
+        **kwargs :
+            Keyword arguments control the :class:`~matplotlib.lines.Line2D`
+            properties:
 
-          *Pxx*: 1-D array
+        %(Line2D)s
+
+        Returns
+        -------
+        Pxx : 1-D array
             The values for the power spectrum `P_{xx}` before scaling
             (real valued)
 
-          *freqs*: 1-D array
+        freqs : 1-D array
             The frequencies corresponding to the elements in *Pxx*
 
-          *line*: a :class:`~matplotlib.lines.Line2D` instance
+        line : a :class:`~matplotlib.lines.Line2D` instance
             The line created by this function.
-            Only returend if *return_line* is True.
+            Only returned if *return_line* is True.
 
+        Notes
+        -----
         For plotting, the power is plotted as
         :math:`10\log_{10}(P_{xx})` for decibels, though *Pxx* itself
         is returned.
 
-        References:
-          Bendat & Piersol -- Random Data: Analysis and Measurement
-          Procedures, John Wiley & Sons (1986)
+        References
+        ----------
+        Bendat & Piersol -- Random Data: Analysis and Measurement Procedures,
+        John Wiley & Sons (1986)
 
-        kwargs control the :class:`~matplotlib.lines.Line2D` properties:
-
-        %(Line2D)s
-
-        **Example:**
-
+        Examples
+        --------
         .. plot:: mpl_examples/pylab_examples/psd_demo.py
 
-        .. seealso::
+        See Also
+        --------
+        :func:`specgram`
+            :func:`specgram` differs in the default overlap; in not returning
+            the mean of the segment periodograms; in returning the times of the
+            segments; and in plotting a colormap instead of a line.
 
-            :func:`specgram`
-                :func:`specgram` differs in the default overlap; in not
-                returning the mean of the segment periodograms; in  returning
-                the times of the segments; and in plotting a colormap instead
-                of a line.
+        :func:`magnitude_spectrum`
+            :func:`magnitude_spectrum` plots the magnitude spectrum.
 
-            :func:`magnitude_spectrum`
-                :func:`magnitude_spectrum` plots the magnitude spectrum.
-
-            :func:`csd`
-                :func:`csd` plots the spectral density between two signals.
+        :func:`csd`
+            :func:`csd` plots the spectral density between two signals.
         """
         if not self._hold:
             self.cla()
@@ -6705,61 +6720,67 @@ or tuple of floats
         If len(*x*) < *NFFT* or len(*y*) < *NFFT*, they will be zero
         padded to *NFFT*.
 
-          *x*, *y*: 1-D arrays or sequences
+        Parameters
+        ----------
+        x, y : 1-D arrays or sequences
             Arrays or sequences containing the data
 
         %(Spectral)s
 
         %(PSD)s
 
-          *noverlap*: integer
+        noverlap : integer
             The number of points of overlap between segments.
             The default value is 0 (no overlap).
 
-          *Fc*: integer
+        Fc : integer
             The center frequency of *x* (defaults to 0), which offsets
             the x extents of the plot to reflect the frequency range used
             when a signal is acquired and then filtered and downsampled to
             baseband.
 
-          *return_line*: bool
+        return_line : bool
             Whether to include the line object plotted in the returned values.
             Default is False.
 
-        If *return_line* is False, returns the tuple (*Pxy*, *freqs*).
-        If *return_line* is True, returns the tuple (*Pxy*, *freqs*. *line*):
+        **kwargs :
+            Keyword arguments control the :class:`~matplotlib.lines.Line2D`
+            properties:
 
-          *Pxy*: 1-D array
+        %(Line2D)s
+
+        Returns
+        -------
+        Pxy : 1-D array
             The values for the cross spectrum `P_{xy}` before scaling
             (complex valued)
 
-          *freqs*: 1-D array
+        freqs : 1-D array
             The frequencies corresponding to the elements in *Pxy*
 
-          *line*: a :class:`~matplotlib.lines.Line2D` instance
+        line : a :class:`~matplotlib.lines.Line2D` instance
             The line created by this function.
-            Only returend if *return_line* is True.
+            Only returned if *return_line* is True.
 
+        Notes
+        -----
         For plotting, the power is plotted as
         :math:`10\log_{10}(P_{xy})` for decibels, though `P_{xy}` itself
         is returned.
 
-        References:
-          Bendat & Piersol -- Random Data: Analysis and Measurement
-          Procedures, John Wiley & Sons (1986)
+        References
+        ----------
+        Bendat & Piersol -- Random Data: Analysis and Measurement Procedures,
+        John Wiley & Sons (1986)
 
-        kwargs control the Line2D properties:
-
-        %(Line2D)s
-
-        **Example:**
-
+        Examples
+        --------
         .. plot:: mpl_examples/pylab_examples/csd_demo.py
 
-        .. seealso::
-
-            :func:`psd`
-                :func:`psd` is the equivalent to setting y=x.
+        See Also
+        --------
+        :func:`psd`
+            :func:`psd` is the equivalent to setting y=x.
         """
         if not self._hold:
             self.cla()
@@ -6808,60 +6829,64 @@ or tuple of floats
         length of *pad_to* and the windowing function *window* is applied to
         the signal.
 
-          *x*: 1-D array or sequence
+        Parameters
+        ----------
+        x : 1-D array or sequence
             Array or sequence containing the data
 
         %(Spectral)s
 
         %(Single_Spectrum)s
 
-          *scale*: [ 'default' | 'linear' | 'dB' ]
+        scale : [ 'default' | 'linear' | 'dB' ]
             The scaling of the values in the *spec*.  'linear' is no scaling.
             'dB' returns the values in dB scale.  When *mode* is 'density',
             this is dB power (10 * log10).  Otherwise this is dB amplitude
             (20 * log10). 'default' is 'linear'.
 
-          *Fc*: integer
+        Fc : integer
             The center frequency of *x* (defaults to 0), which offsets
             the x extents of the plot to reflect the frequency range used
             when a signal is acquired and then filtered and downsampled to
             baseband.
 
-        Returns the tuple (*spectrum*, *freqs*, *line*):
-
-          *spectrum*: 1-D array
-            The values for the magnitude spectrum before scaling (real valued)
-
-          *freqs*: 1-D array
-            The frequencies corresponding to the elements in *spectrum*
-
-          *line*: a :class:`~matplotlib.lines.Line2D` instance
-            The line created by this function
-
-        kwargs control the :class:`~matplotlib.lines.Line2D` properties:
+        **kwargs :
+            Keyword arguments control the :class:`~matplotlib.lines.Line2D`
+            properties:
 
         %(Line2D)s
 
-        **Example:**
+        Returns
+        -------
+        spectrum : 1-D array
+            The values for the magnitude spectrum before scaling (real valued)
 
+        freqs : 1-D array
+            The frequencies corresponding to the elements in *spectrum*
+
+        line : a :class:`~matplotlib.lines.Line2D` instance
+            The line created by this function
+
+        Examples
+        --------
         .. plot:: mpl_examples/pylab_examples/spectrum_demo.py
 
-        .. seealso::
+        See Also
+        --------
+        :func:`psd`
+            :func:`psd` plots the power spectral density.`.
 
-            :func:`psd`
-                :func:`psd` plots the power spectral density.`.
+        :func:`angle_spectrum`
+            :func:`angle_spectrum` plots the angles of the corresponding
+            frequencies.
 
-            :func:`angle_spectrum`
-                :func:`angle_spectrum` plots the angles of the corresponding
-                frequencies.
+        :func:`phase_spectrum`
+            :func:`phase_spectrum` plots the phase (unwrapped angle) of the
+            corresponding frequencies.
 
-            :func:`phase_spectrum`
-                :func:`phase_spectrum` plots the phase (unwrapped angle) of the
-                corresponding frequencies.
-
-            :func:`specgram`
-                :func:`specgram` can plot the magnitude spectrum of segments
-                within the signal in a colormap.
+        :func:`specgram`
+            :func:`specgram` can plot the magnitude spectrum of segments within
+            the signal in a colormap.
         """
         if not self._hold:
             self.cla()
@@ -6907,51 +6932,55 @@ or tuple of floats
         Data is padded to a length of *pad_to* and the windowing function
         *window* is applied to the signal.
 
-          *x*: 1-D array or sequence
+        Parameters
+        ----------
+        x : 1-D array or sequence
             Array or sequence containing the data
 
         %(Spectral)s
 
         %(Single_Spectrum)s
 
-          *Fc*: integer
+        Fc : integer
             The center frequency of *x* (defaults to 0), which offsets
             the x extents of the plot to reflect the frequency range used
             when a signal is acquired and then filtered and downsampled to
             baseband.
 
-        Returns the tuple (*spectrum*, *freqs*, *line*):
-
-          *spectrum*: 1-D array
-            The values for the angle spectrum in radians (real valued)
-
-          *freqs*: 1-D array
-            The frequencies corresponding to the elements in *spectrum*
-
-          *line*: a :class:`~matplotlib.lines.Line2D` instance
-            The line created by this function
-
-        kwargs control the :class:`~matplotlib.lines.Line2D` properties:
+        **kwargs :
+            Keyword arguments control the :class:`~matplotlib.lines.Line2D`
+            properties:
 
         %(Line2D)s
 
-        **Example:**
+        Returns
+        -------
+        spectrum : 1-D array
+            The values for the angle spectrum in radians (real valued)
 
+        freqs : 1-D array
+            The frequencies corresponding to the elements in *spectrum*
+
+        line : a :class:`~matplotlib.lines.Line2D` instance
+            The line created by this function
+
+        Examples
+        --------
         .. plot:: mpl_examples/pylab_examples/spectrum_demo.py
 
-        .. seealso::
+        See Also
+        --------
+        :func:`magnitude_spectrum`
+            :func:`angle_spectrum` plots the magnitudes of the corresponding
+            frequencies.
 
-            :func:`magnitude_spectrum`
-                :func:`angle_spectrum` plots the magnitudes of the
-                corresponding frequencies.
+        :func:`phase_spectrum`
+            :func:`phase_spectrum` plots the unwrapped version of this
+            function.
 
-            :func:`phase_spectrum`
-                :func:`phase_spectrum` plots the unwrapped version of this
-                function.
-
-            :func:`specgram`
-                :func:`specgram` can plot the angle spectrum of segments
-                within the signal in a colormap.
+        :func:`specgram`
+            :func:`specgram` can plot the angle spectrum of segments within the
+            signal in a colormap.
         """
         if not self._hold:
             self.cla()
@@ -6985,51 +7014,54 @@ or tuple of floats
         Data is padded to a length of *pad_to* and the windowing function
         *window* is applied to the signal.
 
-          *x*: 1-D array or sequence
+        Parameters
+        ----------
+        x : 1-D array or sequence
             Array or sequence containing the data
 
         %(Spectral)s
 
         %(Single_Spectrum)s
 
-          *Fc*: integer
+        Fc : integer
             The center frequency of *x* (defaults to 0), which offsets
             the x extents of the plot to reflect the frequency range used
             when a signal is acquired and then filtered and downsampled to
             baseband.
 
-        Returns the tuple (*spectrum*, *freqs*, *line*):
-
-          *spectrum*: 1-D array
-            The values for the phase spectrum in radians (real valued)
-
-          *freqs*: 1-D array
-            The frequencies corresponding to the elements in *spectrum*
-
-          *line*: a :class:`~matplotlib.lines.Line2D` instance
-            The line created by this function
-
-        kwargs control the :class:`~matplotlib.lines.Line2D` properties:
+        **kwargs :
+            Keyword arguments control the :class:`~matplotlib.lines.Line2D`
+            properties:
 
         %(Line2D)s
 
-        **Example:**
+        Returns
+        -------
+        spectrum : 1-D array
+            The values for the phase spectrum in radians (real valued)
 
+        freqs : 1-D array
+            The frequencies corresponding to the elements in *spectrum*
+
+        line : a :class:`~matplotlib.lines.Line2D` instance
+            The line created by this function
+
+        Examples
+        --------
         .. plot:: mpl_examples/pylab_examples/spectrum_demo.py
 
-        .. seealso::
+        See Also
+        --------
+        :func:`magnitude_spectrum`
+            :func:`magnitude_spectrum` plots the magnitudes of the
+            corresponding frequencies.
 
-            :func:`magnitude_spectrum`
-                :func:`magnitude_spectrum` plots the magnitudes of the
-                corresponding frequencies.
+        :func:`angle_spectrum`
+            :func:`angle_spectrum` plots the wrapped version of this function.
 
-            :func:`angle_spectrum`
-                :func:`angle_spectrum` plots the wrapped version of this
-                function.
-
-            :func:`specgram`
-                :func:`specgram` can plot the phase spectrum of segments
-                within the signal in a colormap.
+        :func:`specgram`
+            :func:`specgram` can plot the phase spectrum of segments within the
+            signal in a colormap.
         """
         if not self._hold:
             self.cla()
@@ -7055,12 +7087,6 @@ or tuple of floats
         """
         Plot the coherence between *x* and *y*.
 
-        Call signature::
-
-          cohere(x, y, NFFT=256, Fs=2, Fc=0, detrend = mlab.detrend_none,
-                 window = mlab.window_hanning, noverlap=0, pad_to=None,
-                 sides='default', scale_by_freq=None, **kwargs)
-
         Plot the coherence between *x* and *y*.  Coherence is the
         normalized cross spectral density:
 
@@ -7068,37 +7094,42 @@ or tuple of floats
 
           C_{xy} = \\frac{|P_{xy}|^2}{P_{xx}P_{yy}}
 
+        Parameters
+        ----------
         %(Spectral)s
 
         %(PSD)s
 
-          *noverlap*: integer
+        noverlap : integer
             The number of points of overlap between blocks.  The
             default value is 0 (no overlap).
 
-          *Fc*: integer
+        Fc : integer
             The center frequency of *x* (defaults to 0), which offsets
             the x extents of the plot to reflect the frequency range used
             when a signal is acquired and then filtered and downsampled to
             baseband.
 
+        **kwargs :
+            Keyword arguments control the :class:`~matplotlib.lines.Line2D`
+            properties of the coherence plot:
+
+        %(Line2D)s
+
+        Returns
+        -------
         The return value is a tuple (*Cxy*, *f*), where *f* are the
         frequencies of the coherence vector.
 
         kwargs are applied to the lines.
 
-        References:
+        References
+        ----------
+        Bendat & Piersol -- Random Data: Analysis and Measurement Procedures,
+        John Wiley & Sons (1986)
 
-          * Bendat & Piersol -- Random Data: Analysis and Measurement
-            Procedures, John Wiley & Sons (1986)
-
-        kwargs control the :class:`~matplotlib.lines.Line2D`
-        properties of the coherence plot:
-
-        %(Line2D)s
-
-        **Example:**
-
+        Examples
+        --------
         .. plot:: mpl_examples/pylab_examples/cohere_demo.py
         """
         if not self._hold:
@@ -7140,25 +7171,27 @@ or tuple of floats
         specified with *noverlap*. The spectrogram is plotted as a colormap
         (using imshow).
 
-        *x*: 1-D array or sequence
+        Parameters
+        ----------
+        x : 1-D array or sequence
             Array or sequence containing the data
 
         %(Spectral)s
 
         %(PSD)s
 
-          *mode*: [ 'default' | 'psd' | 'magnitude' | 'angle' | 'phase' ]
+        mode : [ 'default' | 'psd' | 'magnitude' | 'angle' | 'phase' ]
             What sort of spectrum to use.  Default is 'psd'. which takes
             the power spectral density.  'complex' returns the complex-valued
             frequency spectrum.  'magnitude' returns the magnitude spectrum.
             'angle' returns the phase spectrum without unwrapping.  'phase'
             returns the phase spectrum with unwrapping.
 
-          *noverlap*: integer
+        noverlap : integer
             The number of points of overlap between blocks.  The
             default value is 128.
 
-          *scale*: [ 'default' | 'linear' | 'dB' ]
+        scale : [ 'default' | 'linear' | 'dB' ]
             The scaling of the values in the *spec*.  'linear' is no scaling.
             'dB' returns the values in dB scale.  When *mode* is 'psd',
             this is dB power (10 * log10).  Otherwise this is dB amplitude
@@ -7166,67 +7199,67 @@ or tuple of floats
             'magnitude' and 'linear' otherwise.  This must be 'linear'
             if *mode* is 'angle' or 'phase'.
 
-          *Fc*: integer
+        Fc : integer
             The center frequency of *x* (defaults to 0), which offsets
             the x extents of the plot to reflect the frequency range used
             when a signal is acquired and then filtered and downsampled to
             baseband.
 
-          *cmap*:
+        cmap :
             A :class:`matplotlib.colors.Colormap` instance; if *None*, use
             default determined by rc
 
-          *xextent*:
+        xextent :
             The image extent along the x-axis. xextent = (xmin,xmax)
             The default is (0,max(bins)), where bins is the return
             value from :func:`~matplotlib.mlab.specgram`
 
-          *kwargs*:
+        **kwargs :
             Additional kwargs are passed on to imshow which makes the
             specgram image
 
-        .. note::
-
+        Notes
+        -----
             *detrend* and *scale_by_freq* only apply when *mode* is set to
             'psd'
 
-        Returns the tuple (*spectrum*, *freqs*, *t*, *im*):
-
-          *spectrum*: 2-D array
+        Returns
+        -------
+        spectrum : 2-D array
             columns are the periodograms of successive segments
 
-          *freqs*: 1-D array
+        freqs : 1-D array
             The frequencies corresponding to the rows in *spectrum*
 
-          *t*: 1-D array
+        t : 1-D array
             The times corresponding to midpoints of segments (i.e the columns
             in *spectrum*)
 
-          *im*: instance of class :class:`~matplotlib.image.AxesImage`
+        im : instance of class :class:`~matplotlib.image.AxesImage`
             The image created by imshow containing the spectrogram
 
-        **Example:**
-
+        Examples
+        --------
         .. plot:: mpl_examples/pylab_examples/specgram_demo.py
 
-        .. seealso::
+        See Also
+        --------
+        :func:`psd`
+            :func:`psd` differs in the default overlap; in returning the mean
+            of the segment periodograms; in not returning times; and in
+            generating a line plot instead of colormap.
 
-            :func:`psd`
-                :func:`psd` differs in the default overlap; in returning
-                the mean of the segment periodograms; in not returning
-                times; and in generating a line plot instead of colormap.
+        :func:`magnitude_spectrum`
+            A single spectrum, similar to having a single segment when *mode*
+            is 'magnitude'. Plots a line instead of a colormap.
 
-            :func:`magnitude_spectrum`
-                A single spectrum, similar to having a single segment when
-                *mode* is 'magnitude'.  Plots a line instead of a colormap.
+        :func:`angle_spectrum`
+            A single spectrum, similar to having a single segment when *mode*
+            is 'angle'. Plots a line instead of a colormap.
 
-            :func:`angle_spectrum`
-                A single spectrum, similar to having a single segment when
-                *mode* is 'angle'.  Plots a line instead of a colormap.
-
-            :func:`phase_spectrum`
-                A single spectrum, similar to having a single segment when
-                *mode* is 'phase'.  Plots a line instead of a colormap.
+        :func:`phase_spectrum`
+            A single spectrum, similar to having a single segment when *mode*
+            is 'phase'. Plots a line instead of a colormap.
         """
         if not self._hold:
             self.cla()
@@ -7437,13 +7470,8 @@ or tuple of floats
     def violinplot(self, dataset, positions=None, vert=True, widths=0.5,
                    showmeans=False, showextrema=True, showmedians=False,
                    points=100, bw_method=None):
-        """Make a violin plot.
-
-        Call signature::
-
-          violinplot(dataset, positions=None, vert=True, widths=0.5,
-                     showmeans=False, showextrema=True, showmedians=False,
-                     points=100, bw_method=None):
+        """
+        Make a violin plot.
 
         Make a violin plot for each column of *dataset* or each vector in
         sequence *dataset*.  Each filled area extends to represent the
@@ -7541,11 +7569,6 @@ or tuple of floats
     def violin(self, vpstats, positions=None, vert=True, widths=0.5,
                showmeans=False, showextrema=True, showmedians=False):
         """Drawing function for violin plots.
-
-        Call signature::
-
-          violin(vpstats, positions=None, vert=True, widths=0.5,
-                 showmeans=False, showextrema=True, showmedians=False):
 
         Draw a violin plot for each column of `vpstats`. Each filled area
         extends to represent the entire data range, with optional lines at the

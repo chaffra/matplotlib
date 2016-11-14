@@ -1,4 +1,8 @@
 """
+=======================
+Artist within an artist
+=======================
+
 Show how to override basic methods so an artist can contain another
 artist.  In this case, the line contains a Text instance to label it.
 """
@@ -43,6 +47,9 @@ class MyLine(lines.Line2D):
         # draw my label at the end of the line with 2 pixel offset
         lines.Line2D.draw(self, renderer)
         self.text.draw(renderer)
+
+# Fixing random state for reproducibility
+np.random.seed(19680801)
 
 
 fig, ax = plt.subplots()

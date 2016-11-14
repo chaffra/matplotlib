@@ -1157,7 +1157,7 @@ class Line2D(Artist):
         ACCEPTS: :mod:`A valid marker style <matplotlib.markers>`
 
         Parameters
-        -----------
+        ----------
 
         marker: marker style
             See `~matplotlib.markers` for full description of possible

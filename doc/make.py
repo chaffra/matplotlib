@@ -119,7 +119,7 @@ def clean():
                     'mpl_examples/pylab_examples/*.png',
                     'mpl_examples/pylab_examples/*.pdf',
                     'mpl_examples/units/*.png',
-                    'pyplots/tex_demo.png',
+                    'mpl_examples/pyplots/tex_demo.png',
                     '_static/matplotlibrc',
                     '_templates/gallery.html',
                     'users/installing.rst']:
@@ -178,7 +178,7 @@ for link, target in required_symlinks:
                                " isn't".format(link))
     if not os.path.exists(link):
         try:
-            os.symlink(target, link)
+            os.symlink(os.path.normcase(target), link)
         except OSError:
             symlink_warnings.append('files copied to {0}'.format(link))
             shutil.copytree(os.path.join(link, '..', target), link)

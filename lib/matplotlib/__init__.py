@@ -1341,10 +1341,13 @@ def rc_file_defaults():
     """
     rcParams.update(rcParamsOrig)
 
-_use_error_msg = """ This call to matplotlib.use() has no effect
-because the backend has already been chosen;
-matplotlib.use() must be called *before* pylab, matplotlib.pyplot,
+_use_error_msg = """
+This call to matplotlib.use() has no effect because the backend has already
+been chosen; matplotlib.use() must be called *before* pylab, matplotlib.pyplot,
 or matplotlib.backends is imported for the first time.
+
+The backend was *originally* set to {backend!r} by the following code:
+{tb}
 """
 
 
@@ -1385,7 +1388,12 @@ def use(arg, warn=True, force=False):
     if 'matplotlib.backends' in sys.modules:
         # Warn only if called with a different name
         if (rcParams['backend'] != name) and warn:
-            warnings.warn(_use_error_msg, stacklevel=2)
+            import matplotlib.backends
+            warnings.warn(
+                _use_error_msg.format(
+                    backend=rcParams['backend'],
+                    tb=matplotlib.backends._backend_loading_tb),
+                stacklevel=2)
 
         # Unless we've been told to force it, just return
         if not force:
@@ -1470,10 +1478,8 @@ def _jupyter_nbextension_paths():
 
 default_test_modules = [
     'matplotlib.tests.test_agg',
-    'matplotlib.tests.test_animation',
     'matplotlib.tests.test_arrow_patches',
     'matplotlib.tests.test_artist',
-    'matplotlib.tests.test_axes',
     'matplotlib.tests.test_backend_bases',
     'matplotlib.tests.test_backend_pdf',
     'matplotlib.tests.test_backend_pgf',
@@ -1483,7 +1489,6 @@ default_test_modules = [
     'matplotlib.tests.test_backend_svg',
     'matplotlib.tests.test_basic',
     'matplotlib.tests.test_bbox_tight',
-    'matplotlib.tests.test_cbook',
     'matplotlib.tests.test_coding_standards',
     'matplotlib.tests.test_collections',
     'matplotlib.tests.test_colorbar',
@@ -1508,7 +1513,6 @@ default_test_modules = [
     'matplotlib.tests.test_pickle',
     'matplotlib.tests.test_png',
     'matplotlib.tests.test_quiver',
-    'matplotlib.tests.test_rcparams',
     'matplotlib.tests.test_sankey',
     'matplotlib.tests.test_scale',
     'matplotlib.tests.test_simplification',
@@ -1520,7 +1524,6 @@ default_test_modules = [
     'matplotlib.tests.test_table',
     'matplotlib.tests.test_text',
     'matplotlib.tests.test_texmanager',
-    'matplotlib.tests.test_ticker',
     'matplotlib.tests.test_tightlayout',
     'matplotlib.tests.test_transforms',
     'matplotlib.tests.test_triangulation',

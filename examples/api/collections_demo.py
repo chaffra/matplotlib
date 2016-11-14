@@ -1,5 +1,7 @@
-'''Demonstration of LineCollection, PolyCollection, and
-RegularPolyCollection with autoscaling.
+'''
+=========================================================
+Line, Poly and RegularPoly Collection with autoscaling
+=========================================================
 
 For the first two subplots, we will use spirals.  Their
 size will be set in plot units, not data units.  Their positions
@@ -31,7 +33,10 @@ yy = r * np.cos(theta)
 spiral = list(zip(xx, yy))
 
 # Make some offsets
-rs = np.random.RandomState([12345678])
+# Fixing random state for reproducibility
+rs = np.random.RandomState(19680801)
+
+
 xo = rs.randn(npts)
 yo = rs.randn(npts)
 xyo = list(zip(xo, yo))

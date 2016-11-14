@@ -579,6 +579,13 @@ class _AxesBase(martist.Artist):
             right=rcParams['ytick.right'] and rcParams['ytick.major.right'],
             which='major')
 
+    def __getstate__(self):
+        # The renderer should be re-created by the figure, and then cached at
+        # that point.
+        state = super(_AxesBase, self).__getstate__()
+        state['_cachedRenderer'] = None
+        return state
+
     def __setstate__(self, state):
         self.__dict__ = state
         # put the _remove_method back on all artists contained within the axes
@@ -1186,11 +1193,8 @@ class _AxesBase(martist.Artist):
         return self._hold
 
     def hold(self, b=None):
-        """Set the hold state
-
-        Call signature::
-
-          hold(b=None)
+        """
+        Set the hold state
 
         If *hold* is *None* (default), toggle the *hold* state.  Else
         set the *hold* state to boolean value *b*.
@@ -2442,10 +2446,6 @@ class _AxesBase(martist.Artist):
         """
         Turn the axes grids on or off.
 
-        Call signature::
-
-           grid(self, b=None, which='major', axis='both', **kwargs)
-
         Set the axes grids on or off; *b* is a boolean.  (For MATLAB
         compatibility, *b* may also be a string, 'on' or 'off'.)
 
@@ -2783,54 +2783,76 @@ class _AxesBase(martist.Artist):
 
     def get_xlim(self):
         """
-        Get the x-axis range [*left*, *right*]
+        Get the x-axis range
+
+        Returns
+        -------
+        xlimits : tuple
+            Returns the current x-axis limits as the tuple
+            (`left`, `right`).
+
+        Notes
+        -----
+        The x-axis may be inverted, in which case the `left` value will
+        be greater than the `right` value.
+
         """
         return tuple(self.viewLim.intervalx)
 
     def set_xlim(self, left=None, right=None, emit=True, auto=False, **kw):
-        """Set the data limits for the xaxis
+        """
+        Set the data limits for the x-axis
 
-        Call signature::
+        Parameters
+        ----------
+        left : scalar, optional
+            The left xlim (default: None, which leaves the left limit
+            unchanged).
 
-          set_xlim(self, *args, **kwargs):
+        right : scalar, optional
+            The right xlim (default: None, which leaves the right limit
+            unchanged).
 
-        Set the data limits for the xaxis
+        emit : bool, optional
+            Whether to notify observers of limit change (default: True).
 
-        Examples::
+        auto : bool or None, optional
+            Whether to turn on autoscaling of the x-axis. True turns on,
+            False turns off (default action), None leaves unchanged.
 
-          set_xlim((left, right))
-          set_xlim(left, right)
-          set_xlim(left=1) # right unchanged
-          set_xlim(right=1) # left unchanged
+        xlimits : tuple, optional
+            The left and right xlims may be passed as the tuple
+            (`left`, `right`) as the first positional argument (or as
+            the `left` keyword argument).
 
-        Keyword arguments:
+        Returns
+        -------
+        xlimits : tuple
+            Returns the new x-axis limits as (`left`, `right`).
 
-          *left*: scalar
-            The left xlim; *xmin*, the previous name, may still be used
+        Notes
+        -----
+        The `left` value may be greater than the `right` value, in which
+        case the x-axis values will decrease from left to right.
 
-          *right*: scalar
-            The right xlim; *xmax*, the previous name, may still be used
+        Examples
+        --------
+        >>> set_xlim(left, right)
+        >>> set_xlim((left, right))
+        >>> left, right = set_xlim(left, right)
 
-          *emit*: [ *True* | *False* ]
-            Notify observers of limit change
+        One limit may be left unchanged.
 
-          *auto*: [ *True* | *False* | *None* ]
-            Turn *x* autoscaling on (*True*), off (*False*; default),
-            or leave unchanged (*None*)
+        >>> set_xlim(right=right_lim)
 
-        Note, the *left* (formerly *xmin*) value may be greater than
-        the *right* (formerly *xmax*).
-        For example, suppose *x* is years before present.
-        Then one might use::
-
-          set_ylim(5000, 0)
-
-        so 5000 years ago is on the left of the plot and the
+        Limits may be passed in reverse order to flip the direction of
+        the x-axis. For example, suppose `x` represents the number of
+        years before present. The x-axis limits might be set like the
+        following so 5000 years ago is on the left of the plot and the
         present is on the right.
 
-        Returns the current xlimits as a length 2 tuple
+        >>> set_xlim(5000, 0)
 
-        ACCEPTS: length 2 sequence of floats
         """
         if 'xmin' in kw:
             left = kw.pop('xmin')
@@ -2861,6 +2883,11 @@ class _AxesBase(martist.Artist):
                  'in singular transformations; automatically expanding.\n'
                  'left=%s, right=%s') % (left, right))
         left, right = mtransforms.nonsingular(left, right, increasing=False)
+
+        if self.get_xscale() == 'log' and (left <= 0.0 or right <= 0.0):
+            warnings.warn(
+                'Attempted to set non-positive xlimits for log-scale axis; '
+                'invalid limits will be ignored.')
         left, right = self.xaxis.limit_range_for_scale(left, right)
 
         self.viewLim.intervalx = (left, right)
@@ -2887,11 +2914,8 @@ class _AxesBase(martist.Artist):
 
     @docstring.dedent_interpd
     def set_xscale(self, value, **kwargs):
-        """Set the x-axis scale
-
-        Call signature::
-
-          set_xscale(value)
+        """
+        Set the x-axis scale
 
         Set the scaling of the x-axis: %(scale)s
 
@@ -2970,14 +2994,10 @@ class _AxesBase(martist.Artist):
 
     @docstring.dedent_interpd
     def set_xticklabels(self, labels, fontdict=None, minor=False, **kwargs):
-        """Set the xtick labels with list of strings *labels*
+        """
+        Set the xtick labels with list of strings *labels*
 
-        Call signature::
-
-          set_xticklabels(labels, fontdict=None, minor=False, **kwargs)
-
-        Return a
-        list of axis text instances.
+        Return a list of axis text instances.
 
         *kwargs* set the :class:`~matplotlib.text.Text` properties.
         Valid properties are
@@ -3044,52 +3064,76 @@ class _AxesBase(martist.Artist):
 
     def get_ylim(self):
         """
-        Get the y-axis range [*bottom*, *top*]
+        Get the y-axis range
+
+        Returns
+        -------
+        ylimits : tuple
+            Returns the current y-axis limits as the tuple
+            (`bottom`, `top`).
+
+        Notes
+        -----
+        The y-axis may be inverted, in which case the `bottom` value
+        will be greater than the `top` value.
+
         """
         return tuple(self.viewLim.intervaly)
 
     def set_ylim(self, bottom=None, top=None, emit=True, auto=False, **kw):
-        """Set the data limits for the yaxis
+        """
+        Set the data limits for the y-axis
 
-        Call signature::
+        Parameters
+        ----------
+        bottom : scalar, optional
+            The bottom ylim (default: None, which leaves the bottom
+            limit unchanged).
 
-          set_ylim(self, *args, **kwargs):
+        top : scalar, optional
+            The top ylim (default: None, which leaves the top limit
+            unchanged).
 
-        Examples::
+        emit : bool, optional
+            Whether to notify observers of limit change (default: True).
 
-          set_ylim((bottom, top))
-          set_ylim(bottom, top)
-          set_ylim(bottom=1) # top unchanged
-          set_ylim(top=1) # bottom unchanged
+        auto : bool or None, optional
+            Whether to turn on autoscaling of the y-axis. True turns on,
+            False turns off (default action), None leaves unchanged.
 
-        Keyword arguments:
+        ylimits : tuple, optional
+            The bottom and top yxlims may be passed as the tuple
+            (`bottom`, `top`) as the first positional argument (or as
+            the `bottom` keyword argument).
 
-          *bottom*: scalar
-            The bottom ylim; the previous name, *ymin*, may still be used
+        Returns
+        -------
+        ylimits : tuple
+            Returns the new y-axis limits as (`bottom`, `top`).
 
-          *top*: scalar
-            The top ylim; the previous name, *ymax*, may still be used
+        Notes
+        -----
+        The `bottom` value may be greater than the `top` value, in which
+        case the y-axis values will decrease from bottom to top.
 
-          *emit*: [ *True* | *False* ]
-            Notify observers of limit change
+        Examples
+        --------
+        >>> set_ylim(bottom, top)
+        >>> set_ylim((bottom, top))
+        >>> bottom, top = set_ylim(bottom, top)
 
-          *auto*: [ *True* | *False* | *None* ]
-            Turn *y* autoscaling on (*True*), off (*False*; default),
-            or leave unchanged (*None*)
+        One limit may be left unchanged.
 
-        Note, the *bottom* (formerly *ymin*) value may be greater than
-        the *top* (formerly *ymax*).
-        For example, suppose *y* is depth in the ocean.
-        Then one might use::
+        >>> set_ylim(top=top_lim)
 
-          set_ylim(5000, 0)
+        Limits may be passed in reverse order to flip the direction of
+        the y-axis. For example, suppose `y` represents depth of the
+        ocean in m. The y-axis limits might be set like the following
+        so 5000 m depth is at the bottom of the plot and the surface,
+        0 m, is at the top.
 
-        so 5000 m depth is at the bottom of the plot and the
-        surface, 0 m, is at the top.
+        >>> set_ylim(5000, 0)
 
-        Returns the current ylimits as a length 2 tuple
-
-        ACCEPTS: length 2 sequence of floats
         """
         if 'ymin' in kw:
             bottom = kw.pop('ymin')
@@ -3121,6 +3165,11 @@ class _AxesBase(martist.Artist):
                  'bottom=%s, top=%s') % (bottom, top))
 
         bottom, top = mtransforms.nonsingular(bottom, top, increasing=False)
+
+        if self.get_yscale() == 'log' and (bottom <= 0.0 or top <= 0.0):
+            warnings.warn(
+                'Attempted to set non-positive ylimits for log-scale axis; '
+                'invalid limits will be ignored.')
         bottom, top = self.yaxis.limit_range_for_scale(bottom, top)
 
         self.viewLim.intervaly = (bottom, top)
@@ -3148,10 +3197,6 @@ class _AxesBase(martist.Artist):
     @docstring.dedent_interpd
     def set_yscale(self, value, **kwargs):
         """Set the y-axis scale
-
-        Call signature::
-
-          set_yscale(value)
 
         Set the scaling of the y-axis: %(scale)s
 
@@ -3233,14 +3278,10 @@ class _AxesBase(martist.Artist):
 
     @docstring.dedent_interpd
     def set_yticklabels(self, labels, fontdict=None, minor=False, **kwargs):
-        """Set the y tick labels with list of strings *labels*
+        """
+        Set the y tick labels with list of strings *labels*
 
-        Call signature::
-
-          set_yticklabels(labels, fontdict=None, minor=False, **kwargs)
-
-        Return a list of
-        :class:`~matplotlib.text.Text` instances.
+        Return a list of :class:`~matplotlib.text.Text` instances.
 
         *kwargs* set :class:`~matplotlib.text.Text` properties for the labels.
         Valid properties are
@@ -3824,11 +3865,8 @@ class _AxesBase(martist.Artist):
         return ax2
 
     def twinx(self):
-        """Create a twin Axes sharing the xaxis
-
-        Call signature::
-
-          ax = twinx()
+        """
+        Create a twin Axes sharing the xaxis
 
         create a twin of Axes for generating a plot with a sharex
         x-axis but independent y axis.  The y-axis of self will have
@@ -3850,11 +3888,8 @@ class _AxesBase(martist.Artist):
         return ax2
 
     def twiny(self):
-        """Create a twin Axes sharing the yaxis
-
-        Call signature::
-
-          ax = twiny()
+        """
+        Create a twin Axes sharing the yaxis
 
         create a twin of Axes for generating a plot with a shared
         y-axis but independent x axis.  The x-axis of self will have

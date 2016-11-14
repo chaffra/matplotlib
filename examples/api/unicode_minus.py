@@ -1,4 +1,8 @@
 """
+=============
+Unicode minus
+=============
+
 You can use the proper typesetting unicode minus (see
 http://en.wikipedia.org/wiki/Plus_sign#Plus_sign) or the ASCII hypen
 for minus, which some people prefer.  The matplotlibrc param
@@ -9,6 +13,10 @@ The default is to use the unicode minus
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+
+# Fixing random state for reproducibility
+np.random.seed(19680801)
+
 
 matplotlib.rcParams['axes.unicode_minus'] = False
 fig, ax = plt.subplots()
