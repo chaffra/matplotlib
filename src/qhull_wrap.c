@@ -7,7 +7,7 @@
  */
 #include "Python.h"
 #include "numpy/noprefix.h"
-#include "qhull/qhull_a.h"
+#include "libqhull/qhull_a.h"
 #include <stdio.h>
 
 
@@ -108,6 +108,8 @@ delaunay_impl(int npoints, const double* x, const double* y,
     PyArrayObject* neighbors = NULL;
     int* triangles_ptr;
     int* neighbors_ptr;
+
+    QHULL_LIB_CHECK
 
     /* Allocate points. */
     points = (coordT*)malloc(npoints*ndim*sizeof(coordT));
@@ -310,7 +312,7 @@ delaunay(PyObject *self, PyObject *args)
 
 /* Return qhull version string for assistance in debugging. */
 static PyObject*
-version()
+version(void)
 {
     return PyBytes_FromString(qh_version);
 }

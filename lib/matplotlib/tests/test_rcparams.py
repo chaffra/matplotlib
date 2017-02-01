@@ -18,7 +18,6 @@ except ImportError:
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.tests import assert_str_equal
-from matplotlib.testing.decorators import cleanup, knownfailureif
 import matplotlib.colors as mcolors
 from itertools import chain
 import numpy as np
@@ -112,8 +111,8 @@ font.weight: normal""".lstrip()
     assert_str_equal(expected_str, str(rc))
 
     # test the find_all functionality
-    assert ['font.cursive', 'font.size'] == sorted(rc.find_all('i[vz]').keys())
-    assert ['font.family'] == list(six.iterkeys(rc.find_all('family')))
+    assert ['font.cursive', 'font.size'] == sorted(rc.find_all('i[vz]'))
+    assert ['font.family'] == list(rc.find_all('family'))
 
 
 def test_rcparams_update():
@@ -138,7 +137,6 @@ def test_rcparams_init():
             mpl.RcParams({'figure.figsize': (3.5, 42, 1)})
 
 
-@cleanup
 def test_Bug_2543():
     # Test that it possible to add all values to itself / deepcopy
     # This was not possible because validate_bool_maybe_none did not
@@ -153,7 +151,7 @@ def test_Bug_2543():
                                 category=UserWarning)
         with mpl.rc_context():
             _copy = mpl.rcParams.copy()
-            for key in six.iterkeys(_copy):
+            for key in _copy:
                 mpl.rcParams[key] = _copy[key]
             mpl.rcParams['text.dvipnghack'] = None
         with mpl.rc_context():
@@ -197,7 +195,6 @@ legend_color_test_ids = [
 ]
 
 
-@cleanup
 @pytest.mark.parametrize('color_type, param_dict, target', legend_color_tests,
                          ids=legend_color_test_ids)
 def test_legend_colors(color_type, param_dict, target):

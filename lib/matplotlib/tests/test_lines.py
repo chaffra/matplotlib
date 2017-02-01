@@ -4,21 +4,18 @@ Tests specific to the lines module.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
 import itertools
 import matplotlib.lines as mlines
-import nose
-from nose.tools import assert_true, assert_raises
+import pytest
 from timeit import repeat
 import numpy as np
 from cycler import cycler
 
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.testing.decorators import cleanup, image_comparison
+from matplotlib.testing.decorators import image_comparison
 
 
-@cleanup
 def test_invisible_Line_rendering():
     """
     Github issue #1256 identified a bug in Line.draw method
@@ -59,10 +56,9 @@ def test_invisible_Line_rendering():
 
     slowdown_factor = (t_unvisible_line/t_no_line)
     slowdown_threshold = 2 # trying to avoid false positive failures
-    assert_true(slowdown_factor < slowdown_threshold)
+    assert slowdown_factor < slowdown_threshold
 
 
-@cleanup
 def test_set_line_coll_dash():
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -83,7 +79,6 @@ def test_line_dashes():
     ax.plot(range(10), linestyle=(0, (3, 3)), lw=5)
 
 
-@cleanup
 def test_line_colors():
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -96,7 +91,6 @@ def test_line_colors():
     assert True
 
 
-@cleanup
 def test_linestyle_variants():
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
@@ -108,10 +102,9 @@ def test_linestyle_variants():
     assert True
 
 
-@cleanup
 def test_valid_linestyles():
     line = mlines.Line2D([], [])
-    with assert_raises(ValueError):
+    with pytest.raises(ValueError):
         line.set_linestyle('aardvark')
 
 
@@ -129,10 +122,9 @@ def test_drawstyle_variants():
         ax.set(xlim=(0, 2), ylim=(0, 2))
 
 
-@cleanup
 def test_valid_drawstyles():
     line = mlines.Line2D([], [])
-    with assert_raises(ValueError):
+    with pytest.raises(ValueError):
         line.set_drawstyle('foobar')
 
 
@@ -186,10 +178,6 @@ def test_lw_scaling():
 
 def test_nan_is_sorted():
     line = mlines.Line2D([], [])
-    assert_true(line._is_sorted(np.array([1, 2, 3])))
-    assert_true(line._is_sorted(np.array([1, np.nan, 3])))
-    assert_true(not line._is_sorted([3, 5] + [np.nan] * 100 + [0, 2]))
-
-
-if __name__ == '__main__':
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)
+    assert line._is_sorted(np.array([1, 2, 3]))
+    assert line._is_sorted(np.array([1, np.nan, 3]))
+    assert not line._is_sorted([3, 5] + [np.nan] * 100 + [0, 2])

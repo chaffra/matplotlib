@@ -7,13 +7,23 @@ import six
 
 import io
 import os
+import tempfile
+
+import pytest
 
 import numpy as np
-from matplotlib import cm, rcParams
+from matplotlib import checkdep_tex, cm, rcParams
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
-from matplotlib.testing.decorators import (image_comparison, knownfailureif,
-                                           cleanup)
+from matplotlib.testing.determinism import (_determinism_source_date_epoch,
+                                            _determinism_check)
+from matplotlib.testing.decorators import image_comparison
+from matplotlib import dviread
+
+
+needs_tex = pytest.mark.xfail(
+    not checkdep_tex(),
+    reason="This test needs a TeX installation")
 
 
 @image_comparison(baseline_images=['pdf_use14corefonts'],
@@ -38,7 +48,6 @@ and containing some French characters and the euro symbol:
     ax.axhline(0.5, linewidth=0.5)
 
 
-@cleanup
 def test_type42():
     rcParams['pdf.fonttype'] = 42
 
@@ -48,7 +57,6 @@ def test_type42():
     fig.savefig(io.BytesIO())
 
 
-@cleanup
 def test_multipage_pagecount():
     with PdfPages(io.BytesIO()) as pdf:
         assert pdf.get_pagecount() == 0
@@ -61,7 +69,6 @@ def test_multipage_pagecount():
         assert pdf.get_pagecount() == 2
 
 
-@cleanup
 def test_multipage_keep_empty():
     from matplotlib.backends.backend_pdf import PdfPages
     from tempfile import NamedTemporaryFile
@@ -96,10 +103,9 @@ def test_multipage_keep_empty():
     os.remove(filename)
 
 
-@cleanup
 def test_composite_image():
-    #Test that figures can be saved with and without combining multiple images
-    #(on a single set of axes) into a single composite image.
+    # Test that figures can be saved with and without combining multiple images
+    # (on a single set of axes) into a single composite image.
     X, Y = np.meshgrid(np.arange(-5, 5, 1), np.arange(-5, 5, 1))
     Z = np.sin(Y ** 2)
     fig = plt.figure()
@@ -110,11 +116,41 @@ def test_composite_image():
     plt.rcParams['image.composite_image'] = True
     with PdfPages(io.BytesIO()) as pdf:
         fig.savefig(pdf, format="pdf")
-        assert len(pdf._file._images.keys()) == 1
+        assert len(pdf._file._images) == 1
     plt.rcParams['image.composite_image'] = False
     with PdfPages(io.BytesIO()) as pdf:
         fig.savefig(pdf, format="pdf")
-        assert len(pdf._file._images.keys()) == 2
+        assert len(pdf._file._images) == 2
+
+
+def test_source_date_epoch():
+    """Test SOURCE_DATE_EPOCH support for PDF output"""
+    _determinism_source_date_epoch("pdf", b"/CreationDate (D:20000101000000Z)")
+
+
+def test_determinism_plain():
+    """Test for reproducible PDF output: simple figure"""
+    _determinism_check('', format="pdf")
+
+
+def test_determinism_images():
+    """Test for reproducible PDF output: figure with different images"""
+    _determinism_check('i', format="pdf")
+
+
+def test_determinism_hatches():
+    """Test for reproducible PDF output: figure with different hatches"""
+    _determinism_check('h', format="pdf")
+
+
+def test_determinism_markers():
+    """Test for reproducible PDF output: figure with different markers"""
+    _determinism_check('m', format="pdf")
+
+
+def test_determinism_all():
+    """Test for reproducible PDF output"""
+    _determinism_check(format="pdf")
 
 
 @image_comparison(baseline_images=['hatching_legend'],
@@ -140,3 +176,18 @@ def test_grayscale_alpha():
     ax.imshow(dd, interpolation='none', cmap='gray_r')
     ax.set_xticks([])
     ax.set_yticks([])
+
+
+@needs_tex
+def test_missing_psfont(monkeypatch):
+    """An error is raised if a TeX font lacks a Type-1 equivalent"""
+    def psfont(*args, **kwargs):
+        return dviread.PsFont(texname='texfont', psname='Some Font',
+                              effects=None, encoding=None, filename=None)
+
+    monkeypatch.setattr(dviread.PsfontsMap, '__getitem__', psfont)
+    rcParams['text.usetex'] = True
+    fig, ax = plt.subplots()
+    ax.text(0.5, 0.5, 'hello')
+    with tempfile.TemporaryFile() as tmpfile, pytest.raises(ValueError):
+        fig.savefig(tmpfile, format='pdf')

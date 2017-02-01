@@ -7,21 +7,9 @@ import pytest
 import numpy as np
 
 import matplotlib.pyplot as plt
-from matplotlib.testing.decorators import cleanup
 import matplotlib.category as cat
 
 import unittest
-
-
-class TestConvertToString(object):
-    testdata = [("abc", "abc"), ("Здравствуйте мир", "Здравствуйте мир"),
-                ("3.14", 3.14), ("nan", np.nan),
-                ("inf", np.inf), ("-inf", -np.inf)]
-    ids = ["string", "unicode", "decimal", "nan", "posinf", "neginf", ]
-
-    @pytest.mark.parametrize("expected, test", testdata, ids=ids)
-    def test_convert_to_string(self, expected, test):
-        assert expected == cat.convert_to_string(test)
 
 
 class TestUnitData(object):
@@ -155,9 +143,7 @@ class TestPlot(object):
         np.testing.assert_array_equal(axis.unit_data.locs, unit_data.locs)
         assert axis.unit_data.seq == unit_data.seq
 
-    @cleanup
     def test_plot_unicode(self):
-        # Image test would fail on numpy 1.6
         words = ['Здравствуйте', 'привет']
         locs = [0.0, 1.0]
         unit_data = MockUnitData(zip(words, locs))
@@ -168,7 +154,6 @@ class TestPlot(object):
 
         self.axis_test(ax.yaxis, locs, words, unit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("data")
     def test_plot_1d(self):
         fig, ax = plt.subplots()
@@ -177,7 +162,6 @@ class TestPlot(object):
 
         self.axis_test(ax.yaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("missing_data")
     def test_plot_1d_missing(self):
         fig, ax = plt.subplots()
@@ -186,7 +170,6 @@ class TestPlot(object):
 
         self.axis_test(ax.yaxis, self.dmticks, self.dmlabels, self.dmunit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("data")
     @pytest.mark.parametrize("bars",
                              [['a', 'b', 'c'],
@@ -203,7 +186,6 @@ class TestPlot(object):
 
         self.axis_test(ax.xaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
     @pytest.mark.parametrize("bars",
                              [['1', '11', '3'],
                               np.array(['1', '11', '3']),
@@ -221,7 +203,6 @@ class TestPlot(object):
         unitmap = MockUnitData([('1', 0), ('11', 1), ('3', 2)])
         self.axis_test(ax.xaxis, [0, 1, 2], ['1', '11', '3'], unitmap)
 
-    @cleanup
     @pytest.mark.usefixtures("data", "missing_data")
     def test_plot_2d(self):
         fig, ax = plt.subplots()
@@ -231,7 +212,6 @@ class TestPlot(object):
         self.axis_test(ax.xaxis, self.dmticks, self.dmlabels, self.dmunit_data)
         self.axis_test(ax.yaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("data", "missing_data")
     def test_scatter_2d(self):
 
@@ -242,7 +222,6 @@ class TestPlot(object):
         self.axis_test(ax.xaxis, self.dmticks, self.dmlabels, self.dmunit_data)
         self.axis_test(ax.yaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
     def test_plot_update(self):
         fig, ax = plt.subplots()
 

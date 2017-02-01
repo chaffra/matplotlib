@@ -12,27 +12,24 @@ import six
 import warnings
 
 import numpy as np
-from numpy import ma
-from . import artist, colors as mcolors
-from .artist import Artist
-from .cbook import (iterable, is_string_like, is_numlike, ls_mapper_r,
-                    pts_to_prestep, pts_to_poststep, pts_to_midstep, ls_mapper,
-                    is_hashable, STEP_LOOKUP_MAP)
 
+from . import artist, colors as mcolors, docstring, rcParams
+from .artist import Artist, allow_rasterization
+from .cbook import (
+    iterable, is_string_like, is_numlike, ls_mapper, ls_mapper_r, is_hashable,
+    STEP_LOOKUP_MAP)
+from .markers import MarkerStyle
 from .path import Path
 from .transforms import Bbox, TransformedPath, IdentityTransform
 
-from matplotlib import rcParams
-from .artist import allow_rasterization
-from matplotlib import docstring
-from matplotlib.markers import MarkerStyle
 # Imported here for backward compatibility, even though they don't
 # really belong.
-from matplotlib.markers import TICKLEFT, TICKRIGHT, TICKUP, TICKDOWN
-from matplotlib.markers import (
+from numpy import ma
+from . import _path
+from .markers import (
     CARETLEFT, CARETRIGHT, CARETUP, CARETDOWN,
-    CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE)
-from matplotlib import _path
+    CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE,
+    TICKLEFT, TICKRIGHT, TICKUP, TICKDOWN)
 
 
 def _get_dash_pattern(style):
@@ -267,8 +264,7 @@ class Line2D(Artist):
     drawStyles.update(_drawStyles_l)
     drawStyles.update(_drawStyles_s)
     # Need a list ordered with long names first:
-    drawStyleKeys = (list(six.iterkeys(_drawStyles_l)) +
-                     list(six.iterkeys(_drawStyles_s)))
+    drawStyleKeys = list(_drawStyles_l) + list(_drawStyles_s)
 
     # Referenced here to maintain API.  These are defined in
     # MarkerStyle
@@ -464,7 +460,7 @@ class Line2D(Artist):
 
         TODO: sort returned indices by distance
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
 
         if not is_numlike(self.pickradius):
@@ -605,7 +601,7 @@ class Line2D(Artist):
         ACCEPTS: float distance in points or callable pick function
         ``fn(artist, event)``
         """
-        if six.callable(p):
+        if callable(p):
             self._contains = p
         else:
             self.pickradius = p
@@ -858,11 +854,13 @@ class Line2D(Artist):
                 marker_path = marker.get_path()
                 marker_trans = marker.get_transform()
                 w = renderer.points_to_pixels(self._markersize)
-                if marker.get_marker() != ',':
+
+                if (is_string_like(marker.get_marker()) and
+                        marker.get_marker() == ','):
+                    gc.set_linewidth(0)
+                else:
                     # Don't scale for pixels, and don't stroke them
                     marker_trans = marker_trans.scale(w)
-                else:
-                    gc.set_linewidth(0)
 
                 renderer.draw_markers(gc, marker_path, marker_trans,
                                       subsampled, affine.frozen(),
@@ -1175,7 +1173,7 @@ class Line2D(Artist):
         """
         if ec is None:
             ec = 'auto'
-        if self._markeredgecolor != ec:
+        if self._markeredgecolor is None or self._markeredgecolor != ec:
             self.stale = True
         self._markeredgecolor = ec
 
@@ -1344,7 +1342,9 @@ class Line2D(Artist):
         self._markeredgecolor = other._markeredgecolor
         self._markeredgewidth = other._markeredgewidth
         self._dashSeq = other._dashSeq
+        self._us_dashSeq = other._us_dashSeq
         self._dashOffset = other._dashOffset
+        self._us_dashOffset = other._us_dashOffset
         self._dashcapstyle = other._dashcapstyle
         self._dashjoinstyle = other._dashjoinstyle
         self._solidcapstyle = other._solidcapstyle
@@ -1590,15 +1590,8 @@ class VertexSelector(object):
         """When the line is picked, update the set of selected indicies."""
         if event.artist is not self.line:
             return
-
-        for i in event.ind:
-            if i in self.ind:
-                self.ind.remove(i)
-            else:
-                self.ind.add(i)
-
-        ind = list(self.ind)
-        ind.sort()
+        self.ind ^= set(event.ind)
+        ind = sorted(self.ind)
         xdata, ydata = self.line.get_data()
         self.process_selected(ind, xdata[ind], ydata[ind])
 

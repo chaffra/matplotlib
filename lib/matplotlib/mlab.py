@@ -10,7 +10,7 @@ MATLAB compatible functions
     Coherence (normalized cross spectral density)
 
 :func:`csd`
-    Cross spectral density uing Welch's average periodogram
+    Cross spectral density using Welch's average periodogram
 
 :func:`detrend`
     Remove the mean or best fit line from an array
@@ -30,7 +30,7 @@ MATLAB compatible functions
     Principal Component Analysis
 
 :func:`psd`
-    Power spectral density uing Welch's average periodogram
+    Power spectral density using Welch's average periodogram
 
 :func:`rk4`
     A 4th order runge kutta integrator for 1D or ND systems
@@ -723,11 +723,11 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
         resultY = apply_window(resultY, window, axis=0)
         resultY = detrend(resultY, detrend_func, axis=0)
         resultY = np.fft.fft(resultY, n=pad_to, axis=0)[:numFreqs, :]
-        result = np.conjugate(result) * resultY
+        result = np.conj(result) * resultY
     elif mode == 'psd':
-        result = np.conjugate(result) * result
+        result = np.conj(result) * result
     elif mode == 'magnitude':
-        result = np.absolute(result)
+        result = np.abs(result)
     elif mode == 'angle' or mode == 'phase':
         # we unwrap the phase later to handle the onesided vs. twosided case
         result = np.angle(result)
@@ -802,7 +802,7 @@ def _single_spectrum_helper(x, mode, Fs=None, window=None, pad_to=None,
     if mode != 'complex':
         spec = spec.real
 
-    if len(spec.shape) == 2 and spec.shape[1] == 1:
+    if spec.ndim == 2 and spec.shape[1] == 1:
         spec = spec[:, 0]
 
     return spec, freqs
@@ -887,7 +887,7 @@ docstring.interpd.update(PSD=cbook.dedent("""
 @docstring.dedent_interpd
 def psd(x, NFFT=None, Fs=None, detrend=None, window=None,
         noverlap=None, pad_to=None, sides=None, scale_by_freq=None):
-    """
+    r"""
     Compute the power spectral density.
 
     Call signature::
@@ -1013,7 +1013,7 @@ def csd(x, y, NFFT=None, Fs=None, detrend=None, window=None,
                                      sides=sides, scale_by_freq=scale_by_freq,
                                      mode='psd')
 
-    if len(Pxy.shape) == 2:
+    if Pxy.ndim == 2:
         if Pxy.shape[1] > 1:
             Pxy = Pxy.mean(axis=1)
         else:
@@ -1273,7 +1273,12 @@ def specgram(x, NFFT=None, Fs=None, detrend=None, window=None,
 
     """
     if noverlap is None:
-        noverlap = 128
+        noverlap = 128  # default in _spectral_helper() is noverlap = 0
+    if NFFT is None:
+        NFFT = 256  # same default as in _spectral_helper()
+    if len(x) <= NFFT:
+        warnings.warn("Only one segment is calculated since parameter NFFT " +
+                      "(=%d) >= signal length (=%d)." % (NFFT, len(x)))
 
     spec, freqs, t = _spectral_helper(x=x, y=None, NFFT=NFFT, Fs=Fs,
                                       detrend_func=detrend, window=window,
@@ -1339,9 +1344,7 @@ def cohere(x, y, NFFT=256, Fs=2, detrend=detrend_none, window=window_hanning,
                  scale_by_freq)
     Pxy, f = csd(x, y, NFFT, Fs, detrend, window, noverlap, pad_to, sides,
                  scale_by_freq)
-
-    Cxy = np.divide(np.absolute(Pxy)**2, Pxx*Pyy)
-    Cxy.shape = (len(f),)
+    Cxy = np.abs(Pxy) ** 2 / (Pxx * Pxy)
     return Cxy, f
 
 
@@ -1472,7 +1475,7 @@ def cohere_pairs(X, ij, NFFT=256, Fs=2, detrend=detrend_none,
 
         FFTSlices[iCol] = Slices
         if preferSpeedOverMemory:
-            FFTConjSlices[iCol] = np.conjugate(Slices)
+            FFTConjSlices[iCol] = np.conj(Slices)
         Pxx[iCol] = np.divide(np.mean(abs(Slices)**2, axis=0), normVal)
     del Slices, ind, windowVals
 
@@ -1490,7 +1493,7 @@ def cohere_pairs(X, ij, NFFT=256, Fs=2, detrend=detrend_none,
         if preferSpeedOverMemory:
             Pxy = FFTSlices[i] * FFTConjSlices[j]
         else:
-            Pxy = FFTSlices[i] * np.conjugate(FFTSlices[j])
+            Pxy = FFTSlices[i] * np.conj(FFTSlices[j])
         if numSlices > 1:
             Pxy = np.mean(Pxy, axis=0)
 #       Pxy = np.divide(Pxy, normVal)
@@ -1673,16 +1676,12 @@ class PCA(object):
         of variance<minfrac
         '''
         x = np.asarray(x)
-
-        ndims = len(x.shape)
-
-        if (x.shape[-1] != self.numcols):
+        if x.shape[-1] != self.numcols:
             raise ValueError('Expected an array with dims[-1]==%d' %
                              self.numcols)
-
         Y = np.dot(self.Wt, self.center(x).T).T
         mask = self.fracs >= minfrac
-        if ndims == 2:
+        if x.ndim == 2:
             Yreduced = Y[:, mask]
         else:
             Yreduced = Y[mask]
@@ -1732,31 +1731,27 @@ def prctile(x, p=(0.0, 25.0, 50.0, 75.0, 100.0)):
         """Returns the point at the given fraction between a and b, where
         'fraction' must be between 0 and 1.
         """
-        return a + (b - a)*fraction
+        return a + (b - a) * fraction
 
-    scalar = True
-    if cbook.iterable(p):
-        scalar = False
     per = np.array(p)
-    values = np.array(x).ravel()  # copy
-    values.sort()
+    values = np.sort(x, axis=None)
 
-    idxs = per/100. * (values.shape[0] - 1)
-    ai = idxs.astype(np.int)
+    idxs = per / 100 * (values.shape[0] - 1)
+    ai = idxs.astype(int)
     bi = ai + 1
     frac = idxs % 1
 
     # handle cases where attempting to interpolate past last index
     cond = bi >= len(values)
-    if scalar:
+    if per.ndim:
+        ai[cond] -= 1
+        bi[cond] -= 1
+        frac[cond] += 1
+    else:
         if cond:
             ai -= 1
             bi -= 1
             frac += 1
-    else:
-        ai[cond] -= 1
-        bi[cond] -= 1
-        frac[cond] += 1
 
     return _interpolate(values[ai], values[bi], frac)
 
@@ -1931,7 +1926,7 @@ def dist_point_to_segment(p, s0, s1):
       *p*, *s0*, *s1* are *xy* sequences
 
     This algorithm from
-    http://softsurfer.com/Archive/algorithm_0102/algorithm_0102.htm#Distance%20to%20Ray%20or%20Segment
+    http://geomalgorithms.com/a02-_lines.html
     """
     p = np.asarray(p, float)
     s0 = np.asarray(s0, float)
@@ -2082,7 +2077,7 @@ def rms_flat(a):
     """
     Return the root mean square of all the elements of *a*, flattened out.
     """
-    return np.sqrt(np.mean(np.absolute(a)**2))
+    return np.sqrt(np.mean(np.abs(a) ** 2))
 
 
 def l1norm(a):
@@ -2091,7 +2086,7 @@ def l1norm(a):
 
     Implemented as a separate function (not a call to :func:`norm` for speed).
     """
-    return np.sum(np.absolute(a))
+    return np.sum(np.abs(a))
 
 
 def l2norm(a):
@@ -2100,7 +2095,7 @@ def l2norm(a):
 
     Implemented as a separate function (not a call to :func:`norm` for speed).
     """
-    return np.sqrt(np.sum(np.absolute(a)**2))
+    return np.sqrt(np.sum(np.abs(a) ** 2))
 
 
 def norm_flat(a, p=2):
@@ -2115,9 +2110,9 @@ def norm_flat(a, p=2):
     # This function was being masked by a more general norm later in
     # the file.  We may want to simply delete it.
     if p == 'Infinity':
-        return np.amax(np.absolute(a))
+        return np.max(np.abs(a))
     else:
-        return (np.sum(np.absolute(a)**p))**(1.0/p)
+        return np.sum(np.abs(a) ** p) ** (1 / p)
 
 
 def frange(xini, xfin=None, delta=None, **kw):
@@ -2415,17 +2410,14 @@ def rec_groupby(r, groupby, stats):
     """
     # build a dictionary from groupby keys-> list of indices into r with
     # those keys
-    rowd = dict()
+    rowd = {}
     for i, row in enumerate(r):
         key = tuple([row[attr] for attr in groupby])
         rowd.setdefault(key, []).append(i)
 
-    # sort the output by groupby keys
-    keys = list(six.iterkeys(rowd))
-    keys.sort()
-
     rows = []
-    for key in keys:
+    # sort the output by groupby keys
+    for key in sorted(rowd):
         row = list(key)
         # get the indices for this groupby key
         ind = rowd[key]
@@ -2497,11 +2489,11 @@ def rec_join(key, r1, r2, jointype='inner', defaults=None, r1postfix='1',
     def makekey(row):
         return tuple([row[name] for name in key])
 
-    r1d = dict([(makekey(row), i) for i, row in enumerate(r1)])
-    r2d = dict([(makekey(row), i) for i, row in enumerate(r2)])
+    r1d = {makekey(row): i for i, row in enumerate(r1)}
+    r2d = {makekey(row): i for i, row in enumerate(r2)}
 
-    r1keys = set(r1d.keys())
-    r2keys = set(r2d.keys())
+    r1keys = set(r1d)
+    r2keys = set(r2d)
 
     common_keys = r1keys & r2keys
 
@@ -2581,7 +2573,7 @@ def rec_join(key, r1, r2, jointype='inner', defaults=None, r1postfix='1',
 
     if jointype != 'inner' and defaults is not None:
         # fill in the defaults enmasse
-        newrec_fields = list(six.iterkeys(newrec.dtype.fields))
+        newrec_fields = list(newrec.dtype.fields)
         for k, v in six.iteritems(defaults):
             if k in newrec_fields:
                 newrec[k] = v
@@ -2778,11 +2770,7 @@ def csv2rec(fname, comments='#', skiprows=0, checkrows=0, delimiter=',',
 
     def ismissing(name, val):
         "Should the value val in column name be masked?"
-
-        if val == missing or val == missingd.get(name) or val == '':
-            return True
-        else:
-            return False
+        return val == missing or val == missingd.get(name) or val == ''
 
     def with_default_value(func, default):
         def newfunc(name, val):
@@ -2825,18 +2813,14 @@ def csv2rec(fname, comments='#', skiprows=0, checkrows=0, delimiter=',',
 
     def get_func(name, item, func):
         # promote functions in this order
-        funcmap = {mybool: myint, myint: myfloat, myfloat: mydate,
-                   mydate: mydateparser, mydateparser: mystr}
-        try:
-            func(name, item)
-        except:
-            if func == mystr:
-                raise ValueError('Could not find a working conversion '
-                                 'function')
-            else:
-                return get_func(name, item, funcmap[func])    # recurse
-        else:
+        funcs = [mybool, myint, myfloat, mydate, mydateparser, mystr]
+        for func in funcs[funcs.index(func):]:
+            try:
+                func(name, item)
+            except Exception:
+                continue
             return func
+        raise ValueError('Could not find a working conversion function')
 
     # map column names that clash with builtins -- TODO - extend this list
     itemd = {
@@ -2919,7 +2903,7 @@ def csv2rec(fname, comments='#', skiprows=0, checkrows=0, delimiter=',',
     process_skiprows(reader)
 
     if needheader:
-        while 1:
+        while True:
             # skip past any comments and consume one line of column header
             row = next(reader)
             if (len(row) and comments is not None and
@@ -3433,12 +3417,9 @@ def less_simple_linear_interpolation(x, y, xi, extrap=False):
     only for a small number of points in relatively non-intensive use
     cases.  For real linear interpolation, use scipy.
     """
-    if cbook.is_scalar(xi):
-        xi = [xi]
-
     x = np.asarray(x)
     y = np.asarray(y)
-    xi = np.asarray(xi)
+    xi = np.atleast_1d(xi)
 
     s = list(y.shape)
     s[0] = len(xi)

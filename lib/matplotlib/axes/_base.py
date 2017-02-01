@@ -9,7 +9,7 @@ from six.moves import xrange
 import itertools
 import warnings
 import math
-from operator import itemgetter
+from operator import attrgetter
 
 import numpy as np
 
@@ -41,6 +41,10 @@ rcParams = matplotlib.rcParams
 
 is_string_like = cbook.is_string_like
 is_sequence_of_strings = cbook.is_sequence_of_strings
+
+_hold_msg = """axes.hold is deprecated.
+    See the API Changes document (http://matplotlib.org/api/api_changes.html)
+    for more details."""
 
 
 def _process_plot_format(fmt):
@@ -263,7 +267,7 @@ class _process_plot_var_args(object):
         """
         prop_keys = self._prop_keys
         if ignore is None:
-            ignore = set([])
+            ignore = set()
         prop_keys = prop_keys - ignore
 
         if any(all(kw.get(k, None) is None for kw in kwargs)
@@ -309,8 +313,8 @@ class _process_plot_var_args(object):
         # *user* explicitly specifies a marker which should be an error.
         # We also want to prevent advancing the cycler if there are no
         # defaults needed after ignoring the given properties.
-        ignores = set(['marker', 'markersize', 'markeredgecolor',
-                       'markerfacecolor', 'markeredgewidth'])
+        ignores = {'marker', 'markersize', 'markeredgecolor',
+                   'markerfacecolor', 'markeredgewidth'}
         # Also ignore anything provided by *kwargs*.
         for k, v in six.iteritems(kwargs):
             if v is not None:
@@ -392,25 +396,13 @@ class _process_plot_var_args(object):
         return ret
 
     def _grab_next_args(self, *args, **kwargs):
-
-        remaining = args
-        while 1:
-
-            if len(remaining) == 0:
-                return
-            if len(remaining) <= 3:
-                for seg in self._plot_args(remaining, kwargs):
-                    yield seg
-                return
-
-            if is_string_like(remaining[2]):
-                isplit = 3
-            else:
-                isplit = 2
-
-            for seg in self._plot_args(remaining[:isplit], kwargs):
+        while args:
+            this, args = args[:2], args[2:]
+            if args and is_string_like(args[0]):
+                this += args[0],
+                args = args[1:]
+            for seg in self._plot_args(this, kwargs):
                 yield seg
-            remaining = remaining[isplit:]
 
 
 class _AxesBase(martist.Artist):
@@ -491,6 +483,8 @@ class _AxesBase(martist.Artist):
             self._position = rect
         else:
             self._position = mtransforms.Bbox.from_bounds(*rect)
+        if self._position.width < 0 or self._position.height < 0:
+            raise ValueError('Width and height specified must be non-negative')
         self._originalPosition = self._position.frozen()
         # self.set_axes(self)
         self.axes = self
@@ -539,6 +533,9 @@ class _AxesBase(martist.Artist):
         self._rasterization_zorder = None
 
         self._hold = rcParams['axes.hold']
+        if self._hold is None:
+            self._hold = True
+
         self._connected = {}  # a dict from events to (id, func)
         self.cla()
         # funcs used to format x and y - fall back on major formatters
@@ -1030,6 +1027,7 @@ class _AxesBase(martist.Artist):
         self._xmargin = rcParams['axes.xmargin']
         self._ymargin = rcParams['axes.ymargin']
         self._tight = None
+        self._use_sticky_edges = True
         self._update_transScale()  # needed?
 
         self._get_lines = _process_plot_var_args(self)
@@ -1188,13 +1186,24 @@ class _AxesBase(martist.Artist):
         else:
             self.set_prop_cycle('color', clist)
 
+    @cbook.deprecated("2.0")
     def ishold(self):
-        """return the HOLD status of the axes"""
+        """return the HOLD status of the axes
+
+        The `hold` mechanism is deprecated and will be removed in
+        v3.0.
+        """
+
         return self._hold
 
+    @cbook.deprecated("2.0", message=_hold_msg)
     def hold(self, b=None):
         """
         Set the hold state
+
+        The ``hold`` mechanism is deprecated and will be removed in
+        v3.0.  The behavior will remain consistent with the
+        long-time default value of True.
 
         If *hold* is *None* (default), toggle the *hold* state.  Else
         set the *hold* state to boolean value *b*.
@@ -1263,7 +1272,7 @@ class _AxesBase(martist.Artist):
           etc.
           =====   =====================
         """
-        if aspect in ('equal', 'auto'):
+        if cbook.is_string_like(aspect) and aspect in ('equal', 'auto'):
             self._aspect = aspect
         else:
             self._aspect = float(aspect)  # raise ValueError if necessary
@@ -1313,12 +1322,11 @@ class _AxesBase(martist.Artist):
           =====  ============
 
         """
-        if (anchor in list(six.iterkeys(mtransforms.Bbox.coefs)) or
-                len(anchor) == 2):
+        if anchor in mtransforms.Bbox.coefs or len(anchor) == 2:
             self._anchor = anchor
         else:
             raise ValueError('argument must be among %s' %
-                             ', '.join(six.iterkeys(mtransforms.Bbox.coefs)))
+                             ', '.join(mtransforms.Bbox.coefs))
         self.stale = True
 
     def get_data_ratio(self):
@@ -1331,8 +1339,8 @@ class _AxesBase(martist.Artist):
         xmin, xmax = self.get_xbound()
         ymin, ymax = self.get_ybound()
 
-        xsize = max(math.fabs(xmax - xmin), 1e-30)
-        ysize = max(math.fabs(ymax - ymin), 1e-30)
+        xsize = max(abs(xmax - xmin), 1e-30)
+        ysize = max(abs(ymax - ymin), 1e-30)
 
         return ysize / xsize
 
@@ -1344,8 +1352,8 @@ class _AxesBase(martist.Artist):
         xmin, xmax = self.get_xbound()
         ymin, ymax = self.get_ybound()
 
-        xsize = max(math.fabs(math.log10(xmax) - math.log10(xmin)), 1e-30)
-        ysize = max(math.fabs(math.log10(ymax) - math.log10(ymin)), 1e-30)
+        xsize = max(abs(math.log10(xmax) - math.log10(xmin)), 1e-30)
+        ysize = max(abs(math.log10(ymax) - math.log10(ymin)), 1e-30)
 
         return ysize / xsize
 
@@ -1417,8 +1425,8 @@ class _AxesBase(martist.Artist):
             xmin, xmax = math.log10(xmin), math.log10(xmax)
             ymin, ymax = math.log10(ymin), math.log10(ymax)
 
-        xsize = max(math.fabs(xmax - xmin), 1e-30)
-        ysize = max(math.fabs(ymax - ymin), 1e-30)
+        xsize = max(abs(xmax - xmin), 1e-30)
+        ysize = max(abs(ymax - ymin), 1e-30)
 
         l, b, w, h = position.bounds
         box_aspect = fig_aspect * (h / w)
@@ -1917,15 +1925,14 @@ class _AxesBase(martist.Artist):
         # limits and set the bound to be the bounds of the xydata.
         # Otherwise, it will compute the bounds of it's current data
         # and the data in xydata
-
-        if iterable(xys) and not len(xys):
+        xys = np.asarray(xys)
+        if not len(xys):
             return
-        if not isinstance(xys, np.ma.MaskedArray):
-            xys = np.asarray(xys)
         self.dataLim.update_from_data_xy(xys, self.ignore_existing_data_limits,
                                          updatex=updatex, updatey=updatey)
         self.ignore_existing_data_limits = False
 
+    @cbook.deprecated('2.0', alternative='update_datalim')
     def update_datalim_numerix(self, x, y):
         """
         Update the data lim bbox with seq of xy tups
@@ -2033,6 +2040,28 @@ class _AxesBase(martist.Artist):
         accepts: [ *True* | *False* ]
         """
         self._autoscaleYon = b
+
+    @property
+    def use_sticky_edges(self):
+        """
+        When autoscaling, whether to obey all `Artist.sticky_edges`.
+
+        Default is ``True``.
+
+        Setting this to ``False`` ensures that the specified margins
+        will be applied, even if the plot includes an image, for
+        example, which would otherwise force a view limit to coincide
+        with its data limit.
+
+        The changing this property does not change the plot until
+        `autoscale` or `autoscale_view` is called.
+        """
+        return self._use_sticky_edges
+
+    @use_sticky_edges.setter
+    def use_sticky_edges(self, b):
+        self._use_sticky_edges = bool(b)
+        # No effect until next autoscaling, which will mark the axes as stale.
 
     def set_xmargin(self, m):
         """
@@ -2173,6 +2202,10 @@ class _AxesBase(martist.Artist):
             if axis in ['y', 'both']:
                 self._autoscaleYon = bool(enable)
                 scaley = self._autoscaleYon
+        if tight and scalex:
+            self._xmargin = 0
+        if tight and scaley:
+            self._ymargin = 0
         self.autoscale_view(tight=tight, scalex=scalex, scaley=scaley)
 
     def autoscale_view(self, tight=None, scalex=True, scaley=True):
@@ -2182,113 +2215,86 @@ class _AxesBase(martist.Artist):
         setting *scaley* to *False*.  The autoscaling preserves any
         axis direction reversal that has already been done.
 
+        If *tight* is *False*, the axis major locator will be used
+        to expand the view limits if rcParams['axes.autolimit_mode']
+        is 'round_numbers'.  Note that any margins that are in effect
+        will be applied first, regardless of whether *tight* is
+        *True* or *False*.  Specifying *tight* as *True* or *False*
+        saves the setting as a private attribute of the Axes; specifying
+        it as *None* (the default) applies the previously saved value.
+
         The data limits are not updated automatically when artist data are
         changed after the artist has been added to an Axes instance.  In that
         case, use :meth:`matplotlib.axes.Axes.relim` prior to calling
         autoscale_view.
         """
-        if tight is None:
-            _tight = self._tight
-        else:
-            _tight = self._tight = bool(tight)
+        if tight is not None:
+            self._tight = bool(tight)
 
-        if self._xmargin or self._ymargin:
-            margins = {
-                'top': True,
-                'bottom': True,
-                'left': True,
-                'right': True
-            }
-            for artist_set in [self.collections, self.patches, self.lines,
-                               self.artists, self.images]:
-                for artist in artist_set:
-                    artist_margins = artist.margins
-                    for key in ['left', 'right', 'top', 'bottom']:
-                        margins[key] &= artist_margins.get(key, True)
-
-            if self._xmargin:
-                for axes in self._shared_x_axes.get_siblings(self):
-                    for artist_set in [axes.collections, axes.patches,
-                                       axes.lines, axes.artists, axes.images]:
-                        for artist in artist_set:
-                            artist_margins = artist.margins
-                            for key in ['left', 'right']:
-                                margins[key] &= artist_margins.get(key, True)
-
-            if self._ymargin:
-                for axes in self._shared_y_axes.get_siblings(self):
-                    for artist_set in [axes.collections, axes.patches,
-                                       axes.lines, axes.artists, axes.images]:
-                        for artist in artist_set:
-                            artist_margins = artist.margins
-                            for key in ['top', 'bottom']:
-                                margins[key] &= artist_margins.get(key, True)
-        else:
-            margins = {
-                'top': False,
-                'bottom': False,
-                'left': False,
-                'right': False
-            }
+        if self.use_sticky_edges and (self._xmargin or self._ymargin):
+            stickies = [artist.sticky_edges for artist in self.get_children()]
+            x_stickies = sum([sticky.x for sticky in stickies], [])
+            y_stickies = sum([sticky.y for sticky in stickies], [])
+            if self.get_xscale().lower() == 'log':
+                x_stickies = [xs for xs in x_stickies if xs > 0]
+            if self.get_yscale().lower() == 'log':
+                y_stickies = [ys for ys in y_stickies if ys > 0]
+        else:  # Small optimization.
+            x_stickies, y_stickies = [], []
 
         def handle_single_axis(scale, autoscaleon, shared_axes, interval,
-                               minpos, axis, margin, do_lower_margin,
-                               do_upper_margin, set_bound):
-            if scale and autoscaleon:
-                shared = shared_axes.get_siblings(self)
-                dl = [ax.dataLim for ax in shared]
-                # ignore non-finite data limits if good limits exist
-                finite_dl = [d for d in dl if np.isfinite(d).all()]
-                if len(finite_dl):
-                    dl = finite_dl
+                               minpos, axis, margin, stickies, set_bound):
 
-                bb = mtransforms.BboxBase.union(dl)
-                x0, x1 = getattr(bb, interval)
-                locator = axis.get_major_locator()
-                try:
-                    # e.g., DateLocator has its own nonsingular()
-                    x0, x1 = locator.nonsingular(x0, x1)
-                except AttributeError:
-                    # Default nonsingular for, e.g., MaxNLocator
-                    x0, x1 = mtransforms.nonsingular(
-                        x0, x1, increasing=False, expander=0.05)
+            if not (scale and autoscaleon):
+                return  # nothing to do...
 
-                if margin > 0 and (do_lower_margin or do_upper_margin):
-                    if axis.get_scale() == 'linear':
-                        delta = (x1 - x0) * margin
-                        if do_lower_margin:
-                            x0 -= delta
-                        if do_upper_margin:
-                            x1 += delta
-                    else:
-                        # If we have a non-linear scale, we need to
-                        # add the margin in figure space and then
-                        # transform back
-                        minpos = getattr(bb, minpos)
-                        transform = axis.get_transform()
-                        inverse_trans = transform.inverted()
-                        x0, x1 = axis._scale.limit_range_for_scale(
-                            x0, x1, minpos)
-                        x0t, x1t = transform.transform([x0, x1])
-                        delta = (x1t - x0t) * margin
-                        if do_lower_margin:
-                            x0t -= delta
-                        if do_upper_margin:
-                            x1t += delta
-                        x0, x1 = inverse_trans.transform([x0t, x1t])
+            shared = shared_axes.get_siblings(self)
+            dl = [ax.dataLim for ax in shared]
+            # ignore non-finite data limits if good limits exist
+            finite_dl = [d for d in dl if np.isfinite(d).all()]
+            if len(finite_dl):
+                dl = finite_dl
 
-                if not _tight:
-                    x0, x1 = locator.view_limits(x0, x1)
-                set_bound(x0, x1)
+            bb = mtransforms.BboxBase.union(dl)
+            x0, x1 = getattr(bb, interval)
+            locator = axis.get_major_locator()
+            try:
+                # e.g., DateLocator has its own nonsingular()
+                x0, x1 = locator.nonsingular(x0, x1)
+            except AttributeError:
+                # Default nonsingular for, e.g., MaxNLocator
+                x0, x1 = mtransforms.nonsingular(
+                    x0, x1, increasing=False, expander=0.05)
+
+            # Add the margin in figure space and then transform back, to handle
+            # non-linear scales.
+            minpos = getattr(bb, minpos)
+            transform = axis.get_transform()
+            inverse_trans = transform.inverted()
+            # We cannot use exact equality due to floating point issues e.g.
+            # with streamplot.
+            do_lower_margin = not np.any(np.isclose(x0, stickies))
+            do_upper_margin = not np.any(np.isclose(x1, stickies))
+            x0, x1 = axis._scale.limit_range_for_scale(x0, x1, minpos)
+            x0t, x1t = transform.transform([x0, x1])
+            delta = (x1t - x0t) * margin
+            if do_lower_margin:
+                x0t -= delta
+            if do_upper_margin:
+                x1t += delta
+            x0, x1 = inverse_trans.transform([x0t, x1t])
+
+            if not self._tight:
+                x0, x1 = locator.view_limits(x0, x1)
+            set_bound(x0, x1)
+            # End of definition of internal function 'handle_single_axis'.
 
         handle_single_axis(
-            scalex, self._autoscaleXon, self._shared_x_axes,
-            'intervalx', 'minposx', self.xaxis, self._xmargin,
-            margins['left'], margins['right'], self.set_xbound)
+            scalex, self._autoscaleXon, self._shared_x_axes, 'intervalx',
+            'minposx', self.xaxis, self._xmargin, x_stickies, self.set_xbound)
         handle_single_axis(
-            scaley, self._autoscaleYon, self._shared_y_axes,
-            'intervaly', 'minposy', self.yaxis, self._ymargin,
-            margins['bottom'], margins['top'], self.set_ybound)
+            scaley, self._autoscaleYon, self._shared_y_axes, 'intervaly',
+            'minposy', self.yaxis, self._ymargin, y_stickies, self.set_ybound)
 
     def _get_axis_list(self):
         return (self.xaxis, self.yaxis)
@@ -2346,36 +2352,35 @@ class _AxesBase(martist.Artist):
             artists.remove(self._left_title)
             artists.remove(self._right_title)
 
-        if self.figure.canvas.is_saving():
-            dsu = [(a.zorder, a) for a in artists]
-        else:
-            dsu = [(a.zorder, a) for a in artists
-                   if (not a.get_animated() or a in self.images)]
-
-        dsu.sort(key=itemgetter(0))
+        if not self.figure.canvas.is_saving():
+            artists = [a for a in artists
+                       if not a.get_animated() or a in self.images]
+        artists = sorted(artists, key=attrgetter('zorder'))
 
         # rasterize artists with negative zorder
         # if the minimum zorder is negative, start rasterization
         rasterization_zorder = self._rasterization_zorder
         if (rasterization_zorder is not None and
-                len(dsu) > 0 and dsu[0][0] < rasterization_zorder):
+                artists and artists[0].zorder < rasterization_zorder):
             renderer.start_rasterizing()
-            dsu_rasterized = [l for l in dsu if l[0] < rasterization_zorder]
-            dsu = [l for l in dsu if l[0] >= rasterization_zorder]
+            artists_rasterized = [a for a in artists
+                                  if a.zorder < rasterization_zorder]
+            artists = [a for a in artists
+                       if a.zorder >= rasterization_zorder]
         else:
-            dsu_rasterized = []
+            artists_rasterized = []
 
         # the patch draws the background rectangle -- the frame below
         # will draw the edges
         if self.axison and self._frameon:
             self.patch.draw(renderer)
 
-        if dsu_rasterized:
-            for zorder, a in dsu_rasterized:
+        if artists_rasterized:
+            for a in artists_rasterized:
                 a.draw(renderer)
             renderer.stop_rasterizing()
 
-        mimage._draw_list_compositing_images(renderer, self, dsu)
+        mimage._draw_list_compositing_images(renderer, self, artists)
 
         renderer.close_group('axes')
         self._cachedRenderer = renderer
@@ -2859,8 +2864,7 @@ class _AxesBase(martist.Artist):
         if 'xmax' in kw:
             right = kw.pop('xmax')
         if kw:
-            raise ValueError("unrecognized kwargs: %s" %
-                             list(six.iterkeys(kw)))
+            raise ValueError("unrecognized kwargs: %s" % list(kw))
 
         if right is None and iterable(left):
             left, right = left
@@ -2912,21 +2916,33 @@ class _AxesBase(martist.Artist):
     get_xscale.__doc__ = "Return the xaxis scale string: %s""" % (
         ", ".join(mscale.get_scale_names()))
 
-    @docstring.dedent_interpd
     def set_xscale(self, value, **kwargs):
         """
         Set the x-axis scale
 
-        Set the scaling of the x-axis: %(scale)s
+        Parameters
+        ----------
+        value : {"linear", "log", "symlog", "logit"}
+            scaling strategy to apply
 
-        ACCEPTS: [%(scale)s]
+        Notes
+        -----
+        Different kwargs are accepted, depending on the scale. See
+        the `~matplotlib.scale` module for more information.
 
-        Different kwargs are accepted, depending on the scale:
-        %(scale_docs)s
+        See also
+        --------
+        matplotlib.scale.LinearScale : linear transfrom
+
+        matplotlib.scale.LogTransform : log transform
+
+        matplotlib.scale.SymmetricalLogTransform : symlog transform
+
+        matplotlib.scale.LogisticTransform : logit transform
         """
         # If the scale is being set to log, clip nonposx to prevent headaches
         # around zero
-        if value.lower() == 'log' and 'nonposx' not in kwargs.keys():
+        if value.lower() == 'log' and 'nonposx' not in kwargs:
             kwargs['nonposx'] = 'clip'
 
         g = self.get_shared_x_axes()
@@ -2992,18 +3008,22 @@ class _AxesBase(martist.Artist):
                                  self.xaxis.get_ticklabels(minor=minor,
                                                            which=which))
 
-    @docstring.dedent_interpd
     def set_xticklabels(self, labels, fontdict=None, minor=False, **kwargs):
         """
-        Set the xtick labels with list of strings *labels*
+        Set the xtick labels with list of string labels
 
-        Return a list of axis text instances.
+        Parameters
+        ----------
+        labels : list of str
+            list of string labels
 
-        *kwargs* set the :class:`~matplotlib.text.Text` properties.
-        Valid properties are
-        %(Text)s
+        Returns
+        -------
+        A list of `~matplotlib.text.Text` instances
 
-        ACCEPTS: sequence of strings
+        Other Parameters
+        -----------------
+        **kwargs : `~matplotlib.text.Text` properties.
         """
         if fontdict is not None:
             kwargs.update(fontdict)
@@ -3133,15 +3153,13 @@ class _AxesBase(martist.Artist):
         0 m, is at the top.
 
         >>> set_ylim(5000, 0)
-
         """
         if 'ymin' in kw:
             bottom = kw.pop('ymin')
         if 'ymax' in kw:
             top = kw.pop('ymax')
         if kw:
-            raise ValueError("unrecognized kwargs: %s" %
-                             list(six.iterkeys(kw)))
+            raise ValueError("unrecognized kwargs: %s" % list(kw))
 
         if top is None and iterable(bottom):
             bottom, top = bottom
@@ -3194,20 +3212,33 @@ class _AxesBase(martist.Artist):
     get_yscale.__doc__ = "Return the yaxis scale string: %s""" % (
         ", ".join(mscale.get_scale_names()))
 
-    @docstring.dedent_interpd
     def set_yscale(self, value, **kwargs):
-        """Set the y-axis scale
+        """
+        Set the y-axis scale
 
-        Set the scaling of the y-axis: %(scale)s
+        Parameters
+        ----------
+        value : {"linear", "log", "symlog", "logit"}
+            scaling strategy to apply
 
-        ACCEPTS: [%(scale)s]
+        Notes
+        -----
+        Different kwargs are accepted, depending on the scale. See
+        the `~matplotlib.scale` module for more information.
 
-        Different kwargs are accepted, depending on the scale:
-        %(scale_docs)s
+        See also
+        --------
+        matplotlib.scale.LinearScale : linear transfrom
+
+        matplotlib.scale.LogTransform : log transform
+
+        matplotlib.scale.SymmetricalLogTransform : symlog transform
+
+        matplotlib.scale.LogisticTransform : logit transform
         """
         # If the scale is being set to log, clip nonposy to prevent headaches
         # around zero
-        if value.lower() == 'log' and 'nonposy' not in kwargs.keys():
+        if value.lower() == 'log' and 'nonposy' not in kwargs:
             kwargs['nonposy'] = 'clip'
 
         g = self.get_shared_y_axes()
@@ -3276,18 +3307,22 @@ class _AxesBase(martist.Artist):
                                  self.yaxis.get_ticklabels(minor=minor,
                                                            which=which))
 
-    @docstring.dedent_interpd
     def set_yticklabels(self, labels, fontdict=None, minor=False, **kwargs):
         """
-        Set the y tick labels with list of strings *labels*
+        Set the y-tick labels with list of strings labels
 
-        Return a list of :class:`~matplotlib.text.Text` instances.
+        Parameters
+        ----------
+        labels : list of str
+            list of string labels
 
-        *kwargs* set :class:`~matplotlib.text.Text` properties for the labels.
-        Valid properties are
-        %(Text)s
+        Returns
+        -------
+        A list of `~matplotlib.text.Text` instances.
 
-        ACCEPTS: sequence of strings
+        Other Parameters
+        ----------------
+        **kwargs : `~matplotlib.text.Text` properties.
         """
         if fontdict is not None:
             kwargs.update(fontdict)
@@ -3777,9 +3812,8 @@ class _AxesBase(martist.Artist):
 
         Returns *True* / *False*, {}
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
-
         return self.patch.contains(mouseevent)
 
     def contains_point(self, point):
@@ -3868,20 +3902,27 @@ class _AxesBase(martist.Artist):
         """
         Create a twin Axes sharing the xaxis
 
-        create a twin of Axes for generating a plot with a sharex
-        x-axis but independent y axis.  The y-axis of self will have
-        ticks on left and the returned axes will have ticks on the
-        right. To ensure tick marks of both axis align, see
-        :class:`~matplotlib.ticker.LinearLocator`
+        Create a new Axes instance with an invisible x-axis and an independent
+        y-axis positioned opposite to the original one (i.e. at right). The
+        x-axis autoscale setting will be inherited from the original Axes.
+        To ensure that the tick marks of both y-axes align, see
+        `~matplotlib.ticker.LinearLocator`
 
-        .. note::
-            For those who are 'picking' artists while using twinx, pick
-            events are only called for the artists in the top-most axes.
+        Returns
+        -------
+        ax_twin : Axes
+            The newly created Axes instance
+
+        Notes
+        -----
+        For those who are 'picking' artists while using twinx, pick
+        events are only called for the artists in the top-most axes.
         """
         ax2 = self._make_twin_axes(sharex=self)
         ax2.yaxis.tick_right()
         ax2.yaxis.set_label_position('right')
         ax2.yaxis.set_offset_position('right')
+        ax2.set_autoscalex_on(self.get_autoscalex_on())
         self.yaxis.tick_left()
         ax2.xaxis.set_visible(False)
         ax2.patch.set_visible(False)
@@ -3891,19 +3932,26 @@ class _AxesBase(martist.Artist):
         """
         Create a twin Axes sharing the yaxis
 
-        create a twin of Axes for generating a plot with a shared
-        y-axis but independent x axis.  The x-axis of self will have
-        ticks on bottom and the returned axes will have ticks on the
-        top.
+        Create a new Axes instance with an invisible y-axis and an independent
+        x-axis positioned opposite to the original one (i.e. at top). The
+        y-axis autoscale setting will be inherited from the original Axes.
+        To ensure that the tick marks of both x-axes align, see
+        `~matplotlib.ticker.LinearLocator`
 
-        .. note::
-            For those who are 'picking' artists while using twiny, pick
-            events are only called for the artists in the top-most axes.
+        Returns
+        -------
+        ax_twin : Axes
+            The newly created Axes instance
+
+        Notes
+        -----
+        For those who are 'picking' artists while using twiny, pick
+        events are only called for the artists in the top-most axes.
         """
-
         ax2 = self._make_twin_axes(sharey=self)
         ax2.xaxis.tick_top()
         ax2.xaxis.set_label_position('top')
+        ax2.set_autoscaley_on(self.get_autoscaley_on())
         self.xaxis.tick_bottom()
         ax2.yaxis.set_visible(False)
         ax2.patch.set_visible(False)

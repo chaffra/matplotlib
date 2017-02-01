@@ -2358,7 +2358,7 @@ class Parser(object):
         p.rbracket      <<= Literal(']').suppress()
         p.bslash        <<= Literal('\\')
 
-        p.space         <<= oneOf(list(six.iterkeys(self._space_widths)))
+        p.space         <<= oneOf(list(self._space_widths))
         p.customspace   <<= (Suppress(Literal(r'\hspace'))
                           - ((p.lbrace + p.float_literal + p.rbrace)
                             | Error(r"Expected \hspace{n}")))
@@ -2367,17 +2367,17 @@ class Parser(object):
         p.single_symbol <<= Regex(r"([a-zA-Z0-9 +\-*/<>=:,.;!\?&'@()\[\]|%s])|(\\[%%${}\[\]_|])" %
                                unicode_range)
         p.snowflake     <<= Suppress(p.bslash) + oneOf(self._snowflake)
-        p.symbol_name   <<= (Combine(p.bslash + oneOf(list(six.iterkeys(tex2uni)))) +
+        p.symbol_name   <<= (Combine(p.bslash + oneOf(list(tex2uni))) +
                           FollowedBy(Regex("[^A-Za-z]").leaveWhitespace() | StringEnd()))
         p.symbol        <<= (p.single_symbol | p.symbol_name).leaveWhitespace()
 
         p.apostrophe    <<= Regex("'+")
 
-        p.c_over_c      <<= Suppress(p.bslash) + oneOf(list(six.iterkeys(self._char_over_chars)))
+        p.c_over_c      <<= Suppress(p.bslash) + oneOf(list(self._char_over_chars))
 
         p.accent        <<= Group(
                              Suppress(p.bslash)
-                           + oneOf(list(six.iterkeys(self._accent_map)) + list(self._wide_accents))
+                           + oneOf(list(self._accent_map) + list(self._wide_accents))
                            - p.placeable
                          )
 
@@ -2410,7 +2410,7 @@ class Parser(object):
         p.ambi_delim    <<= oneOf(list(self._ambi_delim))
         p.left_delim    <<= oneOf(list(self._left_delim))
         p.right_delim   <<= oneOf(list(self._right_delim))
-        p.right_delim_safe <<= oneOf(list(self._right_delim - set(['}'])) + [r'\}'])
+        p.right_delim_safe <<= oneOf(list(self._right_delim - {'}'}) + [r'\}'])
 
         p.genfrac       <<= Group(
                              Suppress(Literal(r"\genfrac"))
@@ -2877,21 +2877,18 @@ class Parser(object):
                 return toks[0] # .asList()
             else:
                 nucleus = toks[0]
-        elif len(toks) == 2:
-            op, next = toks
-            nucleus = Hbox(0.0)
+        elif len(toks) in (2, 3):
+            # single subscript or superscript
+            nucleus = toks[0] if len(toks) == 3 else Hbox(0.0)
+            op, next = toks[-2:]
             if op == '_':
                 sub = next
             else:
                 super = next
-        elif len(toks) == 3:
-            nucleus, op, next = toks
-            if op == '_':
-                sub = next
-            else:
-                super = next
-        elif len(toks) == 5:
-            nucleus, op1, next1, op2, next2 = toks
+        elif len(toks) in (4, 5):
+            # subscript and superscript
+            nucleus = toks[0] if len(toks) == 5 else Hbox(0.0)
+            op1, next1, op2, next2 = toks[-4:]
             if op1 == op2:
                 if op1 == '_':
                     raise ParseFatalException("Double subscript")
@@ -3183,8 +3180,8 @@ class Parser(object):
     def _auto_sized_delimiter(self, front, middle, back):
         state = self.get_state()
         if len(middle):
-            height = max([x.height for x in middle])
-            depth = max([x.depth for x in middle])
+            height = max(x.height for x in middle)
+            depth = max(x.depth for x in middle)
             factor = None
         else:
             height = 0

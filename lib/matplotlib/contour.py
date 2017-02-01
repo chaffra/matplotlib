@@ -226,20 +226,8 @@ class ContourLabeler(object):
 
     def print_label(self, linecontour, labelwidth):
         "Return *False* if contours are too short for a label."
-        lcsize = len(linecontour)
-        if lcsize > 10 * labelwidth:
-            return True
-
-        xmax = np.amax(linecontour[:, 0])
-        xmin = np.amin(linecontour[:, 0])
-        ymax = np.amax(linecontour[:, 1])
-        ymin = np.amin(linecontour[:, 1])
-
-        lw = labelwidth
-        if (xmax - xmin) > 1.2 * lw or (ymax - ymin) > 1.2 * lw:
-            return True
-        else:
-            return False
+        return (len(linecontour) > 10 * labelwidth
+                or (np.ptp(linecontour, axis=0) > 1.2 * labelwidth).any())
 
     def too_close(self, x, y, lw):
         "Return *True* if a label is already near this location."
@@ -338,7 +326,7 @@ class ContourLabeler(object):
         else:
             if isinstance(fmt, dict):
                 return fmt[lev]
-            elif six.callable(fmt):
+            elif callable(fmt):
                 return fmt(lev)
             else:
                 return fmt % lev
@@ -433,7 +421,7 @@ class ContourLabeler(object):
         if np.all(dd == 0):  # Must deal with case of zero length label
             rotation = 0.0
         else:
-            rotation = np.arctan2(dd[1], dd[0]) * 180.0 / np.pi
+            rotation = np.rad2deg(np.arctan2(dd[1], dd[0]))
 
         if self.rightside_up:
             # Fix angle so text is never upside-down
@@ -766,6 +754,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
         same as levels for line contours; half-way between
         levels for filled contours.  See :meth:`_process_colors`.
     """
+
     def __init__(self, ax, *args, **kwargs):
         """
         Draw contour lines or filled regions, depending on
@@ -804,7 +793,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
             level0segs = [polygon0] and level0kinds = [polygon0kinds].
 
         Keyword arguments are as described in
-        :class:`~matplotlib.contour.QuadContourSet` object.
+        :attr:`matplotlib.contour.QuadContourSet.contour_doc`.
 
         **Examples:**
 
@@ -937,8 +926,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                     edgecolors='none',
                     alpha=self.alpha,
                     transform=self.get_transform(),
-                    zorder=zorder,
-                    margins=False)
+                    zorder=zorder)
                 self.ax.add_collection(col, autolim=False)
                 self.collections.append(col)
         else:
@@ -959,11 +947,17 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                     linestyles=[lstyle],
                     alpha=self.alpha,
                     transform=self.get_transform(),
-                    zorder=zorder,
-                    margins=False)
+                    zorder=zorder)
                 col.set_label('_nolegend_')
                 self.ax.add_collection(col, autolim=False)
                 self.collections.append(col)
+
+        for col in self.collections:
+            col.sticky_edges.x[:] = [self._mins[0], self._maxs[0]]
+            col.sticky_edges.y[:] = [self._mins[1], self._maxs[1]]
+        self.ax.update_datalim([self._mins, self._maxs])
+        self.ax.autoscale_view(tight=True)
+
         self.changed()  # set the colors
 
     def get_transform(self):
@@ -1050,8 +1044,8 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
         self.levels = args[0]
         self.allsegs = args[1]
         self.allkinds = len(args) > 2 and args[2] or None
-        self.zmax = np.amax(self.levels)
-        self.zmin = np.amin(self.levels)
+        self.zmax = np.max(self.levels)
+        self.zmin = np.min(self.levels)
         self._auto = False
 
         # Check lengths of levels and allsegs.
@@ -1069,21 +1063,10 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
             raise ValueError('allkinds has different length to allsegs')
 
         # Determine x,y bounds and update axes data limits.
-        havelimits = False
-        for segs in self.allsegs:
-            for seg in segs:
-                seg = np.asarray(seg)
-                if havelimits:
-                    min = np.minimum(min, seg.min(axis=0))
-                    max = np.maximum(max, seg.max(axis=0))
-                else:
-                    min = seg.min(axis=0)
-                    max = seg.max(axis=0)
-                    havelimits = True
-
-        if havelimits:
-            self.ax.update_datalim([min, max])
-            self.ax.autoscale_view(tight=True)
+        flatseglist = [s for seg in self.allsegs for s in seg]
+        points = np.concatenate(flatseglist, axis=0)
+        self._mins = points.min(axis=0)
+        self._maxs = points.max(axis=0)
 
     def _get_allsegs_and_allkinds(self):
         """
@@ -1179,13 +1162,13 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
                         lev = np.asarray(level_arg).astype(np.float64)
                 except:
                     raise TypeError(
-                        "Last %s arg must give levels; see help(%s)" %
-                        (fn, fn))
+                        "Last {0} arg must give levels; see help({0})"
+                        .format(fn))
             self.levels = lev
         if self.filled and len(self.levels) < 2:
             raise ValueError("Filled contours require at least 2 levels.")
 
-        if len(self.levels) > 1 and np.amin(np.diff(self.levels)) <= 0.0:
+        if len(self.levels) > 1 and np.min(np.diff(self.levels)) <= 0.0:
             if hasattr(self, '_corner_mask') and self._corner_mask == 'legacy':
                 warnings.warn("Contour levels are not increasing")
             else:
@@ -1215,8 +1198,8 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
         with line contours.
         """
         # following are deprecated and will be removed in 2.2
-        self._vmin = np.amin(self.levels)
-        self._vmax = np.amax(self.levels)
+        self._vmin = np.min(self.levels)
+        self._vmax = np.max(self.levels)
 
         # Make a private _levels to include extended regions; we
         # want to leave the original levels attribute unchanged.
@@ -1423,16 +1406,6 @@ class QuadContourSet(ContourSet):
         Same as levels for line contours; half-way between
         levels for filled contours.  See :meth:`_process_colors` method.
     """
-    def __init__(self, ax, *args, **kwargs):
-        """
-        Calculate and draw contour lines or filled regions, depending
-        on whether keyword arg 'filled' is False (default) or True.
-
-        The first argument of the initializer must be an axes
-        object.  The remaining arguments and keyword arguments
-        are described in QuadContourSet.contour_doc.
-        """
-        ContourSet.__init__(self, ax, *args, **kwargs)
 
     def _process_args(self, *args, **kwargs):
         """
@@ -1448,6 +1421,8 @@ class QuadContourSet(ContourSet):
                 contour_generator = args[0].Cntr
             else:
                 contour_generator = args[0]._contour_generator
+            self._mins = args[0]._mins
+            self._maxs = args[0]._maxs
         else:
             self._corner_mask = kwargs.get('corner_mask', None)
             if self._corner_mask is None:
@@ -1480,12 +1455,8 @@ class QuadContourSet(ContourSet):
                 x = transformed_pts[..., 0]
                 y = transformed_pts[..., 1]
 
-            x0 = ma.minimum(x)
-            x1 = ma.maximum(x)
-            y0 = ma.minimum(y)
-            y1 = ma.maximum(y)
-            self.ax.update_datalim([(x0, y0), (x1, y1)])
-            self.ax.autoscale_view(tight=True)
+            self._mins = [ma.min(x), ma.min(y)]
+            self._maxs = [ma.max(x), ma.max(y)]
 
         if self._corner_mask == 'legacy':
             self.Cntr = contour_generator

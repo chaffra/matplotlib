@@ -124,14 +124,18 @@ class TimerWx(TimerBase):
     '''
     Subclass of :class:`backend_bases.TimerBase` that uses WxTimer events.
 
-    Attributes:
-    * interval: The time between timer events in milliseconds. Default
-        is 1000 ms.
-    * single_shot: Boolean flag indicating whether this timer should
-        operate as single shot (run once and then stop). Defaults to False.
-    * callbacks: Stores list of (func, args) tuples that will be called
-        upon timer events. This list can be manipulated directly, or the
-        functions add_callback and remove_callback can be used.
+    Attributes
+    ----------
+    interval : int
+        The time between timer events in milliseconds. Default is 1000 ms.
+    single_shot : bool
+        Boolean flag indicating whether this timer should operate as single
+        shot (run once and then stop). Defaults to False.
+    callbacks : list
+        Stores list of (func, args) tuples that will be called upon timer
+        events. This list can be manipulated directly, or the functions
+        `add_callback` and `remove_callback` can be used.
+
     '''
 
     def __init__(self, parent, *args, **kwargs):
@@ -681,6 +685,9 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         self.Bind(wx.EVT_MIDDLE_DCLICK, self._onMiddleButtonDClick)
         self.Bind(wx.EVT_MIDDLE_UP, self._onMiddleButtonUp)
 
+        self.Bind(wx.EVT_MOUSE_CAPTURE_CHANGED, self._onCaptureLost)
+        self.Bind(wx.EVT_MOUSE_CAPTURE_LOST, self._onCaptureLost)
+
         if wx.VERSION_STRING < "2.9":
             # only needed in 2.8 to reduce flicker
             self.SetBackgroundStyle(wx.BG_STYLE_CUSTOM)
@@ -736,13 +743,14 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         events through the backend's native event loop. Implemented only
         for backends with GUIs.
 
-        optional arguments:
+        Other Parameters
+        ----------------
+        interval : scalar
+            Timer interval in milliseconds
+        callbacks : list
+            Sequence of (func, args, kwargs) where ``func(*args, **kwargs)``
+            will be executed by the timer every *interval*.
 
-        *interval*
-          Timer interval in milliseconds
-        *callbacks*
-          Sequence of (func, args, kwargs) where func(*args, **kwargs) will
-          be executed by the timer every *interval*.
         """
         return TimerWx(self, *args, **kwargs)
 
@@ -1018,12 +1026,23 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         evt.Skip()
         FigureCanvasBase.key_release_event(self, key, guiEvent=evt)
 
+    def _set_capture(self, capture=True):
+        """control wx mouse capture """
+        if self.HasCapture():
+            self.ReleaseMouse()
+        if capture:
+            self.CaptureMouse()
+
+    def _onCaptureLost(self, evt):
+        """Capture changed or lost"""
+        self._set_capture(False)
+
     def _onRightButtonDown(self, evt):
         """Start measuring on an axis."""
         x = evt.GetX()
         y = self.figure.bbox.height - evt.GetY()
         evt.Skip()
-        self.CaptureMouse()
+        self._set_capture(True)
         FigureCanvasBase.button_press_event(self, x, y, 3, guiEvent=evt)
 
     def _onRightButtonDClick(self, evt):
@@ -1031,7 +1050,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         x = evt.GetX()
         y = self.figure.bbox.height - evt.GetY()
         evt.Skip()
-        self.CaptureMouse()
+        self._set_capture(True)
         FigureCanvasBase.button_press_event(self, x, y, 3,
                                             dblclick=True, guiEvent=evt)
 
@@ -1040,8 +1059,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         x = evt.GetX()
         y = self.figure.bbox.height - evt.GetY()
         evt.Skip()
-        if self.HasCapture():
-            self.ReleaseMouse()
+        self._set_capture(False)
         FigureCanvasBase.button_release_event(self, x, y, 3, guiEvent=evt)
 
     def _onLeftButtonDown(self, evt):
@@ -1049,7 +1067,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         x = evt.GetX()
         y = self.figure.bbox.height - evt.GetY()
         evt.Skip()
-        self.CaptureMouse()
+        self._set_capture(True)
         FigureCanvasBase.button_press_event(self, x, y, 1, guiEvent=evt)
 
     def _onLeftButtonDClick(self, evt):
@@ -1057,7 +1075,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         x = evt.GetX()
         y = self.figure.bbox.height - evt.GetY()
         evt.Skip()
-        self.CaptureMouse()
+        self._set_capture(True)
         FigureCanvasBase.button_press_event(self, x, y, 1,
                                             dblclick=True, guiEvent=evt)
 
@@ -1067,8 +1085,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         y = self.figure.bbox.height - evt.GetY()
         # print 'release button', 1
         evt.Skip()
-        if self.HasCapture():
-            self.ReleaseMouse()
+        self._set_capture(False)
         FigureCanvasBase.button_release_event(self, x, y, 1, guiEvent=evt)
 
     # Add middle button events
@@ -1077,7 +1094,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         x = evt.GetX()
         y = self.figure.bbox.height - evt.GetY()
         evt.Skip()
-        self.CaptureMouse()
+        self._set_capture(True)
         FigureCanvasBase.button_press_event(self, x, y, 2, guiEvent=evt)
 
     def _onMiddleButtonDClick(self, evt):
@@ -1085,7 +1102,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         x = evt.GetX()
         y = self.figure.bbox.height - evt.GetY()
         evt.Skip()
-        self.CaptureMouse()
+        self._set_capture(True)
         FigureCanvasBase.button_press_event(self, x, y, 2,
                                             dblclick=True, guiEvent=evt)
 
@@ -1095,8 +1112,7 @@ class FigureCanvasWx(FigureCanvasBase, wx.Panel):
         y = self.figure.bbox.height - evt.GetY()
         # print 'release button', 1
         evt.Skip()
-        if self.HasCapture():
-            self.ReleaseMouse()
+        self._set_capture(False)
         FigureCanvasBase.button_release_event(self, x, y, 2, guiEvent=evt)
 
     def _onMouseWheel(self, evt):
@@ -1331,10 +1347,13 @@ class FigureManagerWx(FigureManagerBase):
     It is instantiated by GcfWx whenever a new figure is created. GcfWx is
     responsible for managing multiple instances of FigureManagerWx.
 
-    public attrs
+    Attributes
+    ----------
+    canvas : `FigureCanvas`
+        a FigureCanvasWx(wx.Panel) instance
+    window : wxFrame
+        a wxFrame instance - wxpython.org/Phoenix/docs/html/Frame.html
 
-    canvas - a FigureCanvasWx(wx.Panel) instance
-    window - a wxFrame instance - wxpython.org/Phoenix/docs/html/Frame.html
     """
 
     def __init__(self, canvas, num, frame):

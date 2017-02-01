@@ -1,6 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 import itertools
+import pickle
 from weakref import ref
 import warnings
 
@@ -21,10 +22,8 @@ from matplotlib.cbook import delete_masked_points as dmp
 def test_is_string_like():
     y = np.arange(10)
     assert not cbook.is_string_like(y)
-    y.shape = 10, 1
-    assert not cbook.is_string_like(y)
-    y.shape = 1, 10
-    assert not cbook.is_string_like(y)
+    assert not cbook.is_string_like(y.reshape((-1, 1)))
+    assert not cbook.is_string_like(y.reshape((1, -1)))
 
     assert cbook.is_string_like("hello world")
     assert not cbook.is_string_like(10)
@@ -34,9 +33,6 @@ def test_is_string_like():
 
     y = np.array(y)
     assert not cbook.is_string_like(y)
-
-    y = np.array(y, dtype=object)
-    assert cbook.is_string_like(y)
 
 
 def test_is_sequence_of_strings():
@@ -65,7 +61,7 @@ def test_restrict_dict():
     assert d3 == {'foo': 'bar'}
     d4 = cbook.restrict_dict(d, {})
     assert d4 == {}
-    d5 = cbook.restrict_dict(d, set(['foo', 2]))
+    d5 = cbook.restrict_dict(d, {'foo', 2})
     assert d5 == {'foo': 'bar'}
     # check that d was not modified
     assert d == {'foo': 'bar', 1: 2}
@@ -113,14 +109,6 @@ class Test_delete_masked_points(object):
                     self.arr_rgba.take(ind, axis=0))
         assert_array_equal(actual[0], expected[0])
         assert_array_equal(actual[1], expected[1])
-
-
-def test_allequal():
-    assert cbook.allequal([1, 1, 1])
-    assert not cbook.allequal([1, 1, 0])
-    assert cbook.allequal([])
-    assert cbook.allequal(('a', 'a'))
-    assert not cbook.allequal(('a', 'b'))
 
 
 class Test_boxplot_stats(object):
@@ -183,73 +171,36 @@ class Test_boxplot_stats(object):
 
     def test_form_dict_keys(self):
         for res in self.std_results:
-            keys = sorted(list(res.keys()))
-            for key in keys:
-                assert key in self.known_keys
+            assert set(res) <= set(self.known_keys)
 
     def test_results_baseline(self):
         res = self.std_results[0]
-        for key in list(self.known_nonbootstrapped_res.keys()):
-            if key != 'fliers':
-                assert_statement = assert_approx_equal
-            else:
-                assert_statement = assert_array_almost_equal
-
-            assert_statement(
-                res[key],
-                self.known_nonbootstrapped_res[key]
-            )
+        for key, value in self.known_nonbootstrapped_res.items():
+            assert_array_almost_equal(res[key], value)
 
     def test_results_bootstrapped(self):
         results = cbook.boxplot_stats(self.data, bootstrap=10000)
         res = results[0]
-        for key in list(self.known_bootstrapped_ci.keys()):
-            assert_approx_equal(
-                res[key],
-                self.known_bootstrapped_ci[key]
-            )
+        for key, value in self.known_bootstrapped_ci.items():
+            assert_approx_equal(res[key], value)
 
     def test_results_whiskers_float(self):
         results = cbook.boxplot_stats(self.data, whis=3)
         res = results[0]
-        for key in list(self.known_whis3_res.keys()):
-            if key != 'fliers':
-                assert_statement = assert_approx_equal
-            else:
-                assert_statement = assert_array_almost_equal
-
-            assert_statement(
-                res[key],
-                self.known_whis3_res[key]
-            )
+        for key, value in self.known_whis3_res.items():
+            assert_array_almost_equal(res[key], value)
 
     def test_results_whiskers_range(self):
         results = cbook.boxplot_stats(self.data, whis='range')
         res = results[0]
-        for key in list(self.known_res_range.keys()):
-            if key != 'fliers':
-                assert_statement = assert_approx_equal
-            else:
-                assert_statement = assert_array_almost_equal
-
-            assert_statement(
-                res[key],
-                self.known_res_range[key]
-            )
+        for key, value in self.known_res_range.items():
+            assert_array_almost_equal(res[key], value)
 
     def test_results_whiskers_percentiles(self):
         results = cbook.boxplot_stats(self.data, whis=[5, 95])
         res = results[0]
-        for key in list(self.known_res_percentiles.keys()):
-            if key != 'fliers':
-                assert_statement = assert_approx_equal
-            else:
-                assert_statement = assert_array_almost_equal
-
-            assert_statement(
-                res[key],
-                self.known_res_percentiles[key]
-            )
+        for key, value in self.known_res_percentiles.items():
+            assert_array_almost_equal(res[key], value)
 
     def test_results_withlabels(self):
         labels = ['Test1', 2, 'ardvark', 4]
@@ -329,6 +280,10 @@ class Test_callback_registry(object):
 
     def dummy(self):
         pass
+
+    def test_pickling(self):
+        assert hasattr(pickle.loads(pickle.dumps(cbook.CallbackRegistry())),
+                       "callbacks")
 
 
 def test_sanitize_sequence():
@@ -460,18 +415,14 @@ def test_to_midstep():
     assert_array_equal(y1_target, y1s)
 
 
-def test_step_fails():
+@pytest.mark.parametrize(
+    "args",
+    [(np.arange(12).reshape(3, 4), 'a'),
+     (np.arange(12), 'a'),
+     (np.arange(12), np.arange(3))])
+def test_step_fails(args):
     with pytest.raises(ValueError):
-        cbook._step_validation(np.arange(12).reshape(3, 4), 'a')
-
-    with pytest.raises(ValueError):
-        cbook._step_validation(np.arange(12), 'a')
-
-    with pytest.raises(ValueError):
-        cbook._step_validation(np.arange(12))
-
-    with pytest.raises(ValueError):
-        cbook._step_validation(np.arange(12), np.arange(3))
+        cbook.pts_to_prestep(*args)
 
 
 def test_grouper():
@@ -521,3 +472,64 @@ def test_flatiter():
 
     assert 0 == next(it)
     assert 1 == next(it)
+
+
+class TestFuncParser(object):
+    x_test = np.linspace(0.01, 0.5, 3)
+    validstrings = ['linear', 'quadratic', 'cubic', 'sqrt', 'cbrt',
+                    'log', 'log10', 'log2', 'x**{1.5}', 'root{2.5}(x)',
+                    'log{2}(x)',
+                    'log(x+{0.5})', 'log10(x+{0.1})', 'log{2}(x+{0.1})',
+                    'log{2}(x+{0})']
+    results = [(lambda x: x),
+               np.square,
+               (lambda x: x**3),
+               np.sqrt,
+               (lambda x: x**(1. / 3)),
+               np.log,
+               np.log10,
+               np.log2,
+               (lambda x: x**1.5),
+               (lambda x: x**(1 / 2.5)),
+               (lambda x: np.log2(x)),
+               (lambda x: np.log(x + 0.5)),
+               (lambda x: np.log10(x + 0.1)),
+               (lambda x: np.log2(x + 0.1)),
+               (lambda x: np.log2(x))]
+
+    bounded_list = [True, True, True, True, True,
+                    False, False, False, True, True,
+                    False,
+                    True, True, True,
+                    False]
+
+    @pytest.mark.parametrize("string, func",
+                             zip(validstrings, results),
+                             ids=validstrings)
+    def test_values(self, string, func):
+        func_parser = cbook._StringFuncParser(string)
+        f = func_parser.function
+        assert_array_almost_equal(f(self.x_test), func(self.x_test))
+
+    @pytest.mark.parametrize("string", validstrings, ids=validstrings)
+    def test_inverse(self, string):
+        func_parser = cbook._StringFuncParser(string)
+        f = func_parser.func_info
+        fdir = f.function
+        finv = f.inverse
+        assert_array_almost_equal(finv(fdir(self.x_test)), self.x_test)
+
+    @pytest.mark.parametrize("string", validstrings, ids=validstrings)
+    def test_get_inverse(self, string):
+        func_parser = cbook._StringFuncParser(string)
+        finv1 = func_parser.inverse
+        finv2 = func_parser.func_info.inverse
+        assert_array_almost_equal(finv1(self.x_test), finv2(self.x_test))
+
+    @pytest.mark.parametrize("string, bounded",
+                             zip(validstrings, bounded_list),
+                             ids=validstrings)
+    def test_bounded(self, string, bounded):
+        func_parser = cbook._StringFuncParser(string)
+        b = func_parser.is_bounded_0_1
+        assert_array_equal(b, bounded)

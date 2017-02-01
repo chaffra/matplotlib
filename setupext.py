@@ -1,9 +1,13 @@
 from __future__ import print_function, absolute_import
 
+from importlib import import_module
+
 from distutils import sysconfig
 from distutils import version
 from distutils.core import Extension
-from distutils.util import get_platform
+
+import distutils.command.build_ext
+
 import glob
 import multiprocessing
 import os
@@ -268,8 +272,8 @@ else:
     print_status = print_message = print_raw = print_line
 
 
-# Remove the -Wstrict-prototypesoption, is it's not valid for C++
-customize_compiler = sysconfig.customize_compiler
+# Remove the -Wstrict-prototypes option, is it's not valid for C++
+customize_compiler = distutils.command.build_ext.customize_compiler
 
 
 def my_customize_compiler(compiler):
@@ -280,7 +284,7 @@ def my_customize_compiler(compiler):
         pass
     return retval
 
-sysconfig.customize_compiler = my_customize_compiler
+distutils.command.build_ext.customize_compiler = my_customize_compiler
 
 
 def make_extension(name, files, *args, **kwargs):
@@ -449,12 +453,19 @@ class SetupPackage(object):
 
     def check(self):
         """
-        Checks whether the dependencies are met.  Should raise a
-        `CheckFailed` exception if the dependency could not be met,
-        otherwise return a string indicating a version number or some
-        other message indicating what was found.
+        Checks whether the build dependencies are met.  Should raise a
+        `CheckFailed` exception if the dependency could not be met, otherwise
+        return a string indicating a version number or some other message
+        indicating what was found.
         """
         pass
+
+    def runtime_check(self):
+        """
+        True if the runtime dependencies of the backend are met.  Assumes that
+        the build-time dependencies are met.
+        """
+        return True
 
     def get_packages(self):
         """
@@ -620,6 +631,7 @@ class OptionalPackage(SetupPackage):
     optional = True
     force = False
     config_category = "packages"
+    default_config = "auto"
 
     @classmethod
     def get_config(cls):
@@ -629,7 +641,7 @@ class OptionalPackage(SetupPackage):
         insensitively defined as 1, true, yes, on for True) or opted-out (case
         insensitively defined as 0, false, no, off for False).
         """
-        conf = "auto"
+        conf = cls.default_config
         if config is not None and config.has_option(cls.config_category, cls.name):
             try:
                 conf = config.getboolean(cls.config_category, cls.name)
@@ -728,10 +740,11 @@ class Matplotlib(SetupPackage):
             'matplotlib.sphinxext',
             'matplotlib.style',
             'matplotlib.testing',
-            'matplotlib.testing.nose',
-            'matplotlib.testing.nose.plugins',
+            'matplotlib.testing._nose',
+            'matplotlib.testing._nose.plugins',
             'matplotlib.testing.jpl_units',
             'matplotlib.tri',
+            'matplotlib.cbook'
             ]
 
     def get_py_modules(self):
@@ -803,6 +816,7 @@ class Toolkits(OptionalPackage):
 class Tests(OptionalPackage):
     name = "tests"
     nose_min_version = '0.11.1'
+    default_config = False
 
     def check(self):
         super(Tests, self).check()
@@ -998,11 +1012,14 @@ class Numpy(SetupPackage):
         ext.define_macros.append(('NPY_NO_DEPRECATED_API',
                                   'NPY_1_7_API_VERSION'))
 
+        # Allow NumPy's printf format specifiers in C++.
+        ext.define_macros.append(('__STDC_FORMAT_MACROS', 1))
+
     def get_setup_requires(self):
-        return ['numpy>=1.6']
+        return ['numpy>=1.7.1']
 
     def get_install_requires(self):
-        return ['numpy>=1.6']
+        return ['numpy>=1.7.1']
 
 
 class LibAgg(SetupPackage):
@@ -1333,14 +1350,14 @@ class Qhull(SetupPackage):
         self.__class__.found_external = True
         try:
             return self._check_for_pkg_config(
-                'qhull', 'qhull/qhull_a.h', min_version='2003.1')
+                'libqhull', 'libqhull/qhull_a.h', min_version='2015.2')
         except CheckFailed as e:
             self.__class__.found_pkgconfig = False
             # Qhull may not be in the pkg-config system but may still be
             # present on this system, so check if the header files can be
             # found.
             include_dirs = [
-                os.path.join(x, 'qhull') for x in get_include_dirs()]
+                os.path.join(x, 'libqhull') for x in get_include_dirs()]
             if has_include_file(include_dirs, 'qhull_a.h'):
                 return 'Using system Qhull (version unknown, no pkg-config info)'
             else:
@@ -1353,7 +1370,7 @@ class Qhull(SetupPackage):
                                        default_libraries=['qhull'])
         else:
             ext.include_dirs.append('extern')
-            ext.sources.extend(glob.glob('extern/qhull/*.c'))
+            ext.sources.extend(glob.glob('extern/libqhull/*.c'))
 
 
 class TTConv(SetupPackage):
@@ -1673,6 +1690,16 @@ class BackendTkAgg(OptionalBackendPackage):
     def check(self):
         return "installing; run-time loading from Python Tcl / Tk"
 
+    def runtime_check(self):
+        """ Checks whether TkAgg runtime dependencies are met
+        """
+        pkg_name = 'tkinter' if PY3min else 'Tkinter'
+        try:
+            import_module(pkg_name)
+        except ImportError:
+            return False
+        return True
+
     def get_extension(self):
         sources = [
             'src/py_converters.cpp',
@@ -1797,12 +1824,6 @@ class BackendGtk(OptionalBackendPackage):
 
 class BackendGtkAgg(BackendGtk):
     name = "gtkagg"
-
-    def check(self):
-        try:
-            return super(BackendGtkAgg, self).check()
-        except:
-            raise
 
     def get_package_data(self):
         return {'matplotlib': ['mpl-data/*.glade']}
@@ -2060,17 +2081,14 @@ class BackendQtBase(OptionalBackendPackage):
             p = multiprocessing.Pool()
 
         except:
-            # Can't do multiprocessing, fall back to normal approach ( this will fail if importing both PyQt4 and PyQt5 )
+            # Can't do multiprocessing, fall back to normal approach
+            # (this will fail if importing both PyQt4 and PyQt5).
             try:
                 # Try in-process
                 msg = self.callback(self)
-
             except RuntimeError:
-                raise CheckFailed("Could not import: are PyQt4 & PyQt5 both installed?")
-
-            except:
-                # Raise any other exceptions
-                raise
+                raise CheckFailed(
+                    "Could not import: are PyQt4 & PyQt5 both installed?")
 
         else:
             # Multiprocessing OK

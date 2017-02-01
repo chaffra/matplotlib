@@ -39,7 +39,7 @@ assumed.  If you want to use a custom time zone, pass a
 locators you create.  See `pytz <http://pythonhosted.org/pytz/>`_ for
 information on :mod:`pytz` and timezone handling.
 
-The `dateutil module <https://dateutil.readthedocs.io>`_ provides
+The `dateutil module <https://dateutil.readthedocs.io/en/stable/>`_ provides
 additional code to handle date ticking, making it easy to place ticks
 on any kinds of dates.  See examples below.
 
@@ -87,7 +87,7 @@ Here are all the date tickers:
       :class:`matplotlib.dates.rrulewrapper`.  The
       :class:`rrulewrapper` is a simple wrapper around a
       :class:`dateutil.rrule` (`dateutil
-      <https://dateutil.readthedocs.io>`_) which allow almost
+      <https://dateutil.readthedocs.io/en/stable/>`_) which allow almost
       arbitrary date tick specifications.  See `rrule example
       <../examples/pylab_examples/date_demo_rrule.html>`_.
 
@@ -159,7 +159,7 @@ class _UTC(datetime.tzinfo):
         return datetime.timedelta(0)
 
     def tzname(self, dt):
-        return "UTC"
+        return str("UTC")
 
     def dst(self, dt):
         return datetime.timedelta(0)
@@ -274,8 +274,7 @@ _from_ordinalf_np_vectorized = np.vectorize(_from_ordinalf)
 class strpdate2num(object):
     """
     Use this class to parse date strings to matplotlib datenums when
-    you know the date format string of the date you are parsing.  See
-    :file:`examples/load_demo.py`.
+    you know the date format string of the date you are parsing.
     """
     def __init__(self, fmt):
         """ fmt: any valid strptime format is supported """
@@ -292,7 +291,7 @@ class bytespdate2num(strpdate2num):
     """
     Use this class to parse date strings to matplotlib datenums when
     you know the date format string of the date you are parsing.  See
-    :file:`examples/load_demo.py`.
+    :file:`examples/pylab_examples/load_converter.py`.
     """
     def __init__(self, fmt, encoding='utf-8'):
         """
@@ -684,18 +683,15 @@ class AutoDateFormatter(ticker.Formatter):
 
     def __call__(self, x, pos=None):
         locator_unit_scale = float(self._locator._get_unit())
-        fmt = self.defaultfmt
-
         # Pick the first scale which is greater than the locator unit.
-        for possible_scale in sorted(self.scaled):
-            if possible_scale >= locator_unit_scale:
-                fmt = self.scaled[possible_scale]
-                break
+        fmt = next((fmt for scale, fmt in sorted(self.scaled.items())
+                    if scale >= locator_unit_scale),
+                   self.defaultfmt)
 
         if isinstance(fmt, six.string_types):
             self._formatter = DateFormatter(fmt, self._tz)
             result = self._formatter(x, pos)
-        elif six.callable(fmt):
+        elif callable(fmt):
             result = fmt(x, pos)
         else:
             raise TypeError('Unexpected type passed to {0!r}.'.format(self))
@@ -715,6 +711,8 @@ class rrulewrapper(object):
         self._rrule = rrule(**self._construct)
 
     def __getattr__(self, name):
+        if name in ['__getstate__', '__setstate__']:
+            return object.__getattr__(self, name)
         if name in self.__dict__:
             return self.__dict__[name]
         return getattr(self._rrule, name)
@@ -962,8 +960,7 @@ class AutoDateLocator(DateLocator):
                 # Assume we were given an integer. Use this as the maximum
                 # number of ticks for every frequency and create a
                 # dictionary for this
-                self.maxticks = dict(zip(self._freqs,
-                                         [maxticks] * len(self._freqs)))
+                self.maxticks = dict.fromkeys(self._freqs, maxticks)
         self.interval_multiples = interval_multiples
         self.intervald = {
             YEARLY:   [1, 2, 4, 5, 10, 20, 40, 50, 100, 200, 400, 500,
@@ -1152,7 +1149,7 @@ class YearLocator(DateLocator):
         ymax = self.base.ge(vmax.year)
 
         ticks = [vmin.replace(year=ymin, **self.replaced)]
-        while 1:
+        while True:
             dt = ticks[-1]
             if dt.year >= ymax:
                 return date2num(ticks)

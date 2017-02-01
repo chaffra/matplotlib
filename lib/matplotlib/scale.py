@@ -249,7 +249,9 @@ class LogScale(ScaleBase):
         axis.set_major_locator(LogLocator(self.base))
         axis.set_major_formatter(LogFormatterSciNotation(self.base))
         axis.set_minor_locator(LogLocator(self.base, self.subs))
-        axis.set_minor_formatter(LogFormatterSciNotation(self.base, self.subs))
+        axis.set_minor_formatter(
+            LogFormatterSciNotation(self.base,
+                                    labelOnlyBase=bool(self.subs)))
 
     def get_transform(self):
         """
@@ -262,8 +264,12 @@ class LogScale(ScaleBase):
         """
         Limit the domain to positive values.
         """
-        return (vmin <= 0.0 and minpos or vmin,
-                vmax <= 0.0 and minpos or vmax)
+        if not np.isfinite(minpos):
+            minpos = 1e-300  # This value should rarely if ever
+                             # end up with a visible effect.
+
+        return (minpos if vmin <= 0 else vmin,
+                minpos if vmax <= 0 else vmax)
 
 
 class SymmetricalLogTransform(Transform):
@@ -497,8 +503,11 @@ class LogitScale(ScaleBase):
         """
         Limit the domain to values between 0 and 1 (excluded).
         """
-        return (vmin <= 0 and minpos or vmin,
-                vmax >= 1 and (1 - minpos) or vmax)
+        if not np.isfinite(minpos):
+            minpos = 1e-7    # This value should rarely if ever
+                             # end up with a visible effect.
+        return (minpos if vmin <= 0 else vmin,
+                1 - minpos if vmax >= 1 else vmax)
 
 
 _scale_mapping = {
@@ -510,9 +519,7 @@ _scale_mapping = {
 
 
 def get_scale_names():
-    names = list(six.iterkeys(_scale_mapping))
-    names.sort()
-    return names
+    return sorted(_scale_mapping)
 
 
 def scale_factory(scale, axis, **kwargs):

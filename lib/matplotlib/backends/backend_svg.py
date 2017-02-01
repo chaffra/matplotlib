@@ -145,8 +145,7 @@ class XMLWriter(object):
         if attrib or extra:
             attrib = attrib.copy()
             attrib.update(extra)
-            attrib = list(six.iteritems(attrib))
-            attrib.sort()
+            attrib = sorted(six.iteritems(attrib))
             for k, v in attrib:
                 if not v == '':
                     k = escape_cdata(k)
@@ -248,8 +247,7 @@ def generate_transform(transform_list=[]):
 def generate_css(attrib={}):
     if attrib:
         output = io.StringIO()
-        attrib = list(six.iteritems(attrib))
-        attrib.sort()
+        attrib = sorted(six.iteritems(attrib))
         for k, v in attrib:
             k = escape_attrib(k)
             v = escape_attrib(v)
@@ -595,10 +593,8 @@ class RendererSVG(RendererBase):
         style = self._get_style_dict(gc, rgbFace)
         dictkey = (path_data, generate_css(style))
         oid = self._markers.get(dictkey)
-        for key in list(six.iterkeys(style)):
-            if not key.startswith('stroke'):
-                del style[key]
-        style = generate_css(style)
+        style = generate_css({k: v for k, v in six.iteritems(style)
+                              if k.startswith('stroke')})
 
         if oid is None:
             oid = self._make_id('m', dictkey)
@@ -880,17 +876,20 @@ class RendererSVG(RendererBase):
         """
         draw the text by converting them to paths using textpath module.
 
-        *prop*
+        Parameters
+        ----------
+        prop : `matplotlib.font_manager.FontProperties`
           font property
 
-        *s*
+        s : str
           text to be converted
 
-        *usetex*
+        usetex : bool
           If True, use matplotlib usetex mode.
 
-        *ismath*
+        ismath : bool
           If True, use mathtext parser. If "TeX", use *usetex* mode.
+
         """
         writer = self.writer
 
@@ -1038,7 +1037,7 @@ class RendererSVG(RendererBase):
                 # Don't do vertical anchor alignment. Most applications do not
                 # support 'alignment-baseline' yet. Apply the vertical layout
                 # to the anchor point manually for now.
-                angle_rad = angle * np.pi / 180.
+                angle_rad = np.deg2rad(angle)
                 dir_vert = np.array([np.sin(angle_rad), np.cos(angle_rad)])
                 v_offset = np.dot(dir_vert, [(x - ax), (y - ay)])
                 ax = ax + v_offset * dir_vert[0]

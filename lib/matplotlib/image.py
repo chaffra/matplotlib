@@ -56,7 +56,7 @@ _interpd_ = {
     'blackman': _image.BLACKMAN,
 }
 
-interpolations_names = set(six.iterkeys(_interpd_))
+interpolations_names = set(_interpd_)
 
 
 def composite_images(images, renderer, magnification=1.0):
@@ -118,7 +118,7 @@ def composite_images(images, renderer, magnification=1.0):
 
 
 def _draw_list_compositing_images(
-        renderer, parent, dsu, suppress_composite=None):
+        renderer, parent, artists, suppress_composite=None):
     """
     Draw a sorted list of artists, compositing images into a single
     image where possible.
@@ -127,7 +127,7 @@ def _draw_list_compositing_images(
     between `Figure.draw` and `Axes.draw`, but otherwise should not be
     generally useful.
     """
-    has_images = any(isinstance(x[1], _ImageBase) for x in dsu)
+    has_images = any(isinstance(x, _ImageBase) for x in artists)
 
     # override the renderer default if suppressComposite is not None
     not_composite = renderer.option_image_nocomposite()
@@ -135,7 +135,7 @@ def _draw_list_compositing_images(
         not_composite = suppress_composite
 
     if not_composite or not has_images:
-        for zorder, a in dsu:
+        for a in artists:
             a.draw(renderer)
     else:
         # Composite any adjacent images together
@@ -152,11 +152,11 @@ def _draw_list_compositing_images(
                     gc = renderer.new_gc()
                     gc.set_clip_rectangle(parent.bbox)
                     gc.set_clip_path(parent.get_clip_path())
-                    renderer.draw_image(gc, round(l), round(b), data)
+                    renderer.draw_image(gc, np.round(l), np.round(b), data)
                     gc.restore()
             del image_group[:]
 
-        for zorder, a in dsu:
+        for a in artists:
             if isinstance(a, _ImageBase) and a.can_composite():
                 image_group.append(a)
             else:
@@ -186,7 +186,7 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
     # backward compatibility just in case.
     _interpd = _interpd_
     # reverse interp dict
-    _interpdr = dict([(v, k) for k, v in six.iteritems(_interpd_)])
+    _interpdr = {v: k for k, v in six.iteritems(_interpd_)}
     iterpnames = interpolations_names
     # <end unused keys>
 
@@ -234,7 +234,6 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
         self.set_filterrad(filterrad)
         self.set_interpolation(interpolation)
         self.set_resample(resample)
-        self.set_margins(False)
         self.axes = ax
 
         self._imcache = None
@@ -341,10 +340,9 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
         # means scaling the transform just slightly to account for the
         # extra subpixel.
         if (t.is_affine and round_to_pixel_border and
-            (out_width_base % 1.0 != 0.0 or
-             out_height_base % 1.0 != 0.0)):
-            out_width = int(ceil(out_width_base) + 1)
-            out_height = int(ceil(out_height_base) + 1)
+                (out_width_base % 1.0 != 0.0 or out_height_base % 1.0 != 0.0)):
+            out_width = int(ceil(out_width_base))
+            out_height = int(ceil(out_height_base))
             extra_width = (out_width - out_width_base) / out_width_base
             extra_height = (out_height - out_height_base) / out_height_base
             t += Affine2D().scale(
@@ -370,8 +368,11 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
                     # values to carry the over/under/bad information
                     rgba = np.empty((A.shape[0], A.shape[1], 4), dtype=A.dtype)
                     rgba[..., 0] = A  # normalized data
-                    rgba[..., 1] = A < 0  # under data
-                    rgba[..., 2] = A > 1  # over data
+                    # this is to work around spurious warnings coming
+                    # out of masked arrays.
+                    with np.errstate(invalid='ignore'):
+                        rgba[..., 1] = A < 0  # under data
+                        rgba[..., 2] = A > 1  # over data
                     rgba[..., 3] = ~A.mask  # bad data
                     A = rgba
                     output = np.zeros((out_height, out_width, 4),
@@ -501,7 +502,7 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
         """
         Test whether the mouse event occured within the image.
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
         # TODO: make sure this is consistent with patch and patch
         # collection on nonlinear transformed coordinates.
@@ -515,8 +516,7 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
             ymin, ymax = ymax, ymin
 
         if x is not None and y is not None:
-            inside = ((x >= xmin) and (x <= xmax) and
-                      (y >= ymin) and (y <= ymax))
+            inside = (xmin <= x <= xmax) and (ymin <= y <= ymax)
         else:
             inside = False
 
@@ -524,7 +524,8 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
 
     def write_png(self, fname):
         """Write the image to png file with fname"""
-        im = self.to_rgba(self._A, bytes=True, norm=True)
+        im = self.to_rgba(self._A[::-1] if self.origin == 'lower' else self._A,
+                          bytes=True, norm=True)
         _png.write_png(im, fname)
 
     def set_data(self, A):
@@ -742,6 +743,8 @@ class AxesImage(_ImageBase):
         xmin, xmax, ymin, ymax = extent
         corners = (xmin, ymin), (xmax, ymax)
         self.axes.update_datalim(corners)
+        self.sticky_edges.x[:] = [xmin, xmax]
+        self.sticky_edges.y[:] = [ymin, ymax]
         if self.axes._autoscaleXon:
             self.axes.set_xlim((xmin, xmax), auto=None)
         if self.axes._autoscaleYon:
@@ -849,8 +852,7 @@ class NonUniformImage(AxesImage):
         x = np.array(x, np.float32)
         y = np.array(y, np.float32)
         A = cbook.safe_masked_invalid(A, copy=True)
-        if len(x.shape) != 1 or len(y.shape) != 1\
-           or A.shape[0:2] != (y.shape[0], x.shape[0]):
+        if not (x.ndim == y.ndim == 1 and A.shape[0:2] == y.shape + x.shape):
             raise TypeError("Axes don't match array shape")
         if A.ndim not in [2, 3]:
             raise TypeError("Can only plot 2D or 3D data")
@@ -1026,7 +1028,7 @@ class PcolorImage(AxesImage):
         i = np.searchsorted(self._Ay, y) - 1
         try:
             return self._A[i, j]
-        except:
+        except IndexError:
             return None
 
 
@@ -1137,14 +1139,14 @@ class BboxImage(_ImageBase):
 
         if isinstance(self.bbox, BboxBase):
             return self.bbox
-        elif six.callable(self.bbox):
+        elif callable(self.bbox):
             return self.bbox(renderer)
         else:
             raise ValueError("unknown type of bbox")
 
     def contains(self, mouseevent):
         """Test whether the mouse event occured within the image."""
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
 
         if not self.get_visible():  # or self.get_figure()._renderer is None:
@@ -1225,7 +1227,7 @@ def imread(fname, format=None):
         if im is None:
             raise ValueError('Only know how to handle extensions: %s; '
                              'with Pillow installed matplotlib can handle '
-                             'more images' % list(six.iterkeys(handlers)))
+                             'more images' % list(handlers))
         return im
 
     handler = handlers[ext]
@@ -1357,7 +1359,7 @@ def thumbnail(infile, thumbfile, scale=0.1, interpolation='bilinear',
     *thumbfile*.
 
       *infile* the image file -- must be PNG or Pillow-readable if you
-         have `Pillow <http://python-pillow.github.io/>`_ installed
+         have `Pillow <http://python-pillow.org/>`_ installed
 
       *thumbfile*
         the thumbnail filename

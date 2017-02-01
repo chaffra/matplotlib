@@ -113,8 +113,8 @@ def get_file_hash(path, block_size=2 ** 20):
 def make_external_conversion_command(cmd):
     def convert(old, new):
         cmdline = cmd(old, new)
-        pipe = subprocess.Popen(
-            cmdline, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pipe = subprocess.Popen(cmdline, universal_newlines=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = pipe.communicate()
         errcode = pipe.wait()
         if not os.path.exists(new) or errcode:
@@ -132,14 +132,14 @@ def _update_converter():
     gs, gs_v = matplotlib.checkdep_ghostscript()
     if gs_v is not None:
         def cmd(old, new):
-            return [gs, '-q', '-sDEVICE=png16m', '-dNOPAUSE', '-dBATCH',
+            return [str(gs), '-q', '-sDEVICE=png16m', '-dNOPAUSE', '-dBATCH',
              '-sOutputFile=' + new, old]
         converter['pdf'] = make_external_conversion_command(cmd)
         converter['eps'] = make_external_conversion_command(cmd)
 
     if matplotlib.checkdep_inkscape() is not None:
         def cmd(old, new):
-            return ['inkscape', '-z', old, '--export-png', new]
+            return [str('inkscape'), '-z', old, '--export-png', new]
         converter['svg'] = make_external_conversion_command(cmd)
 
 
@@ -157,7 +157,7 @@ def comparable_formats():
     on this system.
 
     """
-    return ['png'] + list(six.iterkeys(converter))
+    return ['png'] + list(converter)
 
 
 def convert(filename, cache):
@@ -174,8 +174,14 @@ def convert(filename, cache):
     """
     base, extension = filename.rsplit('.', 1)
     if extension not in converter:
-        from nose import SkipTest
-        raise SkipTest("Don't know how to convert %s files to png" % extension)
+        reason = "Don't know how to convert %s files to png" % extension
+        from . import is_called_from_pytest
+        if is_called_from_pytest():
+            import pytest
+            pytest.skip(reason)
+        else:
+            from nose import SkipTest
+            raise SkipTest(reason)
     newname = base + '_' + extension + '.png'
     if not os.path.exists(filename):
         raise IOError("'%s' does not exist" % filename)
@@ -211,11 +217,12 @@ def convert(filename, cache):
 verifiers = {}
 
 # Turning this off, because it seems to cause multiprocessing issues
-if matplotlib.checkdep_xmllint() and False:
+if False and matplotlib.checkdep_xmllint():
     verifiers['svg'] = lambda filename: [
         'xmllint', '--valid', '--nowarning', '--noout', filename]
 
 
+@cbook.deprecated("2.1")
 def verify(filename):
     """Verify the file through some sort of verification tool."""
     if not os.path.exists(filename):
@@ -224,8 +231,8 @@ def verify(filename):
     verifier = verifiers.get(extension, None)
     if verifier is not None:
         cmd = verifier(filename)
-        pipe = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pipe = subprocess.Popen(cmd, universal_newlines=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = pipe.communicate()
         errcode = pipe.wait()
         if errcode != 0:
@@ -254,7 +261,7 @@ def calculate_rms(expectedImage, actualImage):
         raise ImageComparisonFailure(
             "image sizes do not match expected size: {0} "
             "actual size {1}".format(expectedImage.shape, actualImage.shape))
-    num_values = np.prod(expectedImage.shape)
+    num_values = expectedImage.size
     abs_diff_image = abs(expectedImage - actualImage)
     histogram = np.bincount(abs_diff_image.ravel(), minlength=256)
     sum_of_squares = np.sum(histogram * np.arange(len(histogram)) ** 2)
@@ -292,14 +299,10 @@ def compare_images(expected, actual, tol, in_decorator=False):
 
     """
     if not os.path.exists(actual):
-        msg = "Output image %s does not exist." % actual
-        raise Exception(msg)
+        raise Exception("Output image %s does not exist." % actual)
 
     if os.stat(actual).st_size == 0:
-        msg = "Output image file %s is empty." % actual
-        raise Exception(msg)
-
-    verify(actual)
+        raise Exception("Output image file %s is empty." % actual)
 
     # Convert the image to png
     extension = expected.split('.')[-1]

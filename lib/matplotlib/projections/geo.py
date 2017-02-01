@@ -38,7 +38,7 @@ class GeoAxes(Axes):
             if rcParams['text.usetex'] and not rcParams['text.latex.unicode']:
                 return r"$%0.0f^\circ$" % degrees
             else:
-                return "%0.0f\u00b0" % degrees
+                return "%0.0f\N{DEGREE SIGN}" % degrees
 
     RESOLUTION = 75
 
@@ -174,8 +174,7 @@ class GeoAxes(Axes):
 
     def format_coord(self, lon, lat):
         'return a format string formatting the coordinate'
-        lon = lon * (180.0 / np.pi)
-        lat = lat * (180.0 / np.pi)
+        lon, lat = np.rad2deg([lon, lat])
         if lat >= 0.0:
             ns = 'N'
         else:
@@ -184,26 +183,25 @@ class GeoAxes(Axes):
             ew = 'E'
         else:
             ew = 'W'
-        return '%f\u00b0%s, %f\u00b0%s' % (abs(lat), ns, abs(lon), ew)
+        return ('%f\N{DEGREE SIGN}%s, %f\N{DEGREE SIGN}%s'
+                % (abs(lat), ns, abs(lon), ew))
 
     def set_longitude_grid(self, degrees):
         """
         Set the number of degrees between each longitude grid.
         """
-        number = (360.0 / degrees) + 1
-        self.xaxis.set_major_locator(
-            FixedLocator(
-                np.linspace(-np.pi, np.pi, number, True)[1:-1]))
+        # Skip -180 and 180, which are the fixed limits.
+        grid = np.arange(-180 + degrees, 180, degrees)
+        self.xaxis.set_major_locator(FixedLocator(np.deg2rad(grid)))
         self.xaxis.set_major_formatter(self.ThetaFormatter(degrees))
 
     def set_latitude_grid(self, degrees):
         """
-        Set the number of degrees between each longitude grid.
+        Set the number of degrees between each latitude grid.
         """
-        number = (180.0 / degrees) + 1
-        self.yaxis.set_major_locator(
-            FixedLocator(
-                np.linspace(-np.pi / 2.0, np.pi / 2.0, number, True)[1:-1]))
+        # Skip -90 and 90, which are the fixed limits.
+        grid = np.arange(-90 + degrees, 90, degrees)
+        self.yaxis.set_major_locator(FixedLocator(np.deg2rad(grid)))
         self.yaxis.set_major_formatter(self.ThetaFormatter(degrees))
 
     def set_longitude_grid_ends(self, degrees):

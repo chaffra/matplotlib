@@ -6,12 +6,12 @@ import warnings
 
 import numpy as np
 from numpy.testing import assert_almost_equal
-from nose.tools import eq_, assert_raises
+import pytest
 
 from matplotlib.transforms import Bbox
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.testing.decorators import image_comparison, cleanup
+from matplotlib.testing.decorators import image_comparison
 from matplotlib.figure import Figure
 from matplotlib.text import Annotation, Text
 from matplotlib.backends.backend_agg import RendererAgg
@@ -232,7 +232,6 @@ def test_axes_titles():
     ax.set_title('right', loc='right', fontsize=12, fontweight=400)
 
 
-@cleanup
 def test_set_position():
     fig, ax = plt.subplots()
 
@@ -286,7 +285,7 @@ def test_get_rotation_int():
 
 def test_get_rotation_raises():
     from matplotlib import text
-    with assert_raises(ValueError):
+    with pytest.raises(ValueError):
         text.get_rotation('hozirontal')
 
 
@@ -366,7 +365,6 @@ def test_annotation_negative_fig_coords():
                 va='top')
 
 
-@cleanup
 def test_text_stale():
     fig, (ax1, ax2) = plt.subplots(1, 2)
     plt.draw_all()
@@ -399,3 +397,27 @@ def test_agg_text_clip():
         ax1.text(x, y, "foo", clip_on=True)
         ax2.text(x, y, "foo")
     plt.show()
+
+
+def test_text_size_binding():
+    from matplotlib.font_manager import FontProperties
+
+    matplotlib.rcParams['font.size'] = 10
+    fp = FontProperties(size='large')
+    sz1 = fp.get_size_in_points()
+    matplotlib.rcParams['font.size'] = 100
+
+    assert sz1 == fp.get_size_in_points()
+
+
+@image_comparison(baseline_images=['font_scaling'],
+                  extensions=['pdf'])
+def test_font_scaling():
+    matplotlib.rcParams['pdf.fonttype'] = 42
+    fig, ax = plt.subplots(figsize=(6.4, 12.4))
+    ax.xaxis.set_major_locator(plt.NullLocator())
+    ax.yaxis.set_major_locator(plt.NullLocator())
+    ax.set_ylim(-10, 600)
+
+    for i, fs in enumerate(range(4, 43, 2)):
+        ax.text(0.1, i*30, "{fs} pt font size".format(fs=fs), fontsize=fs)

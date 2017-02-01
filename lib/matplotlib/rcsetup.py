@@ -18,17 +18,14 @@ from __future__ import (absolute_import, division, print_function,
 
 import six
 
+from collections import Iterable, Mapping
 from functools import reduce
 import operator
 import os
 import warnings
 import re
 
-try:
-    import collections.abc as abc
-except ImportError:
-    # python 2
-    import collections as abc
+from matplotlib.cbook import mplDeprecation
 from matplotlib.fontconfig_pattern import parse_fontconfig_pattern
 from matplotlib.colors import is_color_like
 
@@ -62,7 +59,7 @@ class ValidateInStrings(object):
                 return s.lower()
             else:
                 return s
-        self.valid = dict([(func(k), k) for k in valid])
+        self.valid = {func(k): k for k in valid}
 
     def __call__(self, s):
         if self.ignorecase:
@@ -90,7 +87,7 @@ def _listify_validator(scalar_validator, allow_stringlist=False):
         # Numpy ndarrays, and pandas data structures.  However, unordered
         # sequences, such as sets, should be allowed but discouraged unless the
         # user desires pseudorandom behavior.
-        elif isinstance(s, abc.Iterable) and not isinstance(s, abc.Mapping):
+        elif isinstance(s, Iterable) and not isinstance(s, Mapping):
             # The condition on this list comprehension will preserve the
             # behavior of filtering out any empty strings (behavior was
             # from the original validate_stringlist()), while allowing
@@ -143,6 +140,15 @@ def validate_bool_maybe_none(b):
         return False
     else:
         raise ValueError('Could not convert "%s" to boolean' % b)
+
+
+def deprecate_axes_hold(value):
+    if value is None:
+        return None  # converted to True where accessed in figure.py,
+                     # axes/_base.py
+    warnings.warn("axes.hold is deprecated, will be removed in 3.0",
+                  mplDeprecation)
+    return validate_bool(value)
 
 
 def validate_float(s):
@@ -232,11 +238,11 @@ def validate_fonttype(s):
     try:
         fonttype = validate_int(s)
     except ValueError:
-        if s.lower() in six.iterkeys(fonttypes):
+        try:
             return fonttypes[s.lower()]
-        raise ValueError(
-            'Supported Postscript/PDF font types are %s' %
-            list(six.iterkeys(fonttypes)))
+        except KeyError:
+            raise ValueError(
+                'Supported Postscript/PDF font types are %s' % list(fonttypes))
     else:
         if fonttype not in six.itervalues(fonttypes):
             raise ValueError(
@@ -245,9 +251,8 @@ def validate_fonttype(s):
         return fonttype
 
 
-_validate_standard_backends = ValidateInStrings('backend',
-                                                all_backends,
-                                                ignorecase=True)
+_validate_standard_backends = ValidateInStrings(
+    'backend', all_backends, ignorecase=True)
 
 
 def validate_backend(s):
@@ -277,16 +282,15 @@ def validate_maskedarray(v):
     except ValueError:
         pass
     warnings.warn('rcParams key "maskedarray" is obsolete and has no effect;\n'
-                  ' please delete it from your matplotlibrc file')
+                  ' please delete it from your matplotlibrc file',
+                  mplDeprecation)
 
 
+_seq_err_msg = ('You must supply exactly {n} values, you provided {num} '
+                'values: {s}')
 
-_seq_err_msg = ('You must supply exactly {n:d} values, you provided '
-                   '{num:d} values: {s}')
-
-_str_err_msg = ('You must supply exactly {n:d} comma-separated values, '
-                'you provided '
-                '{num:d} comma-separated values: {s}')
+_str_err_msg = ('You must supply exactly {n} comma-separated values, you '
+                'provided {num} comma-separated values: {s}')
 
 
 class validate_nseq_float(object):
@@ -400,7 +404,8 @@ def validate_color(s):
 
 def deprecate_axes_colorcycle(value):
     warnings.warn("axes.color_cycle is deprecated.  Use axes.prop_cycle "
-                  "instead. Will be removed in 2.1.0")
+                  "instead. Will be removed in 2.1.0",
+                  mplDeprecation)
     return validate_colorlist(value)
 
 
@@ -458,25 +463,25 @@ validate_verbose = ValidateInStrings(
     ['silent', 'helpful', 'debug', 'debug-annoying'])
 
 def validate_whiskers(s):
-    if s=='range':
+    if s == 'range':
         return 'range'
     else:
         try:
             v = validate_nseq_float(2)(s)
             return v
-        except:
+        except (TypeError, ValueError):
             try:
                 v = float(s)
                 return v
-            except:
-                err_str = ("Not a valid whisker value ['range',"
-                            "float, (float, float)]")
-                raise ValueError(err_str)
+            except ValueError:
+                raise ValueError("Not a valid whisker value ['range', float, "
+                                 "(float, float)]")
 
 
 def deprecate_savefig_extension(value):
     warnings.warn("savefig.extension is deprecated.  Use savefig.format "
-                  "instead. Will be removed in 1.4.x")
+                  "instead. Will be removed in 1.4.x",
+                  mplDeprecation)
     return value
 
 
@@ -537,7 +542,8 @@ def validate_negative_linestyle_legacy(s):
     except ValueError:
         dashes = validate_nseq_float(2)(s)
         warnings.warn("Deprecated negative_linestyle specification; use "
-                      "'solid' or 'dashed'")
+                      "'solid' or 'dashed'",
+                      mplDeprecation)
         return (0, dashes)  # (offset, (solid, blank))
 
 
@@ -550,7 +556,8 @@ def validate_corner_mask(s):
 
 def validate_tkpythoninspect(s):
     # Introduced 2010/07/05
-    warnings.warn("tk.pythoninspect is obsolete, and has no effect")
+    warnings.warn("tk.pythoninspect is obsolete, and has no effect",
+                  mplDeprecation)
     return validate_bool(s)
 
 validate_legend_loc = ValidateInStrings(
@@ -570,12 +577,14 @@ validate_legend_loc = ValidateInStrings(
 
 def deprecate_svg_image_noscale(value):
     warnings.warn("svg.image_noscale is deprecated. Set "
-                  "image.interpolation to 'none' instead.")
+                  "image.interpolation to 'none' instead.",
+                  mplDeprecation)
 
 
 def deprecate_svg_embed_char_paths(value):
     warnings.warn("svg.embed_char_paths is deprecated.  Use "
-                  "svg.fonttype instead.")
+                  "svg.fonttype instead.",
+                  mplDeprecation)
 
 
 validate_svg_fonttype = ValidateInStrings('svg.fonttype',
@@ -645,7 +654,7 @@ class ValidateInterval(object):
     def __call__(self, s):
         try:
             s = float(s)
-        except:
+        except ValueError:
             raise RuntimeError('Value must be a float; found "%s"' % s)
 
         if self.cmin and s < self.vmin:
@@ -675,9 +684,7 @@ def validate_hatch(s):
     """
     if not isinstance(s, six.string_types):
         raise ValueError("Hatch pattern must be a string")
-    unique_chars = set(s)
-    unknown = (unique_chars -
-                set(['\\', '/', '|', '-', '+', '*', '.', 'x', 'o', 'O']))
+    unknown = set(s) - {'\\', '/', '|', '-', '+', '*', '.', 'x', 'o', 'O'}
     if unknown:
         raise ValueError("Unknown hatch symbol(s): %s" % list(unknown))
     return s
@@ -721,9 +728,9 @@ def cycler(*args, **kwargs):
     Creates a :class:`cycler.Cycler` object much like :func:`cycler.cycler`,
     but includes input validation.
 
-    cyl(arg)
-    cyl(label, itr)
-    cyl(label1=itr1[, label2=itr2[, ...]])
+    cycler(arg)
+    cycler(label, itr)
+    cycler(label1=itr1[, label2=itr2[, ...]])
 
     Form 1 simply copies a given `Cycler` object.
 
@@ -1053,7 +1060,7 @@ defaultParams = {
 
     # axes props
     'axes.axisbelow':        ['line', validate_axisbelow],
-    'axes.hold':             [True, validate_bool],
+    'axes.hold':             [None, deprecate_axes_hold],
     'axes.facecolor':        ['w', validate_color],  # background color; white
     'axes.edgecolor':        ['k', validate_color],  # edge color; black
     'axes.linewidth':        [0.8, validate_float],  # edge linewidth
@@ -1066,7 +1073,7 @@ defaultParams = {
     'axes.titlesize':        ['large', validate_fontsize],  # fontsize of the
                                                             # axes title
     'axes.titleweight':      ['normal', six.text_type],  # font weight of axes title
-    'axes.titlepad':         [4.0, validate_float],  # pad from axes top to title in points
+    'axes.titlepad':         [6.0, validate_float],  # pad from axes top to title in points
     'axes.grid':             [False, validate_bool],   # display grid or not
     'axes.grid.which':       ['major', validate_axis_locator],  # set wether the gid are by
                                                                 # default draw on 'major'
@@ -1127,10 +1134,10 @@ defaultParams = {
     'date.autoformatter.year': ['%Y', six.text_type],
     'date.autoformatter.month': ['%Y-%m', six.text_type],
     'date.autoformatter.day': ['%Y-%m-%d', six.text_type],
-    'date.autoformatter.hour': ['%H:%M', six.text_type],
-    'date.autoformatter.minute': ['%H:%M:%S', six.text_type],
+    'date.autoformatter.hour': ['%m-%d %H', six.text_type],
+    'date.autoformatter.minute': ['%d %H:%M', six.text_type],
     'date.autoformatter.second': ['%H:%M:%S', six.text_type],
-    'date.autoformatter.microsecond': ['%H:%M:%S.%f', six.text_type],
+    'date.autoformatter.microsecond': ['%M:%S.%f', six.text_type],
 
     #legend properties
     'legend.fancybox': [True, validate_bool],

@@ -58,14 +58,16 @@ are supported.
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-import re
 import six
 from six.moves import zip
+
+from collections import Sized
+import re
 import warnings
 
 import numpy as np
 import matplotlib.cbook as cbook
-from ._color_data import BASE_COLORS, CSS4_COLORS, XKCD_COLORS
+from ._color_data import BASE_COLORS, TABLEAU_COLORS, CSS4_COLORS, XKCD_COLORS
 
 
 class _ColorMapping(dict):
@@ -85,7 +87,14 @@ class _ColorMapping(dict):
 _colors_full_map = {}
 # Set by reverse priority order.
 _colors_full_map.update(XKCD_COLORS)
+_colors_full_map.update({k.replace('grey', 'gray'): v
+                         for k, v in XKCD_COLORS.items()
+                         if 'grey' in k})
 _colors_full_map.update(CSS4_COLORS)
+_colors_full_map.update(TABLEAU_COLORS)
+_colors_full_map.update({k.replace('gray', 'grey'): v
+                         for k, v in TABLEAU_COLORS.items()
+                         if 'gray' in k})
 _colors_full_map.update(BASE_COLORS)
 _colors_full_map = _ColorMapping(_colors_full_map)
 
@@ -120,7 +129,8 @@ def is_color_like(c):
 def to_rgba(c, alpha=None):
     """Convert `c` to an RGBA color.
 
-    If `alpha` is not `None`, it forces the alpha value.
+    If `alpha` is not `None`, it forces the alpha value, except if `c` is
+    "none" (case-insensitive), which always maps to `(0, 0, 0, 0)`.
     """
     # Special-case nth color syntax because it should not be cached.
     if _is_nth_color(c):
@@ -142,7 +152,8 @@ def to_rgba(c, alpha=None):
 def _to_rgba_no_colorcycle(c, alpha=None):
     """Convert `c` to an RGBA color, with no support for color-cycle syntax.
 
-    If `alpha` is not `None`, it forces the alpha value.
+    If `alpha` is not `None`, it forces the alpha value, except if `c` is
+    "none" (case-insensitive), which always maps to `(0, 0, 0, 0)`.
     """
     orig_c = c
     if isinstance(c, six.string_types):
@@ -176,12 +187,14 @@ def _to_rgba_no_colorcycle(c, alpha=None):
             pass
         raise ValueError("Invalid RGBA argument: {!r}".format(orig_c))
     # tuple color.
-    # Python 2.7 / numpy 1.6 apparently require this to return builtin floats,
-    # not numpy floats.
-    try:
-        c = tuple(map(float, c))
-    except TypeError:
+    c = np.array(c)
+    if not np.can_cast(c.dtype, float) or c.ndim != 1:
+        # Test the dtype explicitly as `map(float, ...)`, `np.array(...,
+        # float)` and `np.array(...).astype(float)` all convert "0.5" to 0.5.
+        # Test dimensionality to reject single floats.
         raise ValueError("Invalid RGBA argument: {!r}".format(orig_c))
+    # Return a tuple to prevent the cached value from being modified.
+    c = tuple(c.astype(float))
     if len(c) not in [3, 4]:
         raise ValueError("RGBA sequence should have length 3 or 4")
     if len(c) == 3 and alpha is None:
@@ -250,7 +263,6 @@ def to_hex(c, keep_alpha=False):
 ### Backwards-compatible color-conversion API
 
 cnames = CSS4_COLORS
-COLOR_NAMES = {'xkcd': XKCD_COLORS, 'css4': CSS4_COLORS}
 hexColorPattern = re.compile("\A#[a-fA-F0-9]{6}\Z")
 
 
@@ -351,14 +363,14 @@ def makeMappingArray(N, data, gamma=1.0):
     gives the closest value for values of x between 0 and 1.
     """
 
-    if six.callable(data):
+    if callable(data):
         xind = np.linspace(0, 1, N) ** gamma
         lut = np.clip(np.array(data(xind), dtype=float), 0, 1)
         return lut
 
     try:
         adata = np.array(data)
-    except:
+    except Exception:
         raise TypeError("data must be convertable to an array")
     shape = adata.shape
     if len(shape) != 2 or shape[1] != 3:
@@ -370,10 +382,9 @@ def makeMappingArray(N, data, gamma=1.0):
 
     if x[0] != 0. or x[-1] != 1.0:
         raise ValueError(
-            "data mapping points must start with x=0. and end with x=1")
-    if np.sometrue(np.sort(x) - x):
-        raise ValueError(
-            "data mapping points must have x in increasing order")
+            "data mapping points must start with x=0 and end with x=1")
+    if (np.diff(x) < 0).any():
+        raise ValueError("data mapping points must have x in increasing order")
     # begin generation of lookup table
     x = x * (N - 1)
     lut = np.zeros((N,), float)
@@ -401,7 +412,7 @@ class Colormap(object):
 
     """
     def __init__(self, name, N=256):
-        r"""
+        """
         Parameters
         ----------
         name : str
@@ -473,7 +484,7 @@ class Colormap(object):
             # Treat 1.0 as slightly less than 1.
             vals = np.array([1, 0], dtype=xa.dtype)
             almost_one = np.nextafter(*vals)
-            cbook._putmask(xa, xa == 1.0, almost_one)
+            np.copyto(xa, almost_one, where=xa == 1.0)
             # The following clip is fast, and prevents possible
             # conversion of large positive values to negative integers.
 
@@ -482,15 +493,15 @@ class Colormap(object):
 
             # ensure that all 'under' values will still have negative
             # value after casting to int
-            cbook._putmask(xa, xa < 0.0, -1)
+            np.copyto(xa, -1, where=xa < 0.0)
             xa = xa.astype(int)
         # Set the over-range indices before the under-range;
         # otherwise the under-range values get converted to over-range.
-        cbook._putmask(xa, xa > self.N - 1, self._i_over)
-        cbook._putmask(xa, xa < 0, self._i_under)
+        np.copyto(xa, self._i_over, where=xa > self.N - 1)
+        np.copyto(xa, self._i_under, where=xa < 0)
         if mask_bad is not None:
             if mask_bad.shape == xa.shape:
-                cbook._putmask(xa, mask_bad, self._i_bad)
+                np.copyto(xa, self._i_bad, where=mask_bad)
             elif mask_bad:
                 xa.fill(self._i_bad)
         if bytes:
@@ -560,8 +571,8 @@ class Colormap(object):
     def is_gray(self):
         if not self._isinit:
             self._init()
-        return (np.alltrue(self._lut[:, 0] == self._lut[:, 1]) and
-                np.alltrue(self._lut[:, 0] == self._lut[:, 2]))
+        return (np.all(self._lut[:, 0] == self._lut[:, 1]) and
+                np.all(self._lut[:, 0] == self._lut[:, 2]))
 
     def _resample(self, lutsize):
         """
@@ -684,12 +695,12 @@ class LinearSegmentedColormap(Colormap):
         if not cbook.iterable(colors):
             raise ValueError('colors must be iterable')
 
-        if cbook.iterable(colors[0]) and len(colors[0]) == 2 and \
-                not cbook.is_string_like(colors[0]):
+        if (isinstance(colors[0], Sized) and len(colors[0]) == 2
+                and not cbook.is_string_like(colors[0])):
             # List of value, color pairs
-            vals, colors = list(zip(*colors))
+            vals, colors = zip(*colors)
         else:
-            vals = np.linspace(0., 1., len(colors))
+            vals = np.linspace(0, 1, len(colors))
 
         cdict = dict(red=[], green=[], blue=[], alpha=[])
         for val, color in zip(vals, colors):
@@ -733,7 +744,7 @@ class LinearSegmentedColormap(Colormap):
 
         data_r = dict()
         for key, data in six.iteritems(self._segmentdata):
-            if six.callable(data):
+            if callable(data):
                 data_r[key] = factory(data)
             else:
                 new_data = [(1.0 - x, y1, y0) for x, y0, y1 in reversed(data)]
@@ -990,7 +1001,7 @@ class LogNorm(Normalize):
                 mask = (resdat <= 0)
             else:
                 mask |= resdat <= 0
-            cbook._putmask(resdat, mask, 1)
+            np.copyto(resdat, 1, where=mask)
             np.log(resdat, resdat)
             resdat -= np.log(vmin)
             resdat /= (np.log(vmax) - np.log(vmin))
@@ -1058,6 +1069,8 @@ class SymLogNorm(Normalize):
         Normalize.__init__(self, vmin, vmax, clip)
         self.linthresh = float(linthresh)
         self._linscale_adj = (linscale / (1.0 - np.e ** -1))
+        if vmin is not None and vmax is not None:
+            self._transform_vmin_vmax()
 
     def __call__(self, value, clip=None):
         if clip is None:
@@ -1328,15 +1341,14 @@ def rgb_to_hsv(arr):
     # check length of the last dimension, should be _some_ sort of rgb
     if arr.shape[-1] != 3:
         raise ValueError("Last dimension of input array must be 3; "
-                         "shape {shp} was found.".format(shp=arr.shape))
+                         "shape {} was found.".format(arr.shape))
 
     in_ndim = arr.ndim
     if arr.ndim == 1:
         arr = np.array(arr, ndmin=2)
 
     # make sure we don't have an int image
-    if arr.dtype.kind in ('iu'):
-        arr = arr.astype(np.float32)
+    arr = arr.astype(np.promote_types(arr.dtype, np.float32))
 
     out = np.zeros_like(arr)
     arr_max = arr.max(-1)
@@ -1394,8 +1406,7 @@ def hsv_to_rgb(hsv):
         hsv = np.array(hsv, ndmin=2)
 
     # make sure we don't have an int image
-    if hsv.dtype.kind in ('iu'):
-        hsv = hsv.astype(np.float32)
+    hsv = hsv.astype(np.promote_types(hsv.dtype, np.float32))
 
     h = hsv[..., 0]
     s = hsv[..., 1]
@@ -1446,13 +1457,11 @@ def hsv_to_rgb(hsv):
     g[idx] = v[idx]
     b[idx] = v[idx]
 
-    rgb = np.empty_like(hsv)
-    rgb[..., 0] = r
-    rgb[..., 1] = g
-    rgb[..., 2] = b
+    # `np.stack([r, g, b], axis=-1)` (numpy 1.10).
+    rgb = np.concatenate([r[..., None], g[..., None], b[..., None]], -1)
 
     if in_ndim == 1:
-        rgb.shape = (3, )
+        rgb.shape = (3,)
 
     return rgb
 

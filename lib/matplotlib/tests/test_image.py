@@ -4,38 +4,33 @@ from __future__ import (absolute_import, division, print_function,
 import six
 import io
 import os
-
-from nose.plugins.attrib import attr
+import warnings
 
 import numpy as np
+from numpy.testing import assert_array_equal
 
-from matplotlib.testing.decorators import (image_comparison,
-                                           knownfailureif, cleanup)
-from matplotlib.image import (BboxImage, imread, NonUniformImage,
-                              AxesImage, FigureImage, PcolorImage)
+from matplotlib.testing.decorators import image_comparison
+from matplotlib.image import (AxesImage, BboxImage, FigureImage,
+                              NonUniformImage, PcolorImage)
 from matplotlib.transforms import Bbox, Affine2D, TransformedBbox
 from matplotlib import rcParams, rc_context
 from matplotlib import patches
 import matplotlib.pyplot as plt
 
 from matplotlib import mlab
-from nose.tools import assert_raises
-from numpy.testing import (
-    assert_array_equal, assert_array_almost_equal, assert_allclose)
+import pytest
+
 from copy import copy
 from numpy import ma
 import matplotlib.colors as colors
-import matplotlib.pyplot as plt
-import matplotlib.mlab as mlab
-import numpy as np
 
-import nose
 
 try:
     from PIL import Image
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
+needs_pillow = pytest.mark.xfail(not HAS_PIL, reason='Test requires Pillow')
 
 
 @image_comparison(baseline_images=['image_interps'])
@@ -95,7 +90,6 @@ def test_figimage():
         fig.figimage(img[:,::-1], xo=100, yo=0, origin='lower')
         fig.figimage(img[::-1,::-1], xo=100, yo=100, origin='lower')
 
-@cleanup
 def test_image_python_io():
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -106,24 +100,14 @@ def test_image_python_io():
     plt.imread(buffer)
 
 
-@knownfailureif(not HAS_PIL)
+@needs_pillow
 def test_imread_pil_uint16():
     img = plt.imread(os.path.join(os.path.dirname(__file__),
                      'baseline_images', 'test_image', 'uint16.tif'))
     assert (img.dtype == np.uint16)
     assert np.sum(img) == 134184960
 
-# def test_image_unicode_io():
-#     fig = plt.figure()
-#     ax = fig.add_subplot(111)
-#     ax.plot([1,2,3])
-#     fname = u"\u0a3a\u0a3a.png"
-#     fig.savefig(fname)
-#     plt.imread(fname)
-#     os.remove(fname)
 
-
-@cleanup
 def test_imsave():
     # The goal here is that the user can specify an output logical DPI
     # for the image, but this will not actually add any extra pixels
@@ -159,21 +143,24 @@ def test_imsave_color_alpha():
     # acceptably preserved through a save/read roundtrip.
     from numpy import random
     random.seed(1)
-    data = random.rand(16, 16, 4)
 
-    buff = io.BytesIO()
-    plt.imsave(buff, data)
+    for origin in ['lower', 'upper']:
+        data = random.rand(16, 16, 4)
+        buff = io.BytesIO()
+        plt.imsave(buff, data, origin=origin)
 
-    buff.seek(0)
-    arr_buf = plt.imread(buff)
+        buff.seek(0)
+        arr_buf = plt.imread(buff)
 
-    # Recreate the float -> uint8 conversion of the data
-    # We can only expect to be the same with 8 bits of precision,
-    # since that's what the PNG file used.
-    data = (255*data).astype('uint8')
-    arr_buf = (255*arr_buf).astype('uint8')
+        # Recreate the float -> uint8 conversion of the data
+        # We can only expect to be the same with 8 bits of precision,
+        # since that's what the PNG file used.
+        data = (255*data).astype('uint8')
+        if origin == 'lower':
+            data = data[::-1]
+        arr_buf = (255*arr_buf).astype('uint8')
 
-    assert_array_equal(data, arr_buf)
+        assert_array_equal(data, arr_buf)
 
 @image_comparison(baseline_images=['image_alpha'], remove_text=True)
 def test_image_alpha():
@@ -191,7 +178,6 @@ def test_image_alpha():
     plt.subplot(133)
     plt.imshow(Z, alpha=0.5, interpolation='nearest')
 
-@cleanup
 def test_cursor_data():
     from matplotlib.backend_bases import MouseEvent
 
@@ -319,7 +305,6 @@ def test_image_shift():
               extent=(tMin, tMax, 1, 100))
     ax.set_aspect('auto')
 
-@cleanup
 def test_image_edges():
     f = plt.figure(figsize=[1, 1])
     ax = f.add_axes([0, 0, 1, 1], frameon=False)
@@ -441,7 +426,6 @@ def test_bbox_image_inverted():
     ax.add_artist(bbox_im)
 
 
-@cleanup
 def test_get_window_extent_for_AxisImage():
     # Create a figure of known size (1000x1000 pixels), place an image
     # object at a given location and check that get_window_extent()
@@ -477,22 +461,19 @@ def test_zoom_and_clip_upper_origin():
     ax.set_xlim(-0.5, 2.0)
 
 
-@cleanup
 def test_nonuniformimage_setcmap():
     ax = plt.gca()
     im = NonUniformImage(ax)
     im.set_cmap('Blues')
 
 
-@cleanup
 def test_nonuniformimage_setnorm():
     ax = plt.gca()
     im = NonUniformImage(ax)
     im.set_norm(plt.Normalize())
 
 
-@knownfailureif(not HAS_PIL)
-@cleanup
+@needs_pillow
 def test_jpeg_alpha():
     plt.figure(figsize=(1, 1), dpi=300)
     # Create an image that is all black, with a gradient from 0-1 in
@@ -519,7 +500,6 @@ def test_jpeg_alpha():
     assert corner_pixel == (254, 0, 0), "corner pixel: %r" % (corner_pixel, )
 
 
-@cleanup
 def test_nonuniformimage_setdata():
     ax = plt.gca()
     im = NonUniformImage(ax)
@@ -531,7 +511,6 @@ def test_nonuniformimage_setdata():
     assert im._A[0, 0] == im._Ax[0] == im._Ay[0] == 0, 'value changed'
 
 
-@cleanup
 def test_axesimage_setdata():
     ax = plt.gca()
     im = AxesImage(ax)
@@ -541,7 +520,6 @@ def test_axesimage_setdata():
     assert im._A[0, 0] == 0, 'value changed'
 
 
-@cleanup
 def test_figureimage_setdata():
     fig = plt.gcf()
     im = FigureImage(fig)
@@ -551,7 +529,6 @@ def test_figureimage_setdata():
     assert im._A[0, 0] == 0, 'value changed'
 
 
-@cleanup
 def test_pcolorimage_setdata():
     ax = plt.gca()
     im = PcolorImage(ax)
@@ -563,7 +540,6 @@ def test_pcolorimage_setdata():
     assert im._A[0, 0] == im._Ax[0] == im._Ay[0] == 0, 'value changed'
 
 
-@cleanup
 def test_minimized_rasterized():
     # This ensures that the rasterized content in the colorbars is
     # only as thick as the colorbar, and doesn't extend to other parts
@@ -597,7 +573,7 @@ def test_minimized_rasterized():
                 assert False
 
 
-@attr('network')
+@pytest.mark.network
 def test_load_from_url():
     req = six.moves.urllib.request.urlopen(
         "http://matplotlib.org/_static/logo_sidebar_horiz.png")
@@ -647,7 +623,6 @@ def test_rotate_image():
     ax1.set_ylim(0, 4)
 
 
-@cleanup
 def test_image_preserve_size():
     buff = io.BytesIO()
 
@@ -660,7 +635,6 @@ def test_image_preserve_size():
     assert img.shape[:2] == im.shape
 
 
-@cleanup
 def test_image_preserve_size2():
     n = 7
     data = np.identity(n, float)
@@ -752,5 +726,8 @@ def test_imshow_endianess():
     ax2.imshow(Z.astype('>f8'), **kwargs)
 
 
-if __name__ == '__main__':
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)
+def test_imshow_no_warn_invalid():
+    with warnings.catch_warnings(record=True) as warns:
+        warnings.simplefilter("always")
+        plt.imshow([[1, 2], [3, np.nan]])
+    assert len(warns) == 0

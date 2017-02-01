@@ -107,6 +107,7 @@ import sys
 import distutils.version
 from itertools import chain
 
+from collections import MutableMapping
 import io
 import inspect
 import locale
@@ -119,6 +120,7 @@ import distutils.sysconfig
 import functools
 # cbook must import matplotlib only within function
 # definitions, so it is safe to import from it here.
+from . import cbook
 from matplotlib.cbook import (is_string_like,
                               mplDeprecation,
                               dedent, get_label,
@@ -138,9 +140,9 @@ from ._version import get_versions
 __version__ = str(get_versions()['version'])
 del get_versions
 
-__version__numpy__ = str('1.6')  # minimum required numpy version
+__version__numpy__ = str('1.7.1')  # minimum required numpy version
 
-__bibtex__ = """@Article{Hunter:2007,
+__bibtex__ = r"""@Article{Hunter:2007,
   Author    = {Hunter, J. D.},
   Title     = {Matplotlib: A 2D graphics environment},
   Journal   = {Computing In Science \& Engineering},
@@ -263,7 +265,7 @@ class Verbose(object):
     instance to handle the output.  Default is sys.stdout
     """
     levels = ('silent', 'helpful', 'debug', 'debug-annoying')
-    vald = dict([(level, i) for i, level in enumerate(levels)])
+    vald = {level: i for i, level in enumerate(levels)}
 
     # parse the verbosity from the command line; flags look like
     # --verbose-silent or --verbose-helpful
@@ -333,7 +335,7 @@ class Verbose(object):
         if always is True, the report will occur on every function
         call; otherwise only on the first time the function is called
         """
-        assert six.callable(func)
+        assert callable(func)
 
         def wrapper(*args, **kwargs):
             ret = func(*args, **kwargs)
@@ -357,7 +359,8 @@ verbose = Verbose()
 
 def checkdep_dvipng():
     try:
-        s = subprocess.Popen(['dvipng', '-version'], stdout=subprocess.PIPE,
+        s = subprocess.Popen([str('dvipng'), '-version'],
+                             stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         stdout, stderr = s.communicate()
         line = stdout.decode('ascii').split('\n')[1]
@@ -377,7 +380,7 @@ def checkdep_ghostscript():
         for gs_exec in gs_execs:
             try:
                 s = subprocess.Popen(
-                    [gs_exec, '--version'], stdout=subprocess.PIPE,
+                    [str(gs_exec), '--version'], stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE)
                 stdout, stderr = s.communicate()
                 if s.returncode == 0:
@@ -393,11 +396,11 @@ checkdep_ghostscript.version = None
 
 def checkdep_tex():
     try:
-        s = subprocess.Popen(['tex', '-version'], stdout=subprocess.PIPE,
+        s = subprocess.Popen([str('tex'), '-version'], stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         stdout, stderr = s.communicate()
         line = stdout.decode('ascii').split('\n')[0]
-        pattern = '3\.1\d+'
+        pattern = r'3\.1\d+'
         match = re.search(pattern, line)
         v = match.group(0)
         return v
@@ -407,7 +410,7 @@ def checkdep_tex():
 
 def checkdep_pdftops():
     try:
-        s = subprocess.Popen(['pdftops', '-v'], stdout=subprocess.PIPE,
+        s = subprocess.Popen([str('pdftops'), '-v'], stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         stdout, stderr = s.communicate()
         lines = stderr.decode('ascii').split('\n')
@@ -422,7 +425,8 @@ def checkdep_pdftops():
 def checkdep_inkscape():
     if checkdep_inkscape.version is None:
         try:
-            s = subprocess.Popen(['inkscape', '-V'], stdout=subprocess.PIPE,
+            s = subprocess.Popen([str('inkscape'), '-V'],
+                                 stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE)
             stdout, stderr = s.communicate()
             lines = stdout.decode('ascii').split('\n')
@@ -437,9 +441,11 @@ def checkdep_inkscape():
 checkdep_inkscape.version = None
 
 
+@cbook.deprecated("2.1")
 def checkdep_xmllint():
     try:
-        s = subprocess.Popen(['xmllint', '--version'], stdout=subprocess.PIPE,
+        s = subprocess.Popen([str('xmllint'), '--version'],
+                             stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         stdout, stderr = s.communicate()
         lines = stderr.decode('ascii').split('\n')
@@ -754,15 +760,6 @@ get_data_path = verbose.wrap('matplotlib data path %s', _get_data_path_cached,
                              always=False)
 
 
-def get_example_data(fname):
-    """
-    get_example_data is deprecated -- use matplotlib.cbook.get_sample_data
-                                      instead
-    """
-    raise NotImplementedError('get_example_data is deprecated -- use '
-                              'matplotlib.cbook.get_sample_data instead')
-
-
 def get_py2exe_datafiles():
     datapath = get_data_path()
     _, tail = os.path.split(datapath)
@@ -860,12 +857,17 @@ _deprecated_map = {
 _deprecated_ignore_map = {
     }
 
-_obsolete_set = set(['tk.pythoninspect', 'legend.isaxes'])
+_obsolete_set = {'tk.pythoninspect', 'legend.isaxes'}
+
+# The following may use a value of None to suppress the warning.
+_deprecated_set = {'axes.hold'}  # do NOT include in _all_deprecated
+
 _all_deprecated = set(chain(_deprecated_ignore_map,
-                            _deprecated_map, _obsolete_set))
+                            _deprecated_map,
+                            _obsolete_set))
 
 
-class RcParams(dict):
+class RcParams(MutableMapping, dict):
 
     """
     A dictionary object including validation
@@ -878,28 +880,35 @@ class RcParams(dict):
                     six.iteritems(defaultParams)
                     if key not in _all_deprecated)
     msg_depr = "%s is deprecated and replaced with %s; please use the latter."
+    msg_depr_set = ("%s is deprecated. Please remove it from your "
+                    "matplotlibrc and/or style files.")
     msg_depr_ignore = "%s is deprecated and ignored. Use %s"
     msg_obsolete = ("%s is obsolete. Please remove it from your matplotlibrc "
                     "and/or style files.")
 
     # validate values on the way in
     def __init__(self, *args, **kwargs):
-        for k, v in six.iteritems(dict(*args, **kwargs)):
-            self[k] = v
+        self.update(*args, **kwargs)
 
     def __setitem__(self, key, val):
         try:
             if key in _deprecated_map:
                 alt_key, alt_val, inverse_alt = _deprecated_map[key]
-                warnings.warn(self.msg_depr % (key, alt_key))
+                warnings.warn(self.msg_depr % (key, alt_key),
+                              mplDeprecation)
                 key = alt_key
                 val = alt_val(val)
+            elif key in _deprecated_set and val is not None:
+                warnings.warn(self.msg_depr_set % key,
+                              mplDeprecation)
             elif key in _deprecated_ignore_map:
                 alt = _deprecated_ignore_map[key]
-                warnings.warn(self.msg_depr_ignore % (key, alt))
+                warnings.warn(self.msg_depr_ignore % (key, alt),
+                              mplDeprecation)
                 return
             elif key in _obsolete_set:
-                warnings.warn(self.msg_obsolete % (key,))
+                warnings.warn(self.msg_obsolete % (key, ),
+                              mplDeprecation)
                 return
             try:
                 cval = self.validate[key](val)
@@ -907,23 +916,27 @@ class RcParams(dict):
                 raise ValueError("Key %s: %s" % (key, str(ve)))
             dict.__setitem__(self, key, cval)
         except KeyError:
-            raise KeyError('%s is not a valid rc parameter.\
-See rcParams.keys() for a list of valid parameters.' % (key,))
+            raise KeyError(
+                '%s is not a valid rc parameter. See rcParams.keys() for a '
+                'list of valid parameters.' % (key,))
 
     def __getitem__(self, key):
         inverse_alt = None
         if key in _deprecated_map:
             alt_key, alt_val, inverse_alt = _deprecated_map[key]
-            warnings.warn(self.msg_depr % (key, alt_key))
+            warnings.warn(self.msg_depr % (key, alt_key),
+                          mplDeprecation)
             key = alt_key
 
         elif key in _deprecated_ignore_map:
             alt = _deprecated_ignore_map[key]
-            warnings.warn(self.msg_depr_ignore % (key, alt))
+            warnings.warn(self.msg_depr_ignore % (key, alt),
+                          mplDeprecation)
             key = alt
 
         elif key in _obsolete_set:
-            warnings.warn(self.msg_obsolete % (key,))
+            warnings.warn(self.msg_obsolete % (key, ),
+                          mplDeprecation)
             return None
 
         val = dict.__getitem__(self, key)
@@ -931,16 +944,6 @@ See rcParams.keys() for a list of valid parameters.' % (key,))
             return inverse_alt(val)
         else:
             return val
-
-    # http://stackoverflow.com/questions/2390827
-    # (how-to-properly-subclass-dict-and-override-get-set)
-    # the default dict `update` does not use __setitem__
-    # so rcParams.update(...) (such as in seaborn) side-steps
-    # all of the validation over-ride update to force
-    # through __setitem__
-    def update(self, *args, **kwargs):
-        for k, v in six.iteritems(dict(*args, **kwargs)):
-            self[k] = v
 
     def __repr__(self):
         import pprint
@@ -955,19 +958,12 @@ See rcParams.keys() for a list of valid parameters.' % (key,))
         return '\n'.join('{0}: {1}'.format(k, v)
                          for k, v in sorted(self.items()))
 
-    def keys(self):
+    def __iter__(self):
         """
-        Return sorted list of keys.
+        Yield sorted list of keys.
         """
-        k = list(dict.keys(self))
-        k.sort()
-        return k
-
-    def values(self):
-        """
-        Return values in order of sorted keys.
-        """
-        return [self[k] for k in self.keys()]
+        for k in sorted(dict.__iter__(self)):
+            yield k
 
     def find_all(self, pattern):
         """
@@ -1099,7 +1095,8 @@ def _rc_params_in_file(fname, fail_on_error=False):
                                   (val, error_details, msg))
         elif key in _deprecated_ignore_map:
             warnings.warn('%s is deprecated. Update your matplotlibrc to use '
-                          '%s instead.' % (key, _deprecated_ignore_map[key]))
+                          '%s instead.' % (key, _deprecated_ignore_map[key]),
+                          mplDeprecation)
 
         else:
             print("""
@@ -1477,67 +1474,8 @@ def _jupyter_nbextension_paths():
 
 
 default_test_modules = [
-    'matplotlib.tests.test_agg',
-    'matplotlib.tests.test_arrow_patches',
-    'matplotlib.tests.test_artist',
-    'matplotlib.tests.test_backend_bases',
-    'matplotlib.tests.test_backend_pdf',
-    'matplotlib.tests.test_backend_pgf',
-    'matplotlib.tests.test_backend_ps',
-    'matplotlib.tests.test_backend_qt4',
-    'matplotlib.tests.test_backend_qt5',
-    'matplotlib.tests.test_backend_svg',
-    'matplotlib.tests.test_basic',
-    'matplotlib.tests.test_bbox_tight',
-    'matplotlib.tests.test_coding_standards',
-    'matplotlib.tests.test_collections',
-    'matplotlib.tests.test_colorbar',
-    'matplotlib.tests.test_colors',
-    'matplotlib.tests.test_compare_images',
-    'matplotlib.tests.test_container',
-    'matplotlib.tests.test_contour',
-    'matplotlib.tests.test_dates',
-    'matplotlib.tests.test_dviread',
-    'matplotlib.tests.test_figure',
-    'matplotlib.tests.test_font_manager',
-    'matplotlib.tests.test_gridspec',
-    'matplotlib.tests.test_image',
-    'matplotlib.tests.test_legend',
-    'matplotlib.tests.test_lines',
-    'matplotlib.tests.test_mathtext',
-    'matplotlib.tests.test_mlab',
-    'matplotlib.tests.test_offsetbox',
-    'matplotlib.tests.test_patches',
-    'matplotlib.tests.test_path',
-    'matplotlib.tests.test_patheffects',
-    'matplotlib.tests.test_pickle',
     'matplotlib.tests.test_png',
-    'matplotlib.tests.test_quiver',
-    'matplotlib.tests.test_sankey',
-    'matplotlib.tests.test_scale',
-    'matplotlib.tests.test_simplification',
-    'matplotlib.tests.test_skew',
-    'matplotlib.tests.test_spines',
-    'matplotlib.tests.test_streamplot',
-    'matplotlib.tests.test_style',
-    'matplotlib.tests.test_subplots',
-    'matplotlib.tests.test_table',
-    'matplotlib.tests.test_text',
-    'matplotlib.tests.test_texmanager',
-    'matplotlib.tests.test_tightlayout',
-    'matplotlib.tests.test_transforms',
-    'matplotlib.tests.test_triangulation',
-    'matplotlib.tests.test_type1font',
-    'matplotlib.tests.test_ttconv',
     'matplotlib.tests.test_units',
-    'matplotlib.tests.test_usetex',
-    'matplotlib.tests.test_widgets',
-    'matplotlib.tests.test_cycles',
-    'matplotlib.tests.test_preprocess_data',
-    'matplotlib.sphinxext.tests.test_tinypages',
-    'mpl_toolkits.tests.test_mplot3d',
-    'mpl_toolkits.tests.test_axes_grid1',
-    'mpl_toolkits.tests.test_axes_grid',
     ]
 
 
@@ -1566,13 +1504,13 @@ def _init_tests():
             "Expected freetype version {0}. "
             "Found freetype version {1}. "
             "Freetype build type is {2}local".format(
-                ft2font.__freetype_version__,
                 LOCAL_FREETYPE_VERSION,
+                ft2font.__freetype_version__,
                 "" if ft2font.__freetype_build_type__ == 'local' else "not "
             )
         )
 
-    from .testing.nose import check_deps
+    from .testing._nose import check_deps
     check_deps()
 
 
@@ -1580,7 +1518,7 @@ def test(verbosity=1, coverage=False, **kwargs):
     """run the matplotlib test suite"""
     _init_tests()
 
-    from .testing.nose import test as nose_test
+    from .testing._nose import test as nose_test
     return nose_test(verbosity, coverage, **kwargs)
 
 
@@ -1887,4 +1825,4 @@ verbose.report('matplotlib version %s' % __version__)
 verbose.report('verbose.level %s' % verbose.level)
 verbose.report('interactive is %s' % is_interactive())
 verbose.report('platform is %s' % sys.platform)
-verbose.report('loaded modules: %s' % six.iterkeys(sys.modules), 'debug')
+verbose.report('loaded modules: %s' % list(sys.modules), 'debug')

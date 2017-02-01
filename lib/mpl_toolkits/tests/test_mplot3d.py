@@ -1,7 +1,8 @@
-from nose.tools import assert_raises
+import pytest
+
 from mpl_toolkits.mplot3d import Axes3D, axes3d, proj3d
 from matplotlib import cm
-from matplotlib.testing.decorators import image_comparison, cleanup
+from matplotlib.testing.decorators import image_comparison
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Circle
 import matplotlib.pyplot as plt
@@ -20,7 +21,6 @@ def test_bar3d():
         ax.bar(xs, ys, zs=z, zdir='y', color=cs, alpha=0.8)
 
 
-@cleanup
 def test_bar3d_dflt_smoke():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -107,7 +107,7 @@ def test_mixedsubplots():
     R = np.sqrt(X ** 2 + Y ** 2)
     Z = np.sin(R)
 
-    surf = ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
+    surf = ax.plot_surface(X, Y, Z, rcount=40, ccount=40,
                            linewidth=0, antialiased=False)
 
     ax.set_zlim3d(-1, 1)
@@ -143,7 +143,7 @@ def test_surface3d():
     X, Y = np.meshgrid(X, Y)
     R = np.sqrt(X ** 2 + Y ** 2)
     Z = np.sin(R)
-    surf = ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap=cm.coolwarm,
+    surf = ax.plot_surface(X, Y, Z, rcount=40, ccount=40, cmap=cm.coolwarm,
                            lw=0, antialiased=False)
     ax.set_zlim(-1.01, 1.01)
     fig.colorbar(surf, shrink=0.5, aspect=5)
@@ -196,7 +196,7 @@ def test_wireframe3d():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     X, Y, Z = axes3d.get_test_data(0.05)
-    ax.plot_wireframe(X, Y, Z, rstride=10, cstride=10)
+    ax.plot_wireframe(X, Y, Z, rcount=13, ccount=13)
 
 
 @image_comparison(baseline_images=['wireframe3dzerocstride'], remove_text=True,
@@ -205,7 +205,7 @@ def test_wireframe3dzerocstride():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     X, Y, Z = axes3d.get_test_data(0.05)
-    ax.plot_wireframe(X, Y, Z, rstride=10, cstride=0)
+    ax.plot_wireframe(X, Y, Z, rcount=13, ccount=0)
 
 
 @image_comparison(baseline_images=['wireframe3dzerorstride'], remove_text=True,
@@ -216,13 +216,24 @@ def test_wireframe3dzerorstride():
     X, Y, Z = axes3d.get_test_data(0.05)
     ax.plot_wireframe(X, Y, Z, rstride=0, cstride=10)
 
-@cleanup
+
 def test_wireframe3dzerostrideraises():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     X, Y, Z = axes3d.get_test_data(0.05)
-    with assert_raises(ValueError):
+    with pytest.raises(ValueError):
         ax.plot_wireframe(X, Y, Z, rstride=0, cstride=0)
+
+
+def test_mixedsamplesraises():
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    X, Y, Z = axes3d.get_test_data(0.05)
+    with pytest.raises(ValueError):
+        ax.plot_wireframe(X, Y, Z, rstride=10, ccount=50)
+    with pytest.raises(ValueError):
+        ax.plot_surface(X, Y, Z, cstride=50, rcount=10)
+
 
 @image_comparison(baseline_images=['quiver3d'], remove_text=True)
 def test_quiver3d():
@@ -303,16 +314,15 @@ def test_quiver3d_pivot_tail():
 
 @image_comparison(baseline_images=['axes3d_labelpad'], extensions=['png'])
 def test_axes3d_labelpad():
-    from nose.tools import assert_equal
     from matplotlib import rcParams
 
     fig = plt.figure()
     ax = Axes3D(fig)
     # labelpad respects rcParams
-    assert_equal(ax.xaxis.labelpad, rcParams['axes.labelpad'])
+    assert ax.xaxis.labelpad == rcParams['axes.labelpad']
     # labelpad can be set in set_label
     ax.set_xlabel('X LABEL', labelpad=10)
-    assert_equal(ax.xaxis.labelpad, 10)
+    assert ax.xaxis.labelpad == 10
     ax.set_ylabel('Y LABEL')
     ax.set_zlabel('Z LABEL')
     # or manually
@@ -332,7 +342,6 @@ def test_axes3d_cla():
     ax.set_axis_off()
     ax.cla()  # make sure the axis displayed is 3D (not 2D)
 
-@cleanup
 def test_plotsurface_1d_raises():
     x = np.linspace(0.5, 10, num=100)
     y = np.linspace(0.5, 10, num=100)
@@ -341,7 +350,8 @@ def test_plotsurface_1d_raises():
 
     fig = plt.figure(figsize=(14,6))
     ax = fig.add_subplot(1, 2, 1, projection='3d')
-    assert_raises(ValueError, ax.plot_surface, X, Y, z)
+    with pytest.raises(ValueError):
+        ax.plot_surface(X, Y, z)
 
 
 def _test_proj_make_M():
@@ -456,6 +466,12 @@ def test_lines_dists():
     ax.set_ylim(0, 300)
 
 
-if __name__ == '__main__':
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)
+def test_autoscale():
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.margins(x=0, y=.1, z=.2)
+    ax.plot([0, 1], [0, 1], [0, 1])
+    assert ax.get_w_lims() == (0, 1, -.1, 1.1, -.2, 1.2)
+    ax.autoscale(False)
+    ax.set_autoscalez_on(True)
+    ax.plot([0, 2], [0, 2], [0, 2])
+    assert ax.get_w_lims() == (0, 1, -.1, 1.1, -.4, 2.4)

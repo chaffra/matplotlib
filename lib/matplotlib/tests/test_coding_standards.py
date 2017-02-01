@@ -4,9 +4,7 @@ from __future__ import (absolute_import, division, print_function,
 from fnmatch import fnmatch
 import os
 
-from nose.tools import assert_equal
-from nose.plugins.skip import SkipTest
-from ..testing import xfail
+import pytest
 
 try:
     import pep8
@@ -103,7 +101,7 @@ def assert_pep8_conformance(module=matplotlib, exclude_files=None,
     __tracebackhide__ = True
 
     if not HAS_PEP8:
-        raise SkipTest('The pep8 tool is required for this test')
+        pytest.skip('The pep8 tool is required for this test')
 
     # to get a list of bad files, rather than the specific errors, add
     # "reporter=pep8.FileReport" to the StyleGuide constructor.
@@ -141,7 +139,7 @@ def assert_pep8_conformance(module=matplotlib, exclude_files=None,
                "{0}".format('\n'.join(reporter._global_deferred_print)))
     else:
         msg = "Found code syntax errors (and warnings)."
-    assert_equal(result.total_errors, 0, msg)
+    assert result.total_errors == 0, msg
 
     # If we've been using the exclusions reporter, check that we didn't
     # exclude files unnecessarily.
@@ -178,7 +176,6 @@ def test_pep8_conformance_installed_files():
     expected_bad_files = ['_cm.py',
                           '_mathtext_data.py',
                           'backend_bases.py',
-                          'cbook.py',
                           'collections.py',
                           'font_manager.py',
                           'fontconfig_pattern.py',
@@ -204,15 +201,10 @@ def test_pep8_conformance_installed_files():
                           'testing/jpl_units/__init__.py',
                           'tri/triinterpolate.py',
                           'tests/test_axes.py',
-                          'tests/test_bbox_tight.py',
                           'tests/test_image.py',
-                          'tests/test_legend.py',
                           'tests/test_lines.py',
                           'tests/test_mathtext.py',
                           'tests/test_rcparams.py',
-                          'tests/test_simplification.py',
-                          'tests/test_streamplot.py',
-                          'tests/test_subplots.py',
                           'tests/test_tightlayout.py',
                           'tests/test_triangulation.py',
                           'backends/backend_agg.py',
@@ -256,8 +248,8 @@ def test_pep8_conformance_examples():
             fp, tail = os.path.split(fp)
 
     if mpldir is None:
-        xfail("can not find the examples, set env MPL_REPO_DIR to point "
-              "to the top-level path of the source tree")
+        pytest.xfail("can not find the examples, set env MPL_REPO_DIR to "
+                     "point to the top-level path of the source tree")
 
     exdir = os.path.join(mpldir, 'examples')
     blacklist = ()
@@ -277,13 +269,10 @@ def test_pep8_conformance_examples():
                           '*/pyplots/tex_demo.py',
                           '*/pyplots/compound_path_demo.py',
                           '*/pyplots/text_commands.py',
-                          '*/pyplots/dollar_ticks.py',
                           '*/pyplots/text_layout.py',
                           '*/pyplots/fig_axes_customize_simple.py',
                           '*/pyplots/whats_new_1_subplot3d.py',
-                          '*/pyplots/fig_axes_labels_simple.py',
                           '*/pyplots/whats_new_98_4_fancy.py',
-                          '*/pyplots/fig_x.py',
                           '*/pyplots/whats_new_98_4_fill_between.py',
                           '*/pyplots/whats_new_98_4_legend.py',
                           '*/pyplots/pyplot_annotate.py',
@@ -296,8 +285,3 @@ def test_pep8_conformance_examples():
                             pep8_additional_ignore=PEP8_ADDITIONAL_IGNORE +
                             ['E116', 'E501', 'E402'],
                             expected_bad_files=expected_bad_files)
-
-
-if __name__ == '__main__':
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)

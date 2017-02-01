@@ -4,6 +4,8 @@
 # Written by Robert Cimrman
 
 from __future__ import print_function
+from six.moves import input
+
 import time
 from multiprocessing import Process, Pipe
 import numpy as np
@@ -28,21 +30,15 @@ class ProcessPlotter(object):
     def poll_draw(self):
 
         def call_back():
-            while 1:
-                if not self.pipe.poll():
-                    break
-
+            while self.pipe.poll():
                 command = self.pipe.recv()
-
                 if command is None:
                     self.terminate()
                     return False
-
                 else:
                     self.x.append(command[0])
                     self.y.append(command[1])
                     self.ax.plot(self.x, self.y, 'ro')
-
             self.fig.canvas.draw()
             return True
 
@@ -82,7 +78,7 @@ def main():
     for ii in range(10):
         pl.plot()
         time.sleep(0.5)
-    raw_input('press Enter...')
+    input('press Enter...')
     pl.plot(finished=True)
 
 if __name__ == '__main__':

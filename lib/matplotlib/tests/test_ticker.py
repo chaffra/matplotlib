@@ -8,12 +8,11 @@ import pytest
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from matplotlib.testing.decorators import cleanup
 
 import warnings
 
 
-@cleanup(style='classic')
+@pytest.mark.style('classic')
 def test_MaxNLocator():
     loc = mticker.MaxNLocator(nbins=5)
     test_value = np.array([20., 40., 60., 80., 100.])
@@ -26,14 +25,17 @@ def test_MaxNLocator():
     assert_almost_equal(loc.tick_values(-1e15, 1e15), test_value)
 
 
-@cleanup
 def test_MaxNLocator_integer():
     loc = mticker.MaxNLocator(nbins=5, integer=True)
     test_value = np.array([-1, 0, 1, 2])
     assert_almost_equal(loc.tick_values(-0.1, 1.1), test_value)
 
-    test_value = np.array([-0.25, 0, 0.25, 0.5, 0.75, 1])
+    test_value = np.array([-0.25, 0, 0.25, 0.5, 0.75, 1.0])
     assert_almost_equal(loc.tick_values(-0.1, 0.95), test_value)
+
+    loc = mticker.MaxNLocator(nbins=5, integer=True, steps=[1, 1.5, 5, 6, 10])
+    test_value = np.array([0, 15, 30, 45, 60])
+    assert_almost_equal(loc.tick_values(1, 55), test_value)
 
 
 def test_LinearLocator():
@@ -49,7 +51,6 @@ def test_MultipleLocator():
     assert_almost_equal(loc.tick_values(-7, 10), test_value)
 
 
-@cleanup
 def test_AutoMinorLocator():
     fig, ax = plt.subplots()
     ax.set_xlim(0, 1.39)
@@ -164,14 +165,13 @@ def test_SymmetricalLogLocator_set_params():
     See if change was successful.
     Should not exception.
     """
-    # since we only test for the params change. I will pass empty transform
-    sym = mticker.SymmetricalLogLocator(None)
+    sym = mticker.SymmetricalLogLocator(base=10, linthresh=1)
     sym.set_params(subs=[2.0], numticks=8)
     assert sym._subs == [2.0]
     assert sym.numticks == 8
 
 
-@cleanup(style='classic')
+@pytest.mark.style('classic')
 @pytest.mark.parametrize('left, right, offset',
                          [(123, 189, 0),
                           (-189, -123, 0),
@@ -237,7 +237,7 @@ def _sub_labels(axis, subs=()):
     assert label_test == label_expected
 
 
-@cleanup
+@pytest.mark.style('default')
 def test_LogFormatter_sublabel():
     # test label locator
     fig, ax = plt.subplots()
@@ -245,7 +245,7 @@ def test_LogFormatter_sublabel():
     ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[]))
     ax.xaxis.set_minor_locator(mticker.LogLocator(base=10,
                                                   subs=np.arange(2, 10)))
-    ax.xaxis.set_major_formatter(mticker.LogFormatter())
+    ax.xaxis.set_major_formatter(mticker.LogFormatter(labelOnlyBase=True))
     ax.xaxis.set_minor_formatter(mticker.LogFormatter(labelOnlyBase=False))
     # axis range above 3 decades, only bases are labeled
     ax.set_xlim(1, 1e4)
@@ -266,9 +266,13 @@ def test_LogFormatter_sublabel():
     ax.set_xlim(1, 80)
     _sub_labels(ax.xaxis, subs=[])
 
-    # axis range at 0 to 1 decades, label subs 2, 3, 6
+    # axis range at 0.4 to 1 decades, label subs 2, 3, 4, 6
     ax.set_xlim(1, 8)
-    _sub_labels(ax.xaxis, subs=[2, 3, 6])
+    _sub_labels(ax.xaxis, subs=[2, 3, 4, 6])
+
+    # axis range at 0 to 0.4 decades, label all
+    ax.set_xlim(0.5, 0.9)
+    _sub_labels(ax.xaxis, subs=np.arange(2, 10, dtype=int))
 
 
 class FakeAxis(object):
@@ -311,6 +315,7 @@ def test_LogFormatterExponent_blank():
     assert formatter(10**0.1) == ''
 
 
+@pytest.mark.style('default')
 def test_LogFormatterSciNotation():
     test_cases = {
         10: (
@@ -335,9 +340,9 @@ def test_LogFormatterSciNotation():
         )
     }
 
-    for base in test_cases.keys():
+    for base in test_cases:
         formatter = mticker.LogFormatterSciNotation(base=base)
-        formatter.sublabel = set([1, 2, 5, 1.2])
+        formatter.sublabel = {1, 2, 5, 1.2}
         for value, expected in test_cases[base]:
             with matplotlib.rc_context({'text.usetex': False}):
                 assert formatter(value) == expected
@@ -499,6 +504,10 @@ def test_formatstrformatter():
     tmp_form = mticker.StrMethodFormatter('{x:05d}')
     assert '00002' == tmp_form(2)
 
+    # test str.format() style formatter with `pos`
+    tmp_form = mticker.StrMethodFormatter('{x:03d}-{pos:02d}')
+    assert '002-01' == tmp_form(2, 1)
+
 
 percentformatter_test_cases = (
     # Check explicitly set decimals over different intervals and values
@@ -529,10 +538,6 @@ percentformatter_test_cases = (
 def test_percentformatter(xmax, decimals, symbol, x, display_range, expected):
     formatter = mticker.PercentFormatter(xmax, decimals, symbol)
     assert formatter.format_pct(x, display_range) == expected
-
-    # test str.format() style formatter with `pos`
-    tmp_form = mticker.StrMethodFormatter('{x:03d}-{pos:02d}')
-    assert '002-01' == tmp_form(2, 1)
 
 
 def test_EngFormatter_formatting():

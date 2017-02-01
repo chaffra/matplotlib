@@ -36,11 +36,11 @@ STYLE_FILE_PATTERN = re.compile('([\S]+).%s$' % STYLE_EXTENSION)
 
 
 # A list of rcParams that should not be applied from styles
-STYLE_BLACKLIST = set([
+STYLE_BLACKLIST = {
     'interactive', 'backend', 'backend.qt4', 'webagg.port',
     'webagg.port_retries', 'webagg.open_in_browser', 'backend_fallback',
     'toolbar', 'timezone', 'datapath', 'figure.max_open_warning',
-    'savefig.directory', 'tk.window_focus', 'docstring.hardcopy'])
+    'savefig.directory', 'tk.window_focus', 'docstring.hardcopy'}
 
 
 def _remove_blacklisted_style_params(d, warn=True):
@@ -188,7 +188,14 @@ def read_style_directory(style_dir):
     """Return dictionary of styles defined in `style_dir`."""
     styles = dict()
     for path, name in iter_style_files(style_dir):
-        styles[name] = rc_params_from_file(path, use_default_template=False)
+        with warnings.catch_warnings(record=True) as warns:
+            styles[name] = rc_params_from_file(path,
+                                               use_default_template=False)
+
+        for w in warns:
+            message = 'In %s: %s' % (path, w.message)
+            warnings.warn(message)
+
     return styles
 
 
@@ -218,7 +225,6 @@ available = []
 
 def reload_library():
     """Reload style library."""
-    global library, available
-    library = update_user_library(_base_library)
-    available[:] = library.keys()
+    global library
+    available[:] = library = update_user_library(_base_library)
 reload_library()

@@ -166,7 +166,7 @@ class TriInterpolator(object):
         x = np.asarray(x, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
         sh_ret = x.shape
-        if (x.shape != y.shape):
+        if x.shape != y.shape:
             raise ValueError("x and y shall have same shapes."
                              " Given: {0} and {1}".format(x.shape, y.shape))
         x = np.ravel(x)
@@ -1265,12 +1265,9 @@ class _Sparse_Matrix_coo(object):
         *V* dense vector of shape (self.m,)
         """
         assert V.shape == (self.m,)
-        # For a more generic implementation we could use below kw argument
-        # minlength=self.m of bincount ; however:
-        # - it is new in numpy 1.6
-        # - it is unecessary when each row have at least 1 entry in global
-        #   matrix, which is the case here.
-        return np.bincount(self.rows, weights=self.vals*V[self.cols])
+        return np.bincount(self.rows,
+                           weights=self.vals*V[self.cols],
+                           minlength=self.m)
 
     def compress_csc(self):
         """

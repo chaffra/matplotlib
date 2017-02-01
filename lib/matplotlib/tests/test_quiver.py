@@ -1,10 +1,9 @@
 from __future__ import print_function
 import warnings
 import numpy as np
-from nose.tools import raises
+import pytest
 import sys
 from matplotlib import pyplot as plt
-from matplotlib.testing.decorators import cleanup
 from matplotlib.testing.decorators import image_comparison
 
 
@@ -18,7 +17,6 @@ def draw_quiver(ax, **kw):
     return Q
 
 
-@cleanup
 def test_quiver_memory_leak():
     fig, ax = plt.subplots()
 
@@ -31,7 +29,6 @@ def test_quiver_memory_leak():
     assert sys.getrefcount(ttX) == 2
 
 
-@cleanup
 def test_quiver_key_memory_leak():
     fig, ax = plt.subplots()
 
@@ -45,7 +42,6 @@ def test_quiver_key_memory_leak():
     assert sys.getrefcount(qk) == 2
 
 
-@cleanup
 def test_no_warnings():
     fig, ax = plt.subplots()
 
@@ -55,6 +51,18 @@ def test_no_warnings():
     phi = (np.random.rand(15, 10) - .5) * 150
     with warnings.catch_warnings(record=True) as w:
         ax.quiver(X, Y, U, V, angles=phi)
+        fig.canvas.draw()
+    assert len(w) == 0
+
+
+def test_zero_headlength():
+    # Based on report by Doug McNeil:
+    # http://matplotlib.1069221.n5.nabble.com/quiver-warnings-td28107.html
+    fig, ax = plt.subplots()
+    X, Y = np.meshgrid(np.arange(10), np.arange(10))
+    U, V = np.cos(X), np.sin(Y)
+    with warnings.catch_warnings(record=True) as w:
+        ax.quiver(U, V, headlength=0, headaxislength=0)
         fig.canvas.draw()
     assert len(w) == 0
 
@@ -82,6 +90,7 @@ def test_quiver_with_key():
 
     qk = ax.quiverkey(Q, 0.5, 0.95, 2,
                       r'$2\, \mathrm{m}\, \mathrm{s}^{-1}$',
+                      angle=-10,
                       coordinates='figure',
                       labelpos='W',
                       fontproperties={'weight': 'bold',
@@ -97,7 +106,6 @@ def test_quiver_single():
     ax.quiver([1], [1], [2], [2])
 
 
-@cleanup
 def test_quiver_copy():
     fig, ax = plt.subplots()
     uv = dict(u=np.array([1.1]), v=np.array([2.0]))
@@ -134,8 +142,6 @@ def test_barbs():
              cmap='viridis')
 
 
-@cleanup
-@raises(ValueError)
 def test_bad_masked_sizes():
     'Test error handling when given differing sized masked arrays'
     x = np.arange(3)
@@ -145,9 +151,20 @@ def test_bad_masked_sizes():
     u[1] = np.ma.masked
     v[1] = np.ma.masked
     fig, ax = plt.subplots()
-    ax.barbs(x, y, u, v)
+    with pytest.raises(ValueError):
+        ax.barbs(x, y, u, v)
 
 
-if __name__ == '__main__':
-    import nose
-    nose.runmodule()
+def test_quiverkey_angles():
+    # Check that only a single arrow is plotted for a quiverkey when an array
+    # of angles is given to the original quiver plot
+    fig, ax = plt.subplots()
+
+    X, Y = np.meshgrid(np.arange(2), np.arange(2))
+    U = V = angles = np.ones_like(X)
+
+    q = ax.quiver(X, Y, U, V, angles=angles)
+    qk = ax.quiverkey(q, 1, 1, 2, 'Label')
+    # The arrows are only created when the key is drawn
+    fig.canvas.draw()
+    assert len(qk.verts) == 1
