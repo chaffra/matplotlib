@@ -13,8 +13,9 @@ body {
     padding: 0;
     border: 1px solid #aaa;
     color: #333;
-    margin: 0px 80px 0px 80px;
+    margin: auto;
     min-width: 740px;
+    max-width: 1200px;
 }
 
 a {
@@ -357,6 +358,19 @@ div.admonition, div.warning {
     font-size: 0.9em;
 }
 
+div.warning {
+    color: #b94a48;
+    background-color: #F3E5E5;
+    border: 1px solid #eed3d7;
+}
+
+div.green {
+    color: #468847;
+    background-color: #dff0d8;
+    border: 1px solid #d6e9c6;
+}
+
+
 div.admonition p, div.warning p {
     margin: 0.5em 1em 0.5em 1em;
     padding: 0;
@@ -366,6 +380,11 @@ div.admonition pre, div.warning pre {
     margin: 0.4em 1em 0.4em 1em;
 }
 
+div.admonition p.admonition-title + p {
+    display: inline;
+}
+
+
 div.admonition p.admonition-title,
 div.warning p.admonition-title {
     margin: 0;
@@ -373,12 +392,45 @@ div.warning p.admonition-title {
     font-size: 14px;
 }
 
+div.admonition {
+    margin-bottom: 10px;
+    margin-top: 10px;
+    padding: 7px;
+    border-radius: 4px;
+    -moz-border-radius: 4px;
+  }
+
+
+div.note {
+    background-color: #eee;
+    border: 1px solid #ccc;
+}
+
+div.topic {
+    background-color: #eee;
+    border: 1px solid #CCC;
+    margin: 10px 0px;
+    padding: 7px 7px 0px;
+    border-radius: 4px;
+    -moz-border-radius: 4px;
+}
+
+p.topic-title {
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+div.seealso {
+    background-color: #FFFBE8;
+    border: 1px solid #fbeed5;
+    color: #AF8A4B;
+  }
+
 div.warning {
     border: 1px solid #940000;
 }
 
 div.warning p.admonition-title {
-    background-color: #CF0000;
     border-bottom-color: #940000;
 }
 
@@ -687,8 +739,8 @@ div.responsive_screenshots {
     margin: auto;
 
     /* Do not go beyond 1:1 scale (and ensure a 1x4 tight layout) */
-    max-width: 648px;  /* at most 4 x 1:1 subfig width  */
-    max-height: 139px; /* at most 1 x 1:1 subfig height */
+    max-width: 640px;  /* at most 4 x 1:1 subfig width  */
+    max-height: 120px; /* at most 1 x 1:1 subfig height */
 }
 
 /* To avoid subfigure parts outside of the responsive_screenshots  */

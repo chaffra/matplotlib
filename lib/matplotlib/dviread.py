@@ -532,7 +532,7 @@ class DviFont(object):
             scale, tfm, texname, vf
         self.size = scale * (72.0 / (72.27 * 2**16))
         try:
-            nchars = max(six.iterkeys(tfm.width)) + 1
+            nchars = max(tfm.width) + 1
         except ValueError:
             nchars = 0
         self.widths = [(1000*tfm.width.get(char, 0)) >> 20
@@ -587,7 +587,7 @@ class DviFont(object):
 
 class Vf(Dvi):
     """
-    A virtual font (\*.vf file) containing subroutines for dvi files.
+    A virtual font (\\*.vf file) containing subroutines for dvi files.
 
     Usage::
 
@@ -899,7 +899,7 @@ class PsfontsMap(object):
 
 class Encoding(object):
     """
-    Parses a \*.enc file referenced from a psfonts.map style file.
+    Parses a \\*.enc file referenced from a psfonts.map style file.
     The format this class understands is a very limited subset of
     PostScript.
 
@@ -970,7 +970,7 @@ def find_tex_file(filename, format=None):
         The library that :program:`kpsewhich` is part of.
     """
 
-    cmd = ['kpsewhich']
+    cmd = [str('kpsewhich')]
     if format is not None:
         cmd += ['--format=' + format]
     cmd += [filename]

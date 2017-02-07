@@ -59,7 +59,7 @@ min_circle_ratio = .01  # Minimum circle ratio - border triangles with circle
                         # all triangles.
 
 # Random points
-random_gen = np.random.mtrand.RandomState(seed=127260)
+random_gen = np.random.RandomState(seed=19680801)
 x_test = random_gen.uniform(-1., 1., size=n_test)
 y_test = random_gen.uniform(-1., 1., size=n_test)
 z_test = experiment_res(x_test, y_test)
@@ -113,10 +113,10 @@ plt.gca().set_aspect('equal')
 plt.title("Filtering a Delaunay mesh\n" +
           "(application to high-resolution tricontouring)")
 
-# 1) plot of the refined (computed) data countours:
+# 1) plot of the refined (computed) data contours:
 plt.tricontour(tri_refi, z_test_refi, levels=levels, cmap=cmap,
                linewidths=[2.0, 0.5, 1.0, 0.5])
-# 2) plot of the expected (analytical) data countours (dashed):
+# 2) plot of the expected (analytical) data contours (dashed):
 if plot_expected:
     plt.tricontour(tri_refi, z_expected, levels=levels, cmap=cmap,
                    linestyles='--')

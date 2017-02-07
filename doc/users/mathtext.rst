@@ -216,7 +216,7 @@ When using the `STIX <http://www.stixfonts.org/>`_ fonts, you also have the choi
     ``\mathrm{\mathsf{sansserif}}``        :math-stix:`\mathrm{\mathsf{sansserif}}`
     ====================================== =========================================
 
-.. htmlonly::
+  .. htmlonly::
 
     ====================================== =========================================
     ``\mathcircled{circled}``              :math-stix:`\mathcircled{circled}`
@@ -340,5 +340,5 @@ Example
 
 Here is an example illustrating many of these features in context.
 
-.. plot:: pyplots/pyplot_mathtext.py
+.. plot:: mpl_examples/pyplots/pyplot_mathtext.py
    :include-source:

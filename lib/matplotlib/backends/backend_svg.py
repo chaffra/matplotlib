@@ -145,8 +145,7 @@ class XMLWriter(object):
         if attrib or extra:
             attrib = attrib.copy()
             attrib.update(extra)
-            attrib = list(six.iteritems(attrib))
-            attrib.sort()
+            attrib = sorted(six.iteritems(attrib))
             for k, v in attrib:
                 if not v == '':
                     k = escape_cdata(k)
@@ -248,8 +247,7 @@ def generate_transform(transform_list=[]):
 def generate_css(attrib={}):
     if attrib:
         output = io.StringIO()
-        attrib = list(six.iteritems(attrib))
-        attrib.sort()
+        attrib = sorted(six.iteritems(attrib))
         for k, v in attrib:
             k = escape_attrib(k)
             v = escape_attrib(v)
@@ -349,7 +347,7 @@ class RendererSVG(RendererBase):
         """
         if rgbFace is not None:
             rgbFace = tuple(rgbFace)
-        edge = gc.get_rgb()
+        edge = gc.get_hatch_color()
         if edge is not None:
             edge = tuple(edge)
         dictkey = (gc.get_hatch(), rgbFace, edge)
@@ -595,10 +593,8 @@ class RendererSVG(RendererBase):
         style = self._get_style_dict(gc, rgbFace)
         dictkey = (path_data, generate_css(style))
         oid = self._markers.get(dictkey)
-        for key in list(six.iterkeys(style)):
-            if not key.startswith('stroke'):
-                del style[key]
-        style = generate_css(style)
+        style = generate_css({k: v for k, v in six.iteritems(style)
+                              if k.startswith('stroke')})
 
         if oid is None:
             oid = self._make_id('m', dictkey)
@@ -880,17 +876,20 @@ class RendererSVG(RendererBase):
         """
         draw the text by converting them to paths using textpath module.
 
-        *prop*
+        Parameters
+        ----------
+        prop : `matplotlib.font_manager.FontProperties`
           font property
 
-        *s*
+        s : str
           text to be converted
 
-        *usetex*
+        usetex : bool
           If True, use matplotlib usetex mode.
 
-        *ismath*
+        ismath : bool
           If True, use mathtext parser. If "TeX", use *usetex* mode.
+
         """
         writer = self.writer
 
@@ -1038,7 +1037,7 @@ class RendererSVG(RendererBase):
                 # Don't do vertical anchor alignment. Most applications do not
                 # support 'alignment-baseline' yet. Apply the vertical layout
                 # to the anchor point manually for now.
-                angle_rad = angle * np.pi / 180.
+                angle_rad = np.deg2rad(angle)
                 dir_vert = np.array([np.sin(angle_rad), np.cos(angle_rad)])
                 v_offset = np.dot(dir_vert, [(x - ax), (y - ay)])
                 ax = ax + v_offset * dir_vert[0]
@@ -1189,49 +1188,64 @@ class FigureCanvasSVG(FigureCanvasBase):
 
     def print_svg(self, filename, *args, **kwargs):
         if is_string_like(filename):
-            fh_to_close = svgwriter = io.open(filename, 'w', encoding='utf-8')
-        elif is_writable_file_like(filename):
-            if not isinstance(filename, io.TextIOBase):
-                if six.PY3:
-                    svgwriter = io.TextIOWrapper(filename, 'utf-8')
-                else:
-                    svgwriter = codecs.getwriter('utf-8')(filename)
-            else:
-                svgwriter = filename
-            fh_to_close = None
-        else:
+            with io.open(filename, 'w', encoding='utf-8') as svgwriter:
+                return self._print_svg(filename, svgwriter, **kwargs)
+
+        if not is_writable_file_like(filename):
             raise ValueError("filename must be a path or a file-like object")
-        return self._print_svg(filename, svgwriter, fh_to_close, **kwargs)
+
+        svgwriter = filename
+        filename = getattr(svgwriter, 'name', '')
+        if not isinstance(filename, six.string_types):
+            filename = ''
+
+        if not isinstance(svgwriter, io.TextIOBase):
+            if six.PY3:
+                svgwriter = io.TextIOWrapper(svgwriter, 'utf-8')
+            else:
+                svgwriter = codecs.getwriter('utf-8')(svgwriter)
+            detach = True
+        else:
+            detach = False
+
+        result = self._print_svg(filename, svgwriter, **kwargs)
+
+        # Detach underlying stream from wrapper so that it remains open in the
+        # caller.
+        if detach:
+            if six.PY3:
+                svgwriter.detach()
+            else:
+                svgwriter.reset()
+                svgwriter.stream = io.BytesIO()
+
+        return result
 
     def print_svgz(self, filename, *args, **kwargs):
         if is_string_like(filename):
-            fh_to_close = gzipwriter = gzip.GzipFile(filename, 'w')
-            svgwriter = io.TextIOWrapper(gzipwriter, 'utf-8')
+            options = dict(filename=filename)
         elif is_writable_file_like(filename):
-            fh_to_close = gzipwriter = gzip.GzipFile(fileobj=filename, mode='w')
-            svgwriter = io.TextIOWrapper(gzipwriter, 'utf-8')
+            options = dict(fileobj=filename)
         else:
             raise ValueError("filename must be a path or a file-like object")
-        return self._print_svg(filename, svgwriter, fh_to_close)
 
-    def _print_svg(self, filename, svgwriter, fh_to_close=None, **kwargs):
-        try:
-            image_dpi = kwargs.pop("dpi", 72)
-            self.figure.set_dpi(72.0)
-            width, height = self.figure.get_size_inches()
-            w, h = width*72, height*72
+        with gzip.GzipFile(mode='w', **options) as gzipwriter:
+            return self.print_svg(gzipwriter)
 
-            _bbox_inches_restore = kwargs.pop("bbox_inches_restore", None)
-            renderer = MixedModeRenderer(
-                self.figure,
-                width, height, image_dpi, RendererSVG(w, h, svgwriter, filename, image_dpi),
-                bbox_inches_restore=_bbox_inches_restore)
+    def _print_svg(self, filename, svgwriter, **kwargs):
+        image_dpi = kwargs.pop("dpi", 72)
+        self.figure.set_dpi(72.0)
+        width, height = self.figure.get_size_inches()
+        w, h = width*72, height*72
 
-            self.figure.draw(renderer)
-            renderer.finalize()
-        finally:
-            if fh_to_close is not None:
-                svgwriter.close()
+        _bbox_inches_restore = kwargs.pop("bbox_inches_restore", None)
+        renderer = MixedModeRenderer(
+            self.figure,
+            width, height, image_dpi, RendererSVG(w, h, svgwriter, filename, image_dpi),
+            bbox_inches_restore=_bbox_inches_restore)
+
+        self.figure.draw(renderer)
+        renderer.finalize()
 
     def get_default_filetype(self):
         return 'svg'

@@ -2,6 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+# Fixing random state for reproducibility
+np.random.seed(19680801)
+
+
 # the random data
 x = np.random.randn(1000)
 y = np.random.randn(1000)
@@ -26,7 +30,7 @@ plt.setp(axHistx.get_xticklabels() + axHisty.get_yticklabels(),
 
 # now determine nice limits by hand:
 binwidth = 0.25
-xymax = np.max([np.max(np.fabs(x)), np.max(np.fabs(y))])
+xymax = max(np.max(np.abs(x)), np.max(np.abs(y)))
 lim = (int(xymax/binwidth) + 1)*binwidth
 
 bins = np.arange(-lim, lim + binwidth, binwidth)

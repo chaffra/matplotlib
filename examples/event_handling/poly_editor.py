@@ -70,8 +70,8 @@ class PolygonInteractor(object):
         xy = np.asarray(self.poly.xy)
         xyt = self.poly.get_transform().transform(xy)
         xt, yt = xyt[:, 0], xyt[:, 1]
-        d = np.sqrt((xt - event.x)**2 + (yt - event.y)**2)
-        indseq = np.nonzero(np.equal(d, np.amin(d)))[0]
+        d = np.hypot(xt - event.x, yt - event.y)
+        indseq, = np.nonzero(d == d.min())
         ind = indseq[0]
 
         if d[ind] >= self.epsilon:
@@ -141,6 +141,10 @@ class PolygonInteractor(object):
         x, y = event.xdata, event.ydata
 
         self.poly.xy[self._ind] = x, y
+        if self._ind == 0:
+            self.poly.xy[-1] = x, y
+        elif self._ind == len(self.poly.xy) - 1:
+            self.poly.xy[0] = x, y
         self.line.set_data(zip(*self.poly.xy))
 
         self.canvas.restore_region(self.background)

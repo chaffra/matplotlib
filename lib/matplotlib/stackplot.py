@@ -39,7 +39,7 @@ def stackplot(axes, x, *args, **kwargs):
                 sum of the squared slopes. 'weighted_wiggle' does the
                 same but weights to account for size of each layer.
                 It is also called `Streamgraph`-layout. More details
-                can be found at http://www.leebyron.com/else/streamgraph/.
+                can be found at http://leebyron.com/streamgraph/.
 
 
     *labels* : A list or tuple of labels to assign to each data series.
@@ -68,13 +68,11 @@ def stackplot(axes, x, *args, **kwargs):
 
     baseline = kwargs.pop('baseline', 'zero')
     # Assume data passed has not been 'stacked', so stack it here.
-    stack = np.cumsum(y, axis=0)
+    # We'll need a float buffer for the upcoming calculations.
+    stack = np.cumsum(y, axis=0, dtype=np.promote_types(y.dtype, np.float32))
 
-    r = []
-    margins = {}
     if baseline == 'zero':
         first_line = 0.
-        margins['bottom'] = False
 
     elif baseline == 'sym':
         first_line = -np.sum(y, 0) * 0.5
@@ -82,17 +80,18 @@ def stackplot(axes, x, *args, **kwargs):
 
     elif baseline == 'wiggle':
         m = y.shape[0]
-        first_line = (y * (m - 0.5 - np.arange(0, m)[:, None])).sum(0)
+        first_line = (y * (m - 0.5 - np.arange(m)[:, None])).sum(0)
         first_line /= -m
         stack += first_line
-        margins['bottom'] = False
 
     elif baseline == 'weighted_wiggle':
         m, n = y.shape
         center = np.zeros(n)
         total = np.sum(y, 0)
         # multiply by 1/total (or zero) to avoid infinities in the division:
-        inv_total = np.where(total > 0, 1./total, 0)
+        inv_total = np.zeros_like(total)
+        mask = total > 0
+        inv_total[mask] = 1.0 / total[mask]
         increase = np.hstack((y[:, 0:1], np.diff(y)))
         below_size = total - stack
         below_size += 0.5 * y
@@ -102,7 +101,6 @@ def stackplot(axes, x, *args, **kwargs):
         center = np.cumsum(center.sum(0))
         first_line = center - 0.5 * total
         stack += first_line
-        margins['bottom'] = False
 
     else:
         errstr = "Baseline method %s not recognised. " % baseline
@@ -111,11 +109,11 @@ def stackplot(axes, x, *args, **kwargs):
 
     # Color between x = 0 and the first array.
     color = axes._get_lines.get_next_color()
-    r.append(axes.fill_between(x, first_line, stack[0, :],
-                               facecolor=color,
-                               label= six.next(labels, None),
-                               margins=margins,
-                               **kwargs))
+    coll = axes.fill_between(x, first_line, stack[0, :],
+                             facecolor=color, label=six.next(labels, None),
+                             **kwargs)
+    coll.sticky_edges.y[:] = [0]
+    r = [coll]
 
     # Color between array i-1 and array i
     for i in xrange(len(y) - 1):
@@ -123,6 +121,5 @@ def stackplot(axes, x, *args, **kwargs):
         r.append(axes.fill_between(x, stack[i, :], stack[i + 1, :],
                                    facecolor=color,
                                    label= six.next(labels, None),
-                                   margins=margins,
                                    **kwargs))
     return r

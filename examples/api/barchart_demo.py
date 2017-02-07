@@ -1,4 +1,8 @@
 """
+========
+Barchart
+========
+
 A bar plot with errorbars and height labels on individual bars
 """
 import numpy as np
@@ -21,7 +25,7 @@ rects2 = ax.bar(ind + width, women_means, width, color='y', yerr=women_std)
 # add some text for labels, title and axes ticks
 ax.set_ylabel('Scores')
 ax.set_title('Scores by group and gender')
-ax.set_xticks(ind + width)
+ax.set_xticks(ind + width / 2)
 ax.set_xticklabels(('G1', 'G2', 'G3', 'G4', 'G5'))
 
 ax.legend((rects1[0], rects2[0]), ('Men', 'Women'))

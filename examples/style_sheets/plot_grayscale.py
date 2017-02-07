@@ -1,4 +1,8 @@
 """
+=====================
+Grayscale style sheet
+=====================
+
 This example demonstrates the "grayscale" style sheet, which changes all colors
 that are defined as rc parameters to grayscale. Note, however, that not all
 plot elements default to colors defined by an rc parameter.
@@ -6,6 +10,9 @@ plot elements default to colors defined by an rc parameter.
 """
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Fixing random state for reproducibility
+np.random.seed(19680801)
 
 
 def color_cycle_example(ax):
@@ -26,6 +33,7 @@ def image_and_patch_example(ax):
 plt.style.use('grayscale')
 
 fig, (ax1, ax2) = plt.subplots(ncols=2)
+fig.suptitle("'grayscale' style sheet")
 
 color_cycle_example(ax1)
 image_and_patch_example(ax2)

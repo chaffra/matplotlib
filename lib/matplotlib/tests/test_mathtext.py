@@ -4,10 +4,13 @@ from __future__ import (absolute_import, division, print_function,
 import six
 
 import io
+import re
 
 import numpy as np
+import pytest
+
 import matplotlib
-from matplotlib.testing.decorators import image_comparison, knownfailureif, cleanup
+from matplotlib.testing.decorators import image_comparison
 import matplotlib.pyplot as plt
 from matplotlib import mathtext
 
@@ -106,6 +109,7 @@ math_tests = [
     r'$6-2$; $-2$; $ -2$; ${-2}$; ${  -2}$; $20^{+3}_{-2}$',
     r'$\overline{\omega}^x \frac{1}{2}_0^x$', # github issue #5444
     r'$,$ $.$ $1{,}234{, }567{ , }890$ and $1,234,567,890$', # github issue 5799
+    r'$\left(X\right)_{a}^{b}$', # github issue 7615
 ]
 
 digits = "0123456789"
@@ -195,8 +199,10 @@ def test_fontinfo():
     table = font.get_sfnt_table("head")
     assert table['version'] == (1, 0)
 
-def test_mathtext_exceptions():
-    errors = [
+
+@pytest.mark.parametrize(
+    'math, msg',
+    [
         (r'$\hspace{}$', r'Expected \hspace{n}'),
         (r'$\hspace{foo}$', r'Expected \hspace{n}'),
         (r'$\frac$', r'Expected \frac{num}{den}'),
@@ -205,8 +211,10 @@ def test_mathtext_exceptions():
         (r'$\stackrel{}{}$', r'Expected \stackrel{num}{den}'),
         (r'$\binom$', r'Expected \binom{num}{den}'),
         (r'$\binom{}{}$', r'Expected \binom{num}{den}'),
-        (r'$\genfrac$', r'Expected \genfrac{ldelim}{rdelim}{rulesize}{style}{num}{den}'),
-        (r'$\genfrac{}{}{}{}{}{}$', r'Expected \genfrac{ldelim}{rdelim}{rulesize}{style}{num}{den}'),
+        (r'$\genfrac$',
+         r'Expected \genfrac{ldelim}{rdelim}{rulesize}{style}{num}{den}'),
+        (r'$\genfrac{}{}{}{}{}{}$',
+         r'Expected \genfrac{ldelim}{rdelim}{rulesize}{style}{num}{den}'),
         (r'$\sqrt$', r'Expected \sqrt{value}'),
         (r'$\sqrt f$', r'Expected \sqrt{value}'),
         (r'$\overline$', r'Expected \overline{value}'),
@@ -214,21 +222,37 @@ def test_mathtext_exceptions():
         (r'$\leftF$', r'Expected a delimiter'),
         (r'$\rightF$', r'Unknown symbol: \rightF'),
         (r'$\left(\right$', r'Expected a delimiter'),
-        (r'$\left($', r'Expected "\right"')
-        ]
-
+        (r'$\left($', r'Expected "\right"'),
+    ],
+    ids=[
+        'hspace without value',
+        'hspace with invalid value',
+        'frac without parameters',
+        'frac with empty parameters',
+        'stackrel without parameters',
+        'stackrel with empty parameters',
+        'binom without parameters',
+        'binom with empty parameters',
+        'genfrac without parameters',
+        'genfrac with empty parameters',
+        'sqrt without parameters',
+        'sqrt with invalid value',
+        'overline without parameters',
+        'overline with empty parameter',
+        'left with invalid delimiter',
+        'right with invalid delimiter',
+        'unclosed parentheses with sizing',
+        'unclosed parentheses without sizing',
+    ]
+)
+def test_mathtext_exceptions(math, msg):
     parser = mathtext.MathTextParser('agg')
 
-    for math, msg in errors:
-        try:
-            parser.parse(math)
-        except ValueError as e:
-            exc = str(e).split('\n')
-            assert exc[3].startswith(msg)
-        else:
-            assert False, "Expected '%s', but didn't get it" % msg
+    with pytest.raises(ValueError) as excinfo:
+        parser.parse(math)
+    excinfo.match(re.escape(msg))
 
-@cleanup
+
 def test_single_minus_sign():
     plt.figure(figsize=(0.3, 0.3))
     plt.text(0.5, 0.5, '$-$')
@@ -243,8 +267,3 @@ def test_single_minus_sign():
 
     # If this fails, it would be all white
     assert not np.all(array == 0xff)
-
-
-if __name__ == '__main__':
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)

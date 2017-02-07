@@ -1,4 +1,3 @@
-from __future__ import print_function, division
 """
 This is used to drive many of the examples across the backends, for
 regression testing, and comparing backend efficiency.
@@ -18,6 +17,7 @@ option parsing error with the driver script, separate them from driver
 switches with a --.
 """
 
+from __future__ import print_function, division
 import os
 import time
 import sys
@@ -144,8 +144,6 @@ files['pylab'] = [
     'custom_ticker1.py',
     'customize_rc.py',
     'dashpointlabel.py',
-    'date_demo1.py',
-    'date_demo2.py',
     'date_demo_convert.py',
     'date_demo_rrule.py',
     'date_index_formatter.py',
@@ -164,7 +162,6 @@ files['pylab'] = [
     'figure_title.py',
     'fill_between_demo.py',
     'fill_spiral.py',
-    'finance_demo.py',
     'findobj_demo.py',
     'fonts_demo.py',
     'fonts_demo_kw.py',
@@ -198,7 +195,6 @@ files['pylab'] = [
     'log_test.py',
     'major_minor_demo1.py',
     'major_minor_demo2.py',
-    'manual_axis.py',
     'masked_demo.py',
     'mathtext_demo.py',
     'mathtext_examples.py',
@@ -237,11 +233,9 @@ files['pylab'] = [
     'stem_plot.py',
     'step_demo.py',
     'stix_fonts_demo.py',
-    'stock_demo.py',
     'subplots_adjust.py',
     'symlog_demo.py',
     'table_demo.py',
-    'text_handles.py',
     'text_rotation.py',
     'text_rotation_relative_to_line.py',
     'transoffset.py',
@@ -311,7 +305,6 @@ files['mplot3d'] = [
 # examples that generate multiple figures
 
 excluded = {
-    'pylab': ['__init__.py', 'toggle_images.py', ],
     'units': ['__init__.py', 'date_support.py', ],
 }
 
@@ -321,14 +314,13 @@ def report_missing(dir, flist):
     globstr = os.path.join(dir, '*.py')
     fnames = glob.glob(globstr)
 
-    pyfiles = set([os.path.split(fullpath)[-1] for fullpath in set(fnames)])
+    pyfiles = {os.path.split(fullpath)[-1] for fullpath in set(fnames)}
 
     exclude = set(excluded.get(dir, []))
     flist = set(flist)
     missing = list(pyfiles - flist - exclude)
-    missing.sort()
     if missing:
-        print('%s files not tested: %s' % (dir, ', '.join(missing)))
+        print('%s files not tested: %s' % (dir, ', '.join(sorted(missing))))
 
 
 def report_all_missing(directories):

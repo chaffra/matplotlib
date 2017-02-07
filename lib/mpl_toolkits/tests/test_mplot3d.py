@@ -1,9 +1,10 @@
-import sys
-import nose
-from nose.tools import assert_raises
-from mpl_toolkits.mplot3d import Axes3D, axes3d
+import pytest
+
+from mpl_toolkits.mplot3d import Axes3D, axes3d, proj3d, art3d
 from matplotlib import cm
-from matplotlib.testing.decorators import image_comparison, cleanup
+from matplotlib.testing.decorators import image_comparison
+from matplotlib.collections import LineCollection
+from matplotlib.patches import Circle
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -20,7 +21,6 @@ def test_bar3d():
         ax.bar(xs, ys, zs=z, zdir='y', color=cs, alpha=0.8)
 
 
-@cleanup
 def test_bar3d_dflt_smoke():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -107,7 +107,7 @@ def test_mixedsubplots():
     R = np.sqrt(X ** 2 + Y ** 2)
     Z = np.sin(R)
 
-    surf = ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
+    surf = ax.plot_surface(X, Y, Z, rcount=40, ccount=40,
                            linewidth=0, antialiased=False)
 
     ax.set_zlim3d(-1, 1)
@@ -143,7 +143,7 @@ def test_surface3d():
     X, Y = np.meshgrid(X, Y)
     R = np.sqrt(X ** 2 + Y ** 2)
     Z = np.sin(R)
-    surf = ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap=cm.coolwarm,
+    surf = ax.plot_surface(X, Y, Z, rcount=40, ccount=40, cmap=cm.coolwarm,
                            lw=0, antialiased=False)
     ax.set_zlim(-1.01, 1.01)
     fig.colorbar(surf, shrink=0.5, aspect=5)
@@ -196,7 +196,7 @@ def test_wireframe3d():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     X, Y, Z = axes3d.get_test_data(0.05)
-    ax.plot_wireframe(X, Y, Z, rstride=10, cstride=10)
+    ax.plot_wireframe(X, Y, Z, rcount=13, ccount=13)
 
 
 @image_comparison(baseline_images=['wireframe3dzerocstride'], remove_text=True,
@@ -205,7 +205,7 @@ def test_wireframe3dzerocstride():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     X, Y, Z = axes3d.get_test_data(0.05)
-    ax.plot_wireframe(X, Y, Z, rstride=10, cstride=0)
+    ax.plot_wireframe(X, Y, Z, rcount=13, ccount=0)
 
 
 @image_comparison(baseline_images=['wireframe3dzerorstride'], remove_text=True,
@@ -216,16 +216,24 @@ def test_wireframe3dzerorstride():
     X, Y, Z = axes3d.get_test_data(0.05)
     ax.plot_wireframe(X, Y, Z, rstride=0, cstride=10)
 
-@cleanup
+
 def test_wireframe3dzerostrideraises():
-    if sys.version_info[:2] < (2, 7):
-        raise nose.SkipTest("assert_raises as context manager "
-                            "not supported with Python < 2.7")
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     X, Y, Z = axes3d.get_test_data(0.05)
-    with assert_raises(ValueError):
+    with pytest.raises(ValueError):
         ax.plot_wireframe(X, Y, Z, rstride=0, cstride=0)
+
+
+def test_mixedsamplesraises():
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    X, Y, Z = axes3d.get_test_data(0.05)
+    with pytest.raises(ValueError):
+        ax.plot_wireframe(X, Y, Z, rstride=10, ccount=50)
+    with pytest.raises(ValueError):
+        ax.plot_surface(X, Y, Z, cstride=50, rcount=10)
+
 
 @image_comparison(baseline_images=['quiver3d'], remove_text=True)
 def test_quiver3d():
@@ -304,18 +312,33 @@ def test_quiver3d_pivot_tail():
     ax.quiver(x, y, z, u, v, w, length=0.1, pivot='tail', normalize=True)
 
 
+@image_comparison(baseline_images=['poly3dcollection_closed'],
+                  remove_text=True)
+def test_poly3dcollection_closed():
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+
+    poly1 = np.array([[0, 0, 1], [0, 1, 1], [0, 0, 0]], np.float)
+    poly2 = np.array([[0, 1, 1], [1, 1, 1], [1, 1, 0]], np.float)
+    c1 = art3d.Poly3DCollection([poly1], linewidths=3, edgecolor='k',
+                                facecolor=(0.5, 0.5, 1, 0.5), closed=True)
+    c2 = art3d.Poly3DCollection([poly2], linewidths=3, edgecolor='k',
+                                facecolor=(1, 0.5, 0.5, 0.5), closed=False)
+    ax.add_collection3d(c1)
+    ax.add_collection3d(c2)
+
+
 @image_comparison(baseline_images=['axes3d_labelpad'], extensions=['png'])
 def test_axes3d_labelpad():
-    from nose.tools import assert_equal
     from matplotlib import rcParams
 
     fig = plt.figure()
     ax = Axes3D(fig)
     # labelpad respects rcParams
-    assert_equal(ax.xaxis.labelpad, rcParams['axes.labelpad'])
+    assert ax.xaxis.labelpad == rcParams['axes.labelpad']
     # labelpad can be set in set_label
     ax.set_xlabel('X LABEL', labelpad=10)
-    assert_equal(ax.xaxis.labelpad, 10)
+    assert ax.xaxis.labelpad == 10
     ax.set_ylabel('Y LABEL')
     ax.set_zlabel('Z LABEL')
     # or manually
@@ -335,7 +358,6 @@ def test_axes3d_cla():
     ax.set_axis_off()
     ax.cla()  # make sure the axis displayed is 3D (not 2D)
 
-@cleanup
 def test_plotsurface_1d_raises():
     x = np.linspace(0.5, 10, num=100)
     y = np.linspace(0.5, 10, num=100)
@@ -344,8 +366,128 @@ def test_plotsurface_1d_raises():
 
     fig = plt.figure(figsize=(14,6))
     ax = fig.add_subplot(1, 2, 1, projection='3d')
-    assert_raises(ValueError, ax.plot_surface, X, Y, z)
-    
-if __name__ == '__main__':
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)
+    with pytest.raises(ValueError):
+        ax.plot_surface(X, Y, z)
+
+
+def _test_proj_make_M():
+    # eye point
+    E = np.array([1000, -1000, 2000])
+    R = np.array([100, 100, 100])
+    V = np.array([0, 0, 1])
+    viewM = proj3d.view_transformation(E, R, V)
+    perspM = proj3d.persp_transformation(100, -100)
+    M = np.dot(perspM, viewM)
+    return M
+
+
+def test_proj_transform():
+    M = _test_proj_make_M()
+
+    xs = np.array([0, 1, 1, 0, 0, 0, 1, 1, 0, 0]) * 300.0
+    ys = np.array([0, 0, 1, 1, 0, 0, 0, 1, 1, 0]) * 300.0
+    zs = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1]) * 300.0
+
+    txs, tys, tzs = proj3d.proj_transform(xs, ys, zs, M)
+    ixs, iys, izs = proj3d.inv_transform(txs, tys, tzs, M)
+
+    np.testing.assert_almost_equal(ixs, xs)
+    np.testing.assert_almost_equal(iys, ys)
+    np.testing.assert_almost_equal(izs, zs)
+
+
+def _test_proj_draw_axes(M, s=1, *args, **kwargs):
+    xs = [0, s, 0, 0]
+    ys = [0, 0, s, 0]
+    zs = [0, 0, 0, s]
+    txs, tys, tzs = proj3d.proj_transform(xs, ys, zs, M)
+    o, ax, ay, az = zip(txs, tys)
+    lines = [(o, ax), (o, ay), (o, az)]
+
+    fig, ax = plt.subplots(*args, **kwargs)
+    linec = LineCollection(lines)
+    ax.add_collection(linec)
+    for x, y, t in zip(txs, tys, ['o', 'x', 'y', 'z']):
+        ax.text(x, y, t)
+
+    return fig, ax
+
+
+@image_comparison(baseline_images=['proj3d_axes_cube'], extensions=['png'],
+                  remove_text=True, style='default')
+def test_proj_axes_cube():
+    M = _test_proj_make_M()
+
+    ts = '0 1 2 3 0 4 5 6 7 4'.split()
+    xs = np.array([0, 1, 1, 0, 0, 0, 1, 1, 0, 0]) * 300.0
+    ys = np.array([0, 0, 1, 1, 0, 0, 0, 1, 1, 0]) * 300.0
+    zs = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1]) * 300.0
+
+    txs, tys, tzs = proj3d.proj_transform(xs, ys, zs, M)
+
+    fig, ax = _test_proj_draw_axes(M, s=400)
+
+    ax.scatter(txs, tys, c=tzs)
+    ax.plot(txs, tys, c='r')
+    for x, y, t in zip(txs, tys, ts):
+        ax.text(x, y, t)
+
+    ax.set_xlim(-0.2, 0.2)
+    ax.set_ylim(-0.2, 0.2)
+
+
+def test_rot():
+    V = [1, 0, 0, 1]
+    rotated_V = proj3d.rot_x(V, np.pi / 6)
+    np.testing.assert_allclose(rotated_V, [1, 0, 0, 1])
+
+    V = [0, 1, 0, 1]
+    rotated_V = proj3d.rot_x(V, np.pi / 6)
+    np.testing.assert_allclose(rotated_V, [0, np.sqrt(3) / 2, 0.5, 1])
+
+
+def test_world():
+    xmin, xmax = 100, 120
+    ymin, ymax = -100, 100
+    zmin, zmax = 0.1, 0.2
+    M = proj3d.world_transformation(xmin, xmax, ymin, ymax, zmin, zmax)
+    np.testing.assert_allclose(M,
+                               [[5e-2, 0, 0, -5],
+                                [0, 5e-3, 0, 5e-1],
+                                [0, 0, 1e1, -1],
+                                [0, 0, 0, 1]])
+
+
+@image_comparison(baseline_images=['proj3d_lines_dists'], extensions=['png'],
+                  remove_text=True, style='default')
+def test_lines_dists():
+    fig, ax = plt.subplots(figsize=(4, 6), subplot_kw=dict(aspect='equal'))
+
+    xs = (0, 30)
+    ys = (20, 150)
+    ax.plot(xs, ys)
+    p0, p1 = zip(xs, ys)
+
+    xs = (0, 0, 20, 30)
+    ys = (100, 150, 30, 200)
+    ax.scatter(xs, ys)
+
+    dist = proj3d.line2d_seg_dist(p0, p1, (xs[0], ys[0]))
+    dist = proj3d.line2d_seg_dist(p0, p1, np.array((xs, ys)))
+    for x, y, d in zip(xs, ys, dist):
+        c = Circle((x, y), d, fill=0)
+        ax.add_patch(c)
+
+    ax.set_xlim(-50, 150)
+    ax.set_ylim(0, 300)
+
+
+def test_autoscale():
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.margins(x=0, y=.1, z=.2)
+    ax.plot([0, 1], [0, 1], [0, 1])
+    assert ax.get_w_lims() == (0, 1, -.1, 1.1, -.2, 1.2)
+    ax.autoscale(False)
+    ax.set_autoscalez_on(True)
+    ax.plot([0, 2], [0, 2], [0, 2])
+    assert ax.get_w_lims() == (0, 1, -.1, 1.1, -.4, 2.4)

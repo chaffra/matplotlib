@@ -183,32 +183,23 @@ static int PyAggImagePhoto(ClientData clientdata, Tcl_Interp *interp, int
     return TCL_OK;
 }
 
-static PyObject *_pyobj_addr(PyObject *self, PyObject *args)
-{
-    PyObject *pyobj;
-    if (!PyArg_ParseTuple(args, "O", &pyobj)) {
-        return NULL;
-    }
-    return Py_BuildValue("n", (Py_ssize_t)pyobj);
-}
-
 static PyObject *_tkinit(PyObject *self, PyObject *args)
 {
     Tcl_Interp *interp;
     TkappObject *app;
 
-    Py_ssize_t arg;
+    PyObject *arg;
     int is_interp;
-    if (!PyArg_ParseTuple(args, "ni", &arg, &is_interp)) {
+    if (!PyArg_ParseTuple(args, "Oi", &arg, &is_interp)) {
         return NULL;
     }
 
     if (is_interp) {
-        interp = (Tcl_Interp *)arg;
+        interp = (Tcl_Interp *)PyLong_AsVoidPtr(arg);
     } else {
         /* Do it the hard way.  This will break if the TkappObject
            layout changes */
-        app = (TkappObject *)arg;
+        app = (TkappObject *)PyLong_AsVoidPtr(arg);
         interp = app->interp;
     }
 
@@ -226,7 +217,7 @@ static PyObject *_tkinit(PyObject *self, PyObject *args)
 
 static PyMethodDef functions[] = {
     /* Tkinter interface stuff */
-    { "_pyobj_addr", (PyCFunction)_pyobj_addr, 1 }, { "tkinit", (PyCFunction)_tkinit, 1 },
+    { "tkinit", (PyCFunction)_tkinit, 1 },
     { NULL, NULL } /* sentinel */
 };
 
@@ -410,10 +401,19 @@ int load_tkinter_funcs(void)
     // Load tkinter global funcs from tkinter compiled module.
     // Return 0 for success, non-zero for failure.
     int ret = -1;
-    void *tkinter_lib;
+    void *main_program, *tkinter_lib;
     char *tkinter_libname;
     PyObject *pModule = NULL, *pSubmodule = NULL, *pString = NULL;
 
+    // Try loading from the main program namespace first
+    main_program = dlopen(NULL, RTLD_LAZY);
+    if (_func_loader(main_program) == 0) {
+        return 0;
+    }
+    // Clear exception triggered when we didn't find symbols above.
+    PyErr_Clear();
+
+    // Now try finding the tkinter compiled module
     pModule = PyImport_ImportModule(TKINTER_PKG);
     if (pModule == NULL) {
         goto exit;

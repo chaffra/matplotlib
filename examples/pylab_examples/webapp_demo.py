@@ -22,6 +22,9 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 import numpy as np
 
+# Fixing random state for reproducibility
+np.random.seed(19680801)
+
 
 def make_fig():
     """
@@ -36,7 +39,7 @@ def make_fig():
     # make a translucent scatter collection
     x = np.random.rand(100)
     y = np.random.rand(100)
-    area = np.pi * (10 * np.random.rand(100)) ** 2  # 0 to 10 point radiuses
+    area = np.pi * (10 * np.random.rand(100)) ** 2  # 0 to 10 point radii
     c = ax.scatter(x, y, area)
     c.set_alpha(0.5)
 

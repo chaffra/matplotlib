@@ -110,6 +110,7 @@ backend      : $TEMPLATE_BACKEND
 #patch.antialiased      : True    # render patches in antialiased (no jaggies)
 
 ### HATCHES
+#hatch.color     : k
 #hatch.linewidth : 1.0
 
 ### Boxplot
@@ -291,13 +292,12 @@ backend      : $TEMPLATE_BACKEND
 # default face and edge color, default tick sizes,
 # default fontsizes for ticklabels, and so on.  See
 # http://matplotlib.org/api/axes_api.html#module-matplotlib.axes
-#axes.hold           : True    # whether to clear the axes by default on
 #axes.facecolor      : white   # axes background color
 #axes.edgecolor      : black   # axes edge color
 #axes.linewidth      : 0.8     # edge linewidth
 #axes.grid           : False   # display grid or not
 #axes.titlesize      : large   # fontsize of the axes title
-#axes.titlepad       : 4.0     # pad between axes and title in points
+#axes.titlepad       : 6.0     # pad between axes and title in points
 #axes.labelsize      : medium  # fontsize of the x any y labels
 #axes.labelpad       : 4.0     # space between label and axis
 #axes.labelweight    : normal  # weight of the x and y labels
@@ -317,9 +317,18 @@ backend      : $TEMPLATE_BACKEND
                                      # notation.
 #axes.formatter.useoffset      : True    # If True, the tick label formatter
                                          # will default to labeling ticks relative
-                                         # to an offset when the data range is very
+                                         # to an offset when the data range is
                                          # small compared to the minimum absolute
                                          # value of the data.
+#axes.formatter.offset_threshold : 4     # When useoffset is True, the offset
+                                         # will be used when it can remove
+                                         # at least this number of significant
+                                         # digits from tick labels.
+
+# axes.spines.left   : True   # display axis spines
+# axes.spines.bottom : True
+# axes.spines.top    : True
+# axes.spines.right  : True
 
 
 #axes.unicode_minus  : True    # use unicode for the minus symbol
@@ -354,10 +363,10 @@ backend      : $TEMPLATE_BACKEND
 # date.autoformatter.year     : %Y
 # date.autoformatter.month    : %Y-%m
 # date.autoformatter.day      : %Y-%m-%d
-# date.autoformatter.hour     : %H:%M
-# date.autoformatter.minute   : %H:%M:%S
+# date.autoformatter.hour     : %m-%d %H
+# date.autoformatter.minute   : %d %H:%M
 # date.autoformatter.second   : %H:%M:%S
-# date.autoformatter.microsecond   : %H:%M:%S.%f
+# date.autoformatter.microsecond   : %M:%S.%f
 
 ### TICKS
 # see http://matplotlib.org/api/axis_api.html#matplotlib.axis.Tick
@@ -443,8 +452,10 @@ backend      : $TEMPLATE_BACKEND
 #figure.subplot.right   : 0.9    # the right side of the subplots of the figure
 #figure.subplot.bottom  : 0.11    # the bottom of the subplots of the figure
 #figure.subplot.top     : 0.88    # the top of the subplots of the figure
-#figure.subplot.wspace  : 0.2    # the amount of width reserved for blank space between subplots
-#figure.subplot.hspace  : 0.2    # the amount of height reserved for white space between subplots
+#figure.subplot.wspace  : 0.2    # the amount of width reserved for blank space between subplots,
+                                 # expressed as a fraction of the average axis width
+#figure.subplot.hspace  : 0.2    # the amount of height reserved for white space between subplots,
+                                 # expressed as a fraction of the average axis height
 
 
 ### IMAGES
@@ -576,7 +587,7 @@ backend      : $TEMPLATE_BACKEND
 # Customize these settings according to your needs.
 # Leave the field(s) empty if you don't need a key-map. (i.e., fullscreen : '')
 
-#keymap.fullscreen : f               # toggling
+#keymap.fullscreen : f, ctrl+f       # toggling
 #keymap.home : h, r, home            # home or reset mnemonic
 #keymap.back : left, c, backspace    # forward / backward keys to enable
 #keymap.forward : right, v           #   left handed quick navigation
@@ -598,7 +609,7 @@ backend      : $TEMPLATE_BACKEND
                                    # the IPython notebook. 'html5' uses
                                    # HTML5 video tag.
 #animation.writer : ffmpeg         # MovieWriter 'backend' to use
-#animation.codec : mpeg4           # Codec to use for writing movie
+#animation.codec : h264            # Codec to use for writing movie
 #animation.bitrate: -1             # Controls size/quality tradeoff for movie.
                                    # -1 implies let utility auto-determine
 #animation.frame_format: 'png'     # Controls frame format used by temp files

@@ -1,12 +1,12 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
 from six.moves import map
 
 import datetime
 import warnings
 import tempfile
+import pytest
 
 import dateutil
 import pytz
@@ -16,10 +16,10 @@ try:
     from unittest import mock
 except ImportError:
     import mock
-from nose.tools import assert_raises, assert_equal
-from nose.plugins.skip import SkipTest
 
-from matplotlib.testing.decorators import image_comparison, cleanup
+from numpy.testing import assert_equal
+
+from matplotlib.testing.decorators import image_comparison
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
@@ -88,7 +88,6 @@ def test_date_axvline():
     fig.autofmt_xdate()
 
 
-@cleanup
 def test_too_many_date_ticks():
     # Attempt to test SF 2715172, see
     # https://sourceforge.net/tracker/?func=detail&aid=2715172&group_id=80706&atid=560720
@@ -108,7 +107,8 @@ def test_too_many_date_ticks():
     ax.set_xlim((t0, tf), auto=True)
     ax.plot([], [])
     ax.xaxis.set_major_locator(mdates.DayLocator())
-    assert_raises(RuntimeError, fig.savefig, 'junk.png')
+    with pytest.raises(RuntimeError):
+        fig.savefig('junk.png')
 
 
 @image_comparison(baseline_images=['RRuleLocator_bounds'], extensions=['png'])
@@ -180,18 +180,16 @@ def test_date_formatter_strftime():
             "{hour24:02d} {hour12:02d} {minute:02d} {second:02d} "
             "%{microsecond:06d} %x"
             .format(
-            # weeknum=dt.isocalendar()[1],  # %U/%W {weeknum:02d}
-            # %w Sunday=0, weekday() Monday=0
-            weekday=str((dt.weekday() + 1) % 7),
-            day=dt.day,
-            month=dt.month,
-            year=dt.year % 100,
-            full_year=dt.year,
-            hour24=dt.hour,
-            hour12=((dt.hour-1) % 12) + 1,
-            minute=dt.minute,
-            second=dt.second,
-            microsecond=dt.microsecond))
+                weekday=str((dt.weekday() + 1) % 7),
+                day=dt.day,
+                month=dt.month,
+                year=dt.year % 100,
+                full_year=dt.year,
+                hour24=dt.hour,
+                hour12=((dt.hour-1) % 12) + 1,
+                minute=dt.minute,
+                second=dt.second,
+                microsecond=dt.microsecond))
         assert_equal(formatter.strftime(dt), formatted_date_str)
 
         try:
@@ -251,7 +249,6 @@ def test_drange():
     assert_equal(mdates.num2date(daterange[-1]), end - delta)
 
 
-@cleanup
 def test_empty_date_with_year_formatter():
     # exposes sf bug 2861426:
     # https://sourceforge.net/tracker/?func=detail&aid=2861426&group_id=80706&atid=560720
@@ -268,7 +265,8 @@ def test_empty_date_with_year_formatter():
     ax.xaxis.set_major_formatter(yearFmt)
 
     with tempfile.TemporaryFile() as fh:
-        assert_raises(ValueError, fig.savefig, fh)
+        with pytest.raises(ValueError):
+            fig.savefig(fh)
 
 
 def test_auto_date_locator():
@@ -446,10 +444,7 @@ def test_date2num_dst():
 def test_date2num_dst_pandas():
     # Test for github issue #3896, but in date2num around DST transitions
     # with a timezone-aware pandas date_range object.
-    try:
-        import pandas as pd
-    except ImportError:
-        raise SkipTest('pandas not installed')
+    pd = pytest.importorskip('pandas')
 
     def tz_convert(*args):
         return pd.DatetimeIndex.tz_convert(*args).astype(datetime.datetime)
@@ -458,13 +453,17 @@ def test_date2num_dst_pandas():
 
 
 def test_DayLocator():
-   assert_raises(ValueError, mdates.DayLocator, interval=-1)
-   assert_raises(ValueError, mdates.DayLocator, interval=-1.5)
-   assert_raises(ValueError, mdates.DayLocator, interval=0)
-   assert_raises(ValueError, mdates.DayLocator, interval=1.3)
-   mdates.DayLocator(interval=1.0)
+    with pytest.raises(ValueError):
+        mdates.DayLocator(interval=-1)
+    with pytest.raises(ValueError):
+        mdates.DayLocator(interval=-1.5)
+    with pytest.raises(ValueError):
+        mdates.DayLocator(interval=0)
+    with pytest.raises(ValueError):
+        mdates.DayLocator(interval=1.3)
+    mdates.DayLocator(interval=1.0)
 
 
-if __name__ == '__main__':
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)
+def test_tz_utc():
+    dt = datetime.datetime(1970, 1, 1, tzinfo=mdates.UTC)
+    dt.tzname()

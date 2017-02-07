@@ -209,7 +209,7 @@ class Tick(artist.Artist):
         This function always returns false.  It is more useful to test if the
         axis as a whole contains the mouse rather than the set of tick marks.
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
         return False, {}
 
@@ -324,8 +324,8 @@ class Tick(artist.Artist):
             self.label1.set_transform(trans)
             trans = self._get_text2_transform()[0]
             self.label2.set_transform(trans)
-        tick_kw = dict([kv for kv in six.iteritems(kw)
-                        if kv[0] in ['color', 'zorder']])
+        tick_kw = {k: v for k, v in six.iteritems(kw)
+                   if k in ['color', 'zorder']}
         if tick_kw:
             self.tick1line.set(**tick_kw)
             self.tick2line.set(**tick_kw)
@@ -334,7 +334,7 @@ class Tick(artist.Artist):
         label_list = [k for k in six.iteritems(kw)
                       if k[0] in ['labelsize', 'labelcolor', 'labelrotation']]
         if label_list:
-            label_kw = dict([(k[5:], v) for (k, v) in label_list])
+            label_kw = {k[5:]: v for k, v in label_list}
             self.label1.set(**label_kw)
             self.label2.set(**label_kw)
             for k, v in six.iteritems(label_kw):
@@ -346,6 +346,12 @@ class Tick(artist.Artist):
 
     def update_position(self, loc):
         'Set the location of tick in data coords with scalar *loc*'
+        raise NotImplementedError('Derived must override')
+
+    def _get_text1_transform(self):
+        raise NotImplementedError('Derived must override')
+
+    def _get_text2_transform(self):
         raise NotImplementedError('Derived must override')
 
 
@@ -945,45 +951,37 @@ class Axis(artist.Artist):
         """
 
         interval = self.get_view_interval()
-        tick_tups = [t for t in self.iter_ticks()]
-        if self._smart_bounds:
+        tick_tups = list(self.iter_ticks())
+        if self._smart_bounds and tick_tups:
             # handle inverted limits
-            view_low, view_high = min(*interval), max(*interval)
-            data_low, data_high = self.get_data_interval()
-            if data_low > data_high:
-                data_low, data_high = data_high, data_low
-            locs = [ti[1] for ti in tick_tups]
-            locs.sort()
-            locs = np.array(locs)
-            if len(locs):
-                if data_low <= view_low:
-                    # data extends beyond view, take view as limit
-                    ilow = view_low
+            view_low, view_high = sorted(interval)
+            data_low, data_high = sorted(self.get_data_interval())
+            locs = np.sort([ti[1] for ti in tick_tups])
+            if data_low <= view_low:
+                # data extends beyond view, take view as limit
+                ilow = view_low
+            else:
+                # data stops within view, take best tick
+                good_locs = locs[locs <= data_low]
+                if len(good_locs):
+                    # last tick prior or equal to first data point
+                    ilow = good_locs[-1]
                 else:
-                    # data stops within view, take best tick
-                    cond = locs <= data_low
-                    good_locs = locs[cond]
-                    if len(good_locs) > 0:
-                        # last tick prior or equal to first data point
-                        ilow = good_locs[-1]
-                    else:
-                        # No ticks (why not?), take first tick
-                        ilow = locs[0]
-                if data_high >= view_high:
-                    # data extends beyond view, take view as limit
-                    ihigh = view_high
+                    # No ticks (why not?), take first tick
+                    ilow = locs[0]
+            if data_high >= view_high:
+                # data extends beyond view, take view as limit
+                ihigh = view_high
+            else:
+                # data stops within view, take best tick
+                good_locs = locs[locs >= data_high]
+                if len(good_locs):
+                    # first tick after or equal to last data point
+                    ihigh = good_locs[0]
                 else:
-                    # data stops within view, take best tick
-                    cond = locs >= data_high
-                    good_locs = locs[cond]
-                    if len(good_locs) > 0:
-                        # first tick after or equal to last data point
-                        ihigh = good_locs[0]
-                    else:
-                        # No ticks (why not?), take last tick
-                        ihigh = locs[-1]
-                tick_tups = [ti for ti in tick_tups
-                             if (ti[1] >= ilow) and (ti[1] <= ihigh)]
+                    # No ticks (why not?), take last tick
+                    ihigh = locs[-1]
+            tick_tups = [ti for ti in tick_tups if ilow <= ti[1] <= ihigh]
 
         # so that we don't lose ticks on the end, expand out the interval ever
         # so slightly.  The "ever so slightly" is defined to be the width of a
@@ -1706,7 +1704,7 @@ class XAxis(Axis):
     def contains(self, mouseevent):
         """Test whether the mouse event occured in the x axis.
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
 
         x, y = mouseevent.x, mouseevent.y
@@ -2022,7 +2020,10 @@ class XAxis(Axis):
         # There is a heuristic here that the aspect ratio of tick text
         # is no more than 3:1
         size = tick.label1.get_size() * 3
-        return int(np.floor(length / size))
+        if size > 0:
+            return int(np.floor(length / size))
+        else:
+            return 2**31 - 1
 
 
 class YAxis(Axis):
@@ -2034,7 +2035,7 @@ class YAxis(Axis):
 
         Returns *True* | *False*
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
 
         x, y = mouseevent.x, mouseevent.y
@@ -2355,4 +2356,7 @@ class YAxis(Axis):
         tick = self._get_tick(True)
         # Having a spacing of at least 2 just looks good.
         size = tick.label1.get_size() * 2.0
-        return int(np.floor(length / size))
+        if size > 0:
+            return int(np.floor(length / size))
+        else:
+            return 2**31 - 1

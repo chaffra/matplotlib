@@ -258,7 +258,7 @@ class Text(Artist):
 
         Returns True or False.
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
 
         if not self.get_visible() or self._renderer is None:
@@ -332,7 +332,7 @@ class Text(Artist):
         multiple-alignment information. Note that it returns an extent
         of a rotated text when necessary.
         """
-        key = self.get_prop_tup()
+        key = self.get_prop_tup(renderer=renderer)
         if key in self._cached:
             return self._cached[key]
 
@@ -355,7 +355,7 @@ class Text(Artist):
 
         baseline = 0
         for i, line in enumerate(lines):
-            clean_line, ismath = self.is_math_text(line)
+            clean_line, ismath = self.is_math_text(line, self.get_usetex())
             if clean_line:
                 w, h, d = renderer.get_text_width_height_descent(clean_line,
                                                         self._fontproperties,
@@ -781,7 +781,8 @@ class Text(Artist):
                 y = y + posy
                 if renderer.flipy():
                     y = canvash - y
-                clean_line, ismath = textobj.is_math_text(line)
+                clean_line, ismath = textobj.is_math_text(line,
+                                                          self.get_usetex())
 
                 if textobj.get_path_effects():
                     from matplotlib.patheffects import PathEffectRenderer
@@ -896,7 +897,7 @@ class Text(Artist):
         # specified with 'set_x' and 'set_y'.
         return self._x, self._y
 
-    def get_prop_tup(self):
+    def get_prop_tup(self, renderer=None):
         """
         Return a hashable tuple of properties.
 
@@ -909,7 +910,7 @@ class Text(Artist):
                 self._verticalalignment, self._horizontalalignment,
                 hash(self._fontproperties),
                 self._rotation, self._rotation_mode,
-                self.figure.dpi, id(self._renderer),
+                self.figure.dpi, id(renderer or self._renderer),
                 )
 
     def get_text(self):
@@ -1211,7 +1212,7 @@ class Text(Artist):
         self.stale = True
 
     @staticmethod
-    def is_math_text(s):
+    def is_math_text(s, usetex=None):
         """
         Returns a cleaned string and a boolean flag.
         The flag indicates if the given string *s* contains any mathtext,
@@ -1221,7 +1222,9 @@ class Text(Artist):
         """
         # Did we find an even number of non-escaped dollar signs?
         # If so, treat is as math text.
-        if rcParams['text.usetex']:
+        if usetex is None:
+            usetex = rcParams['text.usetex']
+        if usetex:
             if s == ' ':
                 s = r'\ '
             return s, 'TeX'
@@ -1255,7 +1258,7 @@ class Text(Artist):
         `rcParams['text.usetex']`
         """
         if usetex is None:
-            self._usetex = None
+            self._usetex = rcParams['text.usetex']
         else:
             self._usetex = bool(usetex)
         self.stale = True
@@ -1392,7 +1395,7 @@ class TextWithDash(Text):
         # specified with set_x and set_y
         return self._dashx, self._dashy
 
-    def get_prop_tup(self):
+    def get_prop_tup(self, renderer=None):
         """
         Return a hashable tuple of properties.
 
@@ -1400,7 +1403,7 @@ class TextWithDash(Text):
         want to cache derived information about text (e.g., layouts) and
         need to know if the text has changed.
         """
-        props = [p for p in Text.get_prop_tup(self)]
+        props = [p for p in Text.get_prop_tup(self, renderer=renderer)]
         props.extend([self._x, self._y, self._dashlength,
                       self._dashdirection, self._dashrotation, self._dashpad,
                       self._dashpush])
@@ -1781,8 +1784,7 @@ class _AnnotationBase(object):
             tr2 = self._get_xy_transform(renderer, s2)
             tr = blended_transform_factory(tr1, tr2)
             return tr
-
-        if six.callable(s):
+        elif callable(s):
             tr = s(renderer)
             if isinstance(tr, BboxBase):
                 return BboxTransformTo(tr)
@@ -1790,7 +1792,7 @@ class _AnnotationBase(object):
                 return tr
             else:
                 raise RuntimeError("unknown return type ...")
-        if isinstance(s, Artist):
+        elif isinstance(s, Artist):
             bbox = s.get_window_extent(renderer)
             return BboxTransformTo(bbox)
         elif isinstance(s, BboxBase):
@@ -1844,8 +1846,7 @@ class _AnnotationBase(object):
             elif unit == "fontsize":
                 fontsize = self.get_size()
                 dpp = fontsize * self.figure.get_dpi() / 72.
-                tr = Affine2D().scale(dpp,
-                                      dpp)
+                tr = Affine2D().scale(dpp, dpp)
             elif unit == "fraction":
                 w, h = bbox0.bounds[2:]
                 tr = Affine2D().scale(w, h)
@@ -2260,13 +2261,8 @@ class Annotation(Text, _AnnotationBase):
                 xpos = ((l, 0), (xc, 0.5), (r, 1))
                 ypos = ((b, 0), (yc, 0.5), (t, 1))
 
-                dsu = [(abs(val[0] - x0), val) for val in xpos]
-                dsu.sort()
-                _, (x, relposx) = dsu[0]
-
-                dsu = [(abs(val[0] - y0), val) for val in ypos]
-                dsu.sort()
-                _, (y, relposy) = dsu[0]
+                _, (x, relposx) = min((abs(val[0] - x0), val) for val in xpos)
+                _, (y, relposy) = min((abs(val[0] - y0), val) for val in ypos)
 
                 self._arrow_relpos = (relposx, relposy)
 

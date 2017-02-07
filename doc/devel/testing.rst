@@ -1,7 +1,8 @@
 .. _testing:
 
-Testing
-=======
+============================
+Developer's tips for testing
+============================
 
 Matplotlib has a testing infrastructure based on nose_, making it easy
 to write new tests. The tests are in :mod:`matplotlib.tests`, and
@@ -9,7 +10,7 @@ customizations to the nose testing infrastructure are in
 :mod:`matplotlib.testing`. (There is other old testing cruft around,
 please ignore it while we consolidate our testing to these locations.)
 
-.. _nose: http://nose.readthedocs.org/en/latest/
+.. _nose: https://nose.readthedocs.io/en/latest/
 
 Requirements
 ------------
@@ -17,21 +18,17 @@ Requirements
 The following software is required to run the tests:
 
   - nose_, version 1.0 or later
-
-  - `mock <http://www.voidspace.org.uk/python/mock/>`_, when running python
+  - `mock <https://docs.python.org/dev/library/unittest.mock.html>`_, when running python
     versions < 3.3
-
-  - `Ghostscript <http://pages.cs.wisc.edu/~ghost/>`_ (to render PDF
+  - `Ghostscript <https://www.ghostscript.com/>`_ (to render PDF
     files)
-
-  - `Inkscape <http://inkscape.org>`_ (to render SVG files)
+  - `Inkscape <https://inkscape.org>`_ (to render SVG files)
 
 Optionally you can install:
 
-  - `coverage <http://nedbatchelder.com/code/coverage/>`_ to collect coverage
+  - `coverage <https://coverage.readthedocs.io/en/latest/>`_ to collect coverage
     information
-
-  - `pep8 <http://pep8.readthedocs.org/en/latest>`_ to test coding standards
+  - `pep8 <http://pep8.readthedocs.io/en/latest>`_ to test coding standards
 
 Building matplotlib for image comparison tests
 ----------------------------------------------
@@ -48,6 +45,7 @@ matplotlib source directory::
 
   [test]
   local_freetype = True
+  tests = True
 
 or by setting the ``MPLLOCALFREETYPE`` environmental variable to any true
 value.
@@ -88,7 +86,7 @@ a colon, e.g., (this is assuming the test is installed)::
 If you want to run the full test suite, but want to save wall time try
 running the tests in parallel::
 
-  python tests.py --nocapture --nose-verbose --processes=5 --process-timeout=300
+  python tests.py --nocapture --verbose --processes=5 --process-timeout=300
 
 
 An alternative implementation that does not look at command line
@@ -106,7 +104,7 @@ matplotlib library function :func:`matplotlib.test`::
       pip install mock
 
 
-.. _`nosetest arguments`: http://nose.readthedocs.org/en/latest/usage.html
+.. _`nosetest arguments`: http://nose.readthedocs.io/en/latest/usage.html
 
 
 Writing a simple test
@@ -239,7 +237,7 @@ this module to the list of default tests, append its name to
 Using Travis CI
 ---------------
 
-`Travis CI <http://travis-ci.org/>`_ is a hosted CI system "in the
+`Travis CI <https://travis-ci.org/>`_ is a hosted CI system "in the
 cloud".
 
 Travis is configured to receive notifications of new commits to GitHub
@@ -257,19 +255,20 @@ If you want to enable Travis CI for your personal matplotlib GitHub
 repo, simply enable the repo to use Travis CI in either the Travis CI
 UI or the GitHub UI (Admin | Service Hooks). For details, see `the
 Travis CI Getting Started page
-<http://about.travis-ci.org/docs/user/getting-started/>`_.  This
+<https://docs.travis-ci.com/user/getting-started/>`_.  This
 generally isn't necessary, since any pull request submitted against
 the main matplotlib repository will be tested.
 
 Once this is configured, you can see the Travis CI results at
-http://travis-ci.org/your_GitHub_user_name/matplotlib -- here's `an
+https://travis-ci.org/your_GitHub_user_name/matplotlib -- here's `an
 example <https://travis-ci.org/msabramo/matplotlib>`_.
 
 
 Using tox
 ---------
 
-`Tox <http://tox.testrun.org/>`_ is a tool for running tests against
+`Tox <https://tox.readthedocs.io/en/latest/>`_ is a tool for running
+tests against
 multiple Python environments, including multiple versions of Python
 (e.g., 2.7, 3.4, 3.5) and even different Python implementations
 altogether (e.g., CPython, PyPy, Jython, etc.)
@@ -307,4 +306,4 @@ edit this file if you want to add new environments to test (e.g.,
 ``py33``) or if you want to tweak the dependencies or the way the
 tests are run. For more info on the ``tox.ini`` file, see the `Tox
 Configuration Specification
-<http://tox.testrun.org/latest/config.html>`_.
+<https://tox.readthedocs.io/en/latest/config.html>`_.

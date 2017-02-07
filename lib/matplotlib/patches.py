@@ -171,7 +171,7 @@ class Patch(artist.Artist):
 
         Returns T/F, {}
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
         radius = self._process_radius(radius)
         inside = self.get_path().contains_point(
@@ -193,14 +193,16 @@ class Patch(artist.Artist):
         Updates this :class:`Patch` from the properties of *other*.
         """
         artist.Artist.update_from(self, other)
-        self.set_edgecolor(other.get_edgecolor())
-        self.set_facecolor(other.get_facecolor())
-        self.set_fill(other.get_fill())
-        self.set_hatch(other.get_hatch())
-        self.set_linewidth(other.get_linewidth())
-        self.set_linestyle(other.get_linestyle())
+        # For some properties we don't need or don't want to go through the
+        # getters/setters, so we just copy them directly.
+        self._edgecolor = other._edgecolor
+        self._facecolor = other._facecolor
+        self._fill = other._fill
+        self._hatch = other._hatch
+        # copy the unscaled dash pattern
+        self._us_dashes = other._us_dashes
+        self.set_linewidth(other._linewidth)  # also sets dash properties
         self.set_transform(other.get_data_transform())
-        self.set_alpha(other.get_alpha())
 
     def get_extents(self):
         """
@@ -354,7 +356,7 @@ class Patch(artist.Artist):
             except TypeError:
                 raise TypeError('alpha must be a float or None')
         artist.Artist.set_alpha(self, alpha)
-        self._set_facecolor(self._facecolor)
+        self._set_facecolor(self._original_facecolor)
         self._set_edgecolor(self._original_edgecolor)
         # stale is already True
 
@@ -485,7 +487,7 @@ class Patch(artist.Artist):
         *hatch* can be one of::
 
           /   - diagonal hatching
-          \   - back diagonal
+          \\   - back diagonal
           |   - vertical
           -   - horizontal
           +   - crossed
@@ -650,12 +652,13 @@ class Shadow(Patch):
 class Rectangle(Patch):
     """
     Draw a rectangle with lower left at *xy* = (*x*, *y*) with
-    specified *width* and *height*.
+    specified *width*, *height* and rotation *angle*.
     """
 
     def __str__(self):
-        return self.__class__.__name__ \
-            + "(%g,%g;%gx%g)" % (self._x, self._y, self._width, self._height)
+        pars = self._x, self._y, self._width, self._height, self.angle
+        fmt = "Rectangle(xy=(%g, %g), width=%g, height=%g, angle=%g)"
+        return fmt % pars
 
     @docstring.dedent_interpd
     def __init__(self, xy, width, height, angle=0.0, **kwargs):
@@ -676,7 +679,7 @@ class Rectangle(Patch):
         self._y = float(xy[1])
         self._width = float(width)
         self._height = float(height)
-        self._angle = float(angle)
+        self.angle = float(angle)
         # Note: This cannot be calculated until this is added to an Axes
         self._rect_transform = transforms.IdentityTransform()
 
@@ -698,7 +701,7 @@ class Rectangle(Patch):
         height = self.convert_yunits(self._height)
         bbox = transforms.Bbox.from_bounds(x, y, width, height)
         rot_trans = transforms.Affine2D()
-        rot_trans.rotate_deg_around(x, y, self._angle)
+        rot_trans.rotate_deg_around(x, y, self.angle)
         self._rect_transform = transforms.BboxTransformTo(bbox)
         self._rect_transform += rot_trans
 
@@ -1022,7 +1025,10 @@ class Wedge(Patch):
     Wedge shaped patch.
     """
     def __str__(self):
-        return "Wedge(%g,%g)" % (self.theta1, self.theta2)
+        pars = (self.center[0], self.center[1], self.r,
+                self.theta1, self.theta2, self.width)
+        fmt = "Wedge(center=(%g, %g), r=%g, theta1=%g, theta2=%g, width=%s)"
+        return fmt % pars
 
     @docstring.dedent_interpd
     def __init__(self, center, r, theta1, theta2, width=None, **kwargs):
@@ -1234,7 +1240,7 @@ class FancyArrow(Polygon):
                     # The half-arrows contain the midpoint of the stem,
                     # which we can omit from the full arrow. Including it
                     # twice caused a problem with xpdf.
-                    coords = np.concatenate([left_half_arrow[:-1],
+                    coords = np.concatenate([left_half_arrow[:-2],
                                              right_half_arrow[-2::-1]])
                 else:
                     raise ValueError("Got unknown shape: %s" % shape)
@@ -1392,8 +1398,10 @@ class Ellipse(Patch):
     A scale-free ellipse.
     """
     def __str__(self):
-        return "Ellipse(%s,%s;%sx%s)" % (self.center[0], self.center[1],
-                                         self.width, self.height)
+        pars = (self.center[0], self.center[1],
+                self.width, self.height, self.angle)
+        fmt = "Ellipse(xy=(%s, %s), width=%s, height=%s, angle=%s)"
+        return fmt % pars
 
     @docstring.dedent_interpd
     def __init__(self, xy, width, height, angle=0.0, **kwargs):
@@ -1453,9 +1461,9 @@ class Circle(Ellipse):
     A circle patch.
     """
     def __str__(self):
-        return "Circle((%g,%g),r=%g)" % (self.center[0],
-                                         self.center[1],
-                                         self.radius)
+        pars = self.center[0], self.center[1], self.radius
+        fmt = "Circle(xy=(%g, %g), radius=%g)"
+        return fmt % pars
 
     @docstring.dedent_interpd
     def __init__(self, xy, radius=5, **kwargs):
@@ -1500,8 +1508,11 @@ class Arc(Ellipse):
     with high resolution.
     """
     def __str__(self):
-        return "Arc(%s,%s;%sx%s)" % (self.center[0], self.center[1],
-                                     self.width, self.height)
+        pars = (self.center[0], self.center[1], self.width,
+                self.height, self.angle, self.theta1, self.theta2)
+        fmt = ("Arc(xy=(%g, %g), width=%g, "
+               "height=%g, angle=%g, theta1=%g, theta2=%g)")
+        return fmt % pars
 
     @docstring.dedent_interpd
     def __init__(self, xy, width, height, angle=0.0,
@@ -1659,13 +1670,9 @@ class Arc(Ellipse):
             self.get_transform().inverted()
         box_path = box_path.transformed(box_path_transform)
 
-        PI = np.pi
-        TWOPI = PI * 2.0
-        RAD2DEG = 180.0 / PI
-        DEG2RAD = PI / 180.0
         theta1 = self.theta1
         theta2 = self.theta2
-        thetas = {}
+        thetas = set()
         # For each of the point pairs, there is a line segment
         for p0, p1 in zip(box_path.vertices[:-1], box_path.vertices[1:]):
             x0, y0 = p0
@@ -1673,18 +1680,15 @@ class Arc(Ellipse):
             for x, y in iter_circle_intersect_on_line_seg(x0, y0, x1, y1):
                 theta = np.arccos(x)
                 if y < 0:
-                    theta = TWOPI - theta
+                    theta = 2 * np.pi - theta
                 # Convert radians to angles
-                theta *= RAD2DEG
-                if theta > theta1 and theta < theta2:
-                    thetas[theta] = None
-
-        thetas = list(six.iterkeys(thetas))
-        thetas.sort()
-        thetas.append(theta2)
+                theta = np.rad2deg(theta)
+                if theta1 < theta < theta2:
+                    thetas.add(theta)
+        thetas = sorted(thetas) + [theta2]
 
         last_theta = theta1
-        theta1_rad = theta1 * DEG2RAD
+        theta1_rad = np.deg2rad(theta1)
         inside = box_path.contains_point((np.cos(theta1_rad),
                                           np.sin(theta1_rad)))
 
@@ -1771,7 +1775,7 @@ def _pprint_table(_table, leadingspace=2):
         for column, cell in zip(columns, row):
             column.append(cell)
 
-    col_len = [max([len(cell) for cell in column]) for column in columns]
+    col_len = [max(len(cell) for cell in column) for column in columns]
 
     lines = []
     table_formatstr = pad + '   '.join([('=' * cl) for cl in col_len])
@@ -1799,8 +1803,6 @@ def _pprint_styles(_styles):
     (stylename : styleclass), return a formatted string listing all the
     styles. Used to update the documentation.
     """
-    names, attrss, clss = [], [], []
-
     import inspect
 
     _table = [["Class", "Name", "Attrs"]]
@@ -1836,10 +1838,7 @@ def _simpleprint_styles(_styles):
     (stylename : styleclass), return a string rep of the list of keys.
     Used to update the documentation.
     """
-    styles = "[ \'"
-    styles += "\' | \'".join(str(i) for i in sorted(_styles.keys()))
-    styles += "\' ]"
-    return styles
+    return "[{}]".format("|".join(map(" '{}' ".format, sorted(_styles))))
 
 
 class _Style(object):
@@ -1865,7 +1864,7 @@ class _Style(object):
 
         try:
             _args_pair = [cs.split("=") for cs in _list[1:]]
-            _args = dict([(k, float(v)) for k, v in _args_pair])
+            _args = {k: float(v) for k, v in _args_pair}
         except ValueError:
             raise ValueError("Incorrect style argument : %s" % stylename)
         _args.update(kw)
@@ -2048,8 +2047,8 @@ class BoxStyle(_Style):
 
             # boundary of the padded box
             x0, y0 = x0 - pad, y0 - pad,
-            return Path.circle((x0 + width/2., y0 + height/2.),
-                               (max([width, height]) / 2.))
+            return Path.circle((x0 + width / 2, y0 + height / 2),
+                               max(width, height) / 2)
 
     _style_list["circle"] = Circle
 
@@ -2518,9 +2517,7 @@ class FancyBboxPatch(Patch):
         if boxstyle is None:
             return BoxStyle.pprint_styles()
 
-        if isinstance(boxstyle, BoxStyle._Base):
-            self._bbox_transmuter = boxstyle
-        elif six.callable(boxstyle):
+        if isinstance(boxstyle, BoxStyle._Base) or callable(boxstyle):
             self._bbox_transmuter = boxstyle
         else:
             self._bbox_transmuter = BoxStyle(boxstyle, **kw)
@@ -3058,8 +3055,6 @@ class ConnectionStyle(_Style):
             x1, y1 = posA
             x20, y20 = x2, y2 = posB
 
-            x12, y12 = (x1 + x2) / 2., (y1 + y2) / 2.
-
             theta1 = math.atan2(y2 - y1, x2 - x1)
             dx, dy = x2 - x1, y2 - y1
             dd = (dx * dx + dy * dy) ** .5
@@ -3068,18 +3063,12 @@ class ConnectionStyle(_Style):
             armA, armB = self.armA, self.armB
 
             if self.angle is not None:
-                #angle = self.angle % 180.
-                #if angle < 0. or angle > 180.:
-                #    angle
-                #theta0 = (self.angle%180.)/180.*math.pi
                 theta0 = self.angle / 180. * math.pi
-                #theta0 = (((self.angle+90)%180.)  - 90.)/180.*math.pi
                 dtheta = theta1 - theta0
-                dl = dd * math.sin(dtheta)
 
+                dl = dd * math.sin(dtheta)
                 dL = dd * math.cos(dtheta)
 
-                #x2, y2 = x2 + dl*ddy, y2 - dl*ddx
                 x2, y2 = x1 + dL * math.cos(theta0), y1 + dL * math.sin(theta0)
 
                 armB = armB - dl
@@ -3092,14 +3081,8 @@ class ConnectionStyle(_Style):
             else:
                 dl = 0.
 
-            #if armA > armB:
-            #    armB = armA + dl
-            #else:
-            #    armA = armB - dl
-
             arm = max(armA, armB)
             f = self.fraction * dd + arm
-            #fB = self.fraction*dd + armB
 
             cx1, cy1 = x1 + f * ddy, y1 - f * ddx
             cx2, cy2 = x2 + f * ddy, y2 - f * ddx
@@ -4135,10 +4118,8 @@ class FancyArrowPatch(Patch):
         if connectionstyle is None:
             return ConnectionStyle.pprint_styles()
 
-        if isinstance(connectionstyle, ConnectionStyle._Base):
-            self._connector = connectionstyle
-        elif six.callable(connectionstyle):
-            # we may need check the calling convention of the given function
+        if (isinstance(connectionstyle, ConnectionStyle._Base)
+                or callable(connectionstyle)):
             self._connector = connectionstyle
         else:
             self._connector = ConnectionStyle(connectionstyle, **kw)

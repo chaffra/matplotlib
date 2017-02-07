@@ -1,15 +1,11 @@
 from __future__ import print_function
 
+from six.moves import input
+
 import numpy as np
 
 from matplotlib.widgets import LassoSelector
 from matplotlib.path import Path
-
-try:
-    raw_input
-except NameError:
-    # Python 3
-    raw_input = input
 
 
 class SelectFromCollection(object):
@@ -72,6 +68,9 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     plt.ion()
+    # Fixing random state for reproducibility
+    np.random.seed(19680801)
+
     data = np.random.rand(100, 2)
 
     subplot_kw = dict(xlim=(0, 1), ylim=(0, 1), autoscale_on=False)
@@ -81,10 +80,10 @@ if __name__ == '__main__':
     selector = SelectFromCollection(ax, pts)
 
     plt.draw()
-    raw_input('Press any key to accept selected points')
+    input('Press Enter to accept selected points')
     print("Selected points:")
     print(selector.xys[selector.ind])
     selector.disconnect()
 
     # Block end of script so you can check that the lasso is disconnected.
-    raw_input('Press any key to quit')
+    input('Press Enter to quit')

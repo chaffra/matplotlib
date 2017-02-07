@@ -83,9 +83,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
     (i.e., a call to set_array has been made), at draw time a call to
     scalar mappable will be made to set the face colors.
     """
-    _offsets = np.array([], float)
-    # _offsets must be a Nx2 array!
-    _offsets.shape = (0, 2)
+    _offsets = np.zeros((0, 2))
     _transOffset = transforms.IdentityTransform()
     #: Either a list of 3x3 arrays or an Nx3x3 array of transforms, suitable
     #: for the `all_transforms` argument to
@@ -147,8 +145,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         self._uniform_offsets = None
         self._offsets = np.array([[0, 0]], float)
         if offsets is not None:
-            offsets = np.asanyarray(offsets)
-            offsets.shape = (-1, 2)             # Make it Nx2
+            offsets = np.asanyarray(offsets).reshape((-1, 2))
             if transOffset is not None:
                 self._offsets = offsets
                 self._transOffset = transOffset
@@ -158,31 +155,6 @@ class Collection(artist.Artist, cm.ScalarMappable):
         self._path_effects = None
         self.update(kwargs)
         self._paths = None
-
-    @staticmethod
-    def _get_value(val):
-        try:
-            return (float(val), )
-        except TypeError:
-            if cbook.iterable(val) and len(val):
-                try:
-                    float(cbook.safe_first_element(val))
-                except (TypeError, ValueError):
-                    pass  # raise below
-                else:
-                    return val
-
-        raise TypeError('val must be a float or nonzero sequence of floats')
-
-    @staticmethod
-    def _get_bool(val):
-        if not cbook.iterable(val):
-            val = (val,)
-        try:
-            bool(cbook.safe_first_element(val))
-        except (TypeError, IndexError):
-            raise TypeError('val must be a bool or nonzero sequence of them')
-        return val
 
     def get_paths(self):
         return self._paths
@@ -213,11 +185,10 @@ class Collection(artist.Artist, cm.ScalarMappable):
             offsets = transOffset.transform_non_affine(offsets)
             transOffset = transOffset.get_affine()
 
-        offsets = np.asanyarray(offsets, float)
+        offsets = np.asanyarray(offsets, float).reshape((-1, 2))
         if isinstance(offsets, np.ma.MaskedArray):
             offsets = offsets.filled(np.nan)
             # get_path_collection_extents handles nan but not masked arrays
-        offsets.shape = (-1, 2)                     # Make it Nx2
 
         if len(paths) and len(offsets):
             result = mpath.get_path_collection_extents(
@@ -255,8 +226,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
                 ys = self.convert_yunits(offsets[:, 1])
                 offsets = list(zip(xs, ys))
 
-        offsets = np.asanyarray(offsets, float)
-        offsets.shape = (-1, 2)             # Make it Nx2
+        offsets = np.asanyarray(offsets, float).reshape((-1, 2))
 
         if not transform.is_affine:
             paths = [transform.transform_path_non_affine(path)
@@ -360,7 +330,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         Returns True | False, ``dict(ind=itemlist)``, where every
         item in itemlist contains the event.
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
 
         if not self.get_visible():
@@ -393,7 +363,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         return self._urls
 
     def set_hatch(self, hatch):
-        """
+        r"""
         Set the hatching pattern
 
         *hatch* can be one of::
@@ -420,7 +390,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         can only be specified for the collection as a whole, not separately
         for each member.
 
-        ACCEPTS: [ '/' | '\\\\' | '|' | '-' | '+' | 'x' | 'o' | 'O' | '.' | '*' ]
+        ACCEPTS: [ '/' | '\\' | '|' | '-' | '+' | 'x' | 'o' | 'O' | '.' | '*' ]
         """
         self._hatch = hatch
         self.stale = True
@@ -436,8 +406,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
 
         ACCEPTS: float or sequence of floats
         """
-        offsets = np.asanyarray(offsets, float)
-        offsets.shape = (-1, 2)             # Make it Nx2
+        offsets = np.asanyarray(offsets, float).reshape((-1, 2))
         #This decision is based on how they are initialized above
         if self._uniform_offsets is None:
             self._offsets = offsets
@@ -492,7 +461,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
             if lw is None:
                 lw = mpl.rcParams['lines.linewidth']
         # get the un-scaled/broadcast lw
-        self._us_lw = self._get_value(lw)
+        self._us_lw = np.atleast_1d(np.asarray(lw))
 
         # scale all of the dash patterns.
         self._linewidths, self._linestyles = self._bcast_lwls(
@@ -614,7 +583,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         """
         if aa is None:
             aa = mpl.rcParams['patch.antialiased']
-        self._antialiaseds = self._get_bool(aa)
+        self._antialiaseds = np.atleast_1d(np.asarray(aa, bool))
         self.stale = True
 
     def set_antialiaseds(self, aa):
@@ -777,6 +746,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
         self._facecolors = other._facecolors
         self._linewidths = other._linewidths
         self._linestyles = other._linestyles
+        self._us_linestyles = other._us_linestyles
         self._pickradius = other._pickradius
         self._hatch = other._hatch
 
@@ -1567,7 +1537,7 @@ class EllipseCollection(Collection):
         Collection.__init__(self, **kwargs)
         self._widths = 0.5 * np.asarray(widths).ravel()
         self._heights = 0.5 * np.asarray(heights).ravel()
-        self._angles = np.asarray(angles).ravel() * (np.pi / 180.0)
+        self._angles = np.deg2rad(angles).ravel()
         self._units = units
         self.set_transform(transforms.IdentityTransform())
         self._transforms = np.empty((0, 3, 3))
@@ -1889,8 +1859,7 @@ class QuadMesh(Collection):
                 ys = self.convert_yunits(self._offsets[:, 1])
                 offsets = list(zip(xs, ys))
 
-        offsets = np.asarray(offsets, float)
-        offsets.shape = (-1, 2)                 # Make it Nx2
+        offsets = np.asarray(offsets, float).reshape((-1, 2))
 
         self.update_scalarmappable()
 

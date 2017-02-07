@@ -10,17 +10,16 @@ from __future__ import (absolute_import, division, print_function,
 import six
 
 import os
-
 import numpy as np
 from numpy import ma
 import matplotlib as mpl
 import matplotlib.colors as colors
 import matplotlib.cbook as cbook
-from matplotlib._cm import datad
+from matplotlib._cm import datad, _deprecation_datad
 from matplotlib._cm import cubehelix
 from matplotlib._cm_listed import cmaps as cmaps_listed
 
-cmap_d = dict()
+cmap_d = _deprecation_datad()
 
 # reverse all the colormaps.
 # reversed colormaps have '_r' appended to the name.
@@ -36,7 +35,7 @@ def revcmap(data):
     """Can only handle specification *data* in dictionary format."""
     data_r = {}
     for key, val in six.iteritems(data):
-        if six.callable(val):
+        if callable(val):
             valnew = _reverser(val)
             # This doesn't work: lambda x: val(1-x)
             # The same "val" (the first one) is used
@@ -69,7 +68,8 @@ def _generate_cmap(name, lutsize):
     """Generates the requested cmap from its *name*.  The lut size is
     *lutsize*."""
 
-    spec = datad[name]
+    # Use superclass method to avoid deprecation warnings during initial load.
+    spec = dict.__getitem__(datad, name)
 
     # Generate the colormap object.
     if 'red' in spec:
@@ -81,16 +81,14 @@ def _generate_cmap(name, lutsize):
 
 LUTSIZE = mpl.rcParams['image.lut']
 
-# Generate the reversed specifications ...
-for cmapname in list(six.iterkeys(datad)):
-    spec = datad[cmapname]
-    spec_reversed = _reverse_cmap_spec(spec)
-    datad[cmapname + '_r'] = spec_reversed
+# Generate the reversed specifications (all at once, to avoid
+# modify-when-iterating).
+datad.update({cmapname + '_r': _reverse_cmap_spec(spec)
+              for cmapname, spec in six.iteritems(datad)})
 
-# Precache the cmaps with ``lutsize = LUTSIZE`` ...
-
-# Use datad.keys() to also add the reversed ones added in the section above:
-for cmapname in six.iterkeys(datad):
+# Precache the cmaps with ``lutsize = LUTSIZE``.
+# Also add the reversed ones added in the section above:
+for cmapname in datad:
     cmap_d[cmapname] = _generate_cmap(cmapname, LUTSIZE)
 
 cmap_d.update(cmaps_listed)
@@ -168,7 +166,7 @@ def get_cmap(name=None, lut=None):
     else:
         raise ValueError(
             "Colormap %s is not recognized. Possible values are: %s"
-            % (name, ', '.join(sorted(cmap_d.keys()))))
+            % (name, ', '.join(sorted(cmap_d))))
 
 
 class ScalarMappable(object):
@@ -303,10 +301,11 @@ class ScalarMappable(object):
 
         ACCEPTS: a length 2 sequence of floats
         """
-        if (vmin is not None and vmax is None and
-                cbook.iterable(vmin) and len(vmin) == 2):
-            vmin, vmax = vmin
-
+        if vmax is None:
+            try:
+                vmin, vmax = vmin
+            except (TypeError, ValueError):
+                pass
         if vmin is not None:
             self.norm.vmin = vmin
         if vmax is not None:

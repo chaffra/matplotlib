@@ -52,7 +52,7 @@ matplotlibrc use::
 
 Here is the standard example, `tex_demo.py`:
 
-.. plot:: pyplots/tex_demo.py
+.. plot:: mpl_examples/pyplots/tex_demo.py
    :include-source:
 
 Note that display math mode (``$$ e=mc^2 $$``) is  not supported, but adding the
@@ -152,7 +152,7 @@ Troubleshooting
 
 .. _LaTeX: http://www.tug.org
 .. _dvipng: http://www.nongnu.org/dvipng/
-.. _Ghostscript: http://www.cs.wisc.edu/~ghost/
+.. _Ghostscript: https://ghostscript.com/
 .. _PSNFSS: http://www.ctan.org/tex-archive/macros/latex/required/psnfss/psnfss2e.pdf
-.. _Poppler: http://poppler.freedesktop.org/
+.. _Poppler: https://poppler.freedesktop.org/
 .. _Xpdf: http://www.foolabs.com/xpdf

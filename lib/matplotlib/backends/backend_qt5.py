@@ -132,7 +132,7 @@ def _create_qApp():
             # check for DISPLAY env variable on X11 build of Qt
             if hasattr(QtGui, "QX11Info"):
                 display = os.environ.get('DISPLAY')
-                if display is None or not re.search(':\d', display):
+                if display is None or not re.search(r':\d', display):
                     raise RuntimeError('Invalid DISPLAY variable')
 
             qApp = QtWidgets.QApplication([str(" ")])
@@ -175,14 +175,18 @@ class TimerQT(TimerBase):
     '''
     Subclass of :class:`backend_bases.TimerBase` that uses Qt timer events.
 
-    Attributes:
-    * interval: The time between timer events in milliseconds. Default
-        is 1000 ms.
-    * single_shot: Boolean flag indicating whether this timer should
+    Attributes
+    ----------
+    interval : int
+        The time between timer events in milliseconds. Default is 1000 ms.
+    single_shot : bool
+        Boolean flag indicating whether this timer should
         operate as single shot (run once and then stop). Defaults to False.
-    * callbacks: Stores list of (func, args) tuples that will be called
-        upon timer events. This list can be manipulated directly, or the
-        functions add_callback and remove_callback can be used.
+    callbacks : list
+        Stores list of (func, args) tuples that will be called upon timer
+        events. This list can be manipulated directly, or the functions
+        `add_callback` and `remove_callback` can be used.
+
     '''
 
     def __init__(self, *args, **kwargs):
@@ -246,6 +250,18 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         # Key auto-repeat enabled by default
         self._keyautorepeat = True
 
+    @property
+    def _dpi_ratio(self):
+        # Not available on Qt4 or some older Qt5.
+        try:
+            return self.devicePixelRatio()
+        except AttributeError:
+            return 1
+
+    def get_width_height(self):
+        w, h = FigureCanvasBase.get_width_height(self)
+        return int(w / self._dpi_ratio), int(h / self._dpi_ratio)
+
     def enterEvent(self, event):
         FigureCanvasBase.enter_notify_event(self, guiEvent=event)
 
@@ -253,10 +269,14 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         QtWidgets.QApplication.restoreOverrideCursor()
         FigureCanvasBase.leave_notify_event(self, guiEvent=event)
 
+    def mouseEventCoords(self, pos):
+        x = pos.x() * self._dpi_ratio
+        # flip y so y=0 is bottom of canvas
+        y = self.figure.bbox.height - pos.y() * self._dpi_ratio
+        return x, y
+
     def mousePressEvent(self, event):
-        x = event.pos().x()
-        # flipy so y=0 is bottom of canvas
-        y = self.figure.bbox.height - event.pos().y()
+        x, y = self.mouseEventCoords(event.pos())
         button = self.buttond.get(event.button())
         if button is not None:
             FigureCanvasBase.button_press_event(self, x, y, button,
@@ -265,9 +285,7 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
             print('button pressed:', event.button())
 
     def mouseDoubleClickEvent(self, event):
-        x = event.pos().x()
-        # flipy so y=0 is bottom of canvas
-        y = self.figure.bbox.height - event.pos().y()
+        x, y = self.mouseEventCoords(event.pos())
         button = self.buttond.get(event.button())
         if button is not None:
             FigureCanvasBase.button_press_event(self, x, y,
@@ -277,16 +295,12 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
             print('button doubleclicked:', event.button())
 
     def mouseMoveEvent(self, event):
-        x = event.x()
-        # flipy so y=0 is bottom of canvas
-        y = self.figure.bbox.height - event.y()
+        x, y = self.mouseEventCoords(event)
         FigureCanvasBase.motion_notify_event(self, x, y, guiEvent=event)
         # if DEBUG: print('mouse move')
 
     def mouseReleaseEvent(self, event):
-        x = event.x()
-        # flipy so y=0 is bottom of canvas
-        y = self.figure.bbox.height - event.y()
+        x, y = self.mouseEventCoords(event)
         button = self.buttond.get(event.button())
         if button is not None:
             FigureCanvasBase.button_release_event(self, x, y, button,
@@ -295,9 +309,7 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
             print('button released')
 
     def wheelEvent(self, event):
-        x = event.x()
-        # flipy so y=0 is bottom of canvas
-        y = self.figure.bbox.height - event.y()
+        x, y = self.mouseEventCoords(event)
         # from QWheelEvent::delta doc
         if event.pixelDelta().x() == 0 and event.pixelDelta().y() == 0:
             steps = event.angleDelta().y() / 120
@@ -338,8 +350,8 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         self._keyautorepeat = bool(val)
 
     def resizeEvent(self, event):
-        w = event.size().width()
-        h = event.size().height()
+        w = event.size().width() * self._dpi_ratio
+        h = event.size().height() * self._dpi_ratio
         if DEBUG:
             print('resize (%d x %d)' % (w, h))
             print("FigureCanvasQt.resizeEvent(%d, %d)" % (w, h))
@@ -402,16 +414,16 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         periodic events through the backend's native event
         loop. Implemented only for backends with GUIs.
 
-        optional arguments:
-
-        *interval*
+        Other Parameters
+        ----------------
+        interval : scalar
             Timer interval in milliseconds
 
-        *callbacks*
-            Sequence of (func, args, kwargs) where func(*args, **kwargs)
+        callbacks : list
+            Sequence of (func, args, kwargs) where ``func(*args, **kwargs)``
             will be executed by the timer every *interval*.
 
-    """
+        """
         return TimerQT(*args, **kwargs)
 
     def flush_events(self):
@@ -440,12 +452,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
 class FigureManagerQT(FigureManagerBase):
     """
-    Public attributes
+    Attributes
+    ----------
+    canvas : `FigureCanvas`
+        The FigureCanvas instance
+    num : int or str
+        The Figure number
+    toolbar : qt.QToolBar
+        The qt.QToolBar
+    window : qt.QMainWindow
+        The qt.QMainWindow
 
-    canvas      : The FigureCanvas instance
-    num         : The Figure number
-    toolbar     : The qt.QToolBar
-    window      : The qt.QMainWindow
     """
 
     def __init__(self, canvas, num):
@@ -625,7 +642,15 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
         if is_pyqt5():
             self.setIconSize(QtCore.QSize(24, 24))
             self.layout().setSpacing(12)
-            self.setMinimumHeight(48)
+
+    if is_pyqt5():
+        # For some reason, self.setMinimumHeight doesn't seem to carry over to
+        # the actual sizeHint, so override it instead in order to make the
+        # aesthetic adjustments noted above.
+        def sizeHint(self):
+            size = super(NavigationToolbar2QT, self).sizeHint()
+            size.setHeight(max(48, size.height()))
+            return size
 
     def edit_parameters(self):
         allaxes = self.canvas.figure.get_axes()
@@ -702,8 +727,7 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
 
     def save_figure(self, *args):
         filetypes = self.canvas.get_supported_filetypes_grouped()
-        sorted_filetypes = list(six.iteritems(filetypes))
-        sorted_filetypes.sort()
+        sorted_filetypes = sorted(six.iteritems(filetypes))
         default_filetype = self.canvas.get_default_filetype()
 
         startpath = matplotlib.rcParams.get('savefig.directory', '')

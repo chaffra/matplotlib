@@ -1,18 +1,15 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-import six
-from six.moves import xrange
-
-from nose.tools import assert_equal, assert_true
+from numpy.testing import assert_equal
 from matplotlib import rcParams
-from matplotlib.testing.decorators import image_comparison, cleanup
+from matplotlib.testing.decorators import image_comparison
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
 import numpy as np
+import warnings
 
 
-@cleanup
 def test_figure_label():
     # pyplot figure creation, selection and closing with figure label and
     # number
@@ -34,7 +31,6 @@ def test_figure_label():
     assert_equal(plt.get_figlabels(), ['', 'today'])
 
 
-@cleanup
 def test_fignum_exists():
     # pyplot figure creation, selection and closing with fignum_exists
     plt.figure('one')
@@ -51,13 +47,30 @@ def test_fignum_exists():
     assert_equal(plt.fignum_exists(4), False)
 
 
+def test_clf_keyword():
+    # test if existing figure is cleared with figure() and subplots()
+    fig0 = plt.figure(num=1)
+    fig0.suptitle("A fancy plot")
+    assert_equal([t.get_text() for t in fig0.texts], ["A fancy plot"])
+
+    fig1 = plt.figure(num=1, clear=False)
+    fig1.text(0.5, 0.5, "Really fancy!")
+    assert fig0 is fig1
+    assert_equal([t.get_text() for t in fig1.texts],
+                 ["A fancy plot", 'Really fancy!'])
+
+    fig2, ax2 = plt.subplots(2, 1, num=1, clear=True)
+    assert fig0 is fig2
+    assert_equal([t.get_text() for t in fig2.texts], [])
+
+
 @image_comparison(baseline_images=['figure_today'])
 def test_figure():
     # named figure support
     fig = plt.figure('today')
     ax = fig.add_subplot(111)
     ax.set_title(fig.get_label())
-    ax.plot(list(xrange(5)))
+    ax.plot(np.arange(5))
     # plot red line in a different figure.
     plt.figure('tomorrow')
     plt.plot([0, 1], [1, 0], 'r')
@@ -66,45 +79,57 @@ def test_figure():
     plt.close('tomorrow')
 
 
-@cleanup
+@image_comparison(baseline_images=['figure_legend'])
+def test_figure_legend():
+    fig, axes = plt.subplots(2)
+    axes[0].plot([0, 1], [1, 0], label='x', color='g')
+    axes[0].plot([0, 1], [0, 1], label='y', color='r')
+    axes[0].plot([0, 1], [0.5, 0.5], label='y', color='k')
+
+    axes[1].plot([0, 1], [1, 0], label='y', color='r')
+    axes[1].plot([0, 1], [0, 1], label='z', color='b')
+    fig.legend()
+
+
 def test_gca():
     fig = plt.figure()
 
     ax1 = fig.add_axes([0, 0, 1, 1])
-    assert_true(fig.gca(projection='rectilinear') is ax1)
-    assert_true(fig.gca() is ax1)
+    assert fig.gca(projection='rectilinear') is ax1
+    assert fig.gca() is ax1
 
     ax2 = fig.add_subplot(121, projection='polar')
-    assert_true(fig.gca() is ax2)
-    assert_true(fig.gca(polar=True)is ax2)
+    assert fig.gca() is ax2
+    assert fig.gca(polar=True)is ax2
 
     ax3 = fig.add_subplot(122)
-    assert_true(fig.gca() is ax3)
+    assert fig.gca() is ax3
 
     # the final request for a polar axes will end up creating one
     # with a spec of 111.
-    assert_true(fig.gca(polar=True) is not ax3)
-    assert_true(fig.gca(polar=True) is not ax2)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        # Changing the projection will throw a warning
+        assert fig.gca(polar=True) is not ax3
+        assert len(w) == 1
+    assert fig.gca(polar=True) is not ax2
     assert_equal(fig.gca().get_geometry(), (1, 1, 1))
 
     fig.sca(ax1)
-    assert_true(fig.gca(projection='rectilinear') is ax1)
-    assert_true(fig.gca() is ax1)
+    assert fig.gca(projection='rectilinear') is ax1
+    assert fig.gca() is ax1
 
 
 @image_comparison(baseline_images=['figure_suptitle'])
 def test_suptitle():
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1)
+    fig, _ = plt.subplots()
     fig.suptitle('hello', color='r')
     fig.suptitle('title', color='g', rotation='30')
 
 
-@cleanup
 def test_suptitle_fontproperties():
     from matplotlib.font_manager import FontProperties
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1)
+    fig, ax = plt.subplots()
     fps = FontProperties(size='large', weight='bold')
     txt = fig.suptitle('fontprops title', fontproperties=fps)
     assert_equal(txt.get_fontsize(), fps.get_size_in_points())
@@ -131,14 +156,11 @@ def test_alpha():
                                               facecolor='red'))
 
 
-@cleanup
 def test_too_many_figures():
-    import warnings
-
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         for i in range(rcParams['figure.max_open_warning'] + 1):
-            fig = plt.figure()
+            plt.figure()
         assert len(w) == 1
 
 
@@ -168,11 +190,10 @@ def test_iterability_axes_argument():
             return MyAxes, {'myclass': self}
 
     fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection=MyClass())
+    fig.add_subplot(1, 1, 1, projection=MyClass())
     plt.close(fig)
 
 
-@cleanup
 def test_set_fig_size():
     fig = plt.figure()
 
@@ -195,7 +216,6 @@ def test_set_fig_size():
     assert_equal(fig.get_figheight(), 3)
 
 
-@cleanup
 def test_axes_remove():
     fig, axes = plt.subplots(2, 2)
     axes[-1, -1].remove()
@@ -214,8 +234,3 @@ def test_figaspect():
     assert h / w == 0.5
     w, h = plt.figaspect(np.zeros((2, 2)))
     assert h / w == 1
-
-
-if __name__ == "__main__":
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)

@@ -295,12 +295,18 @@ Axis scales
 
 
 
-Autoscaling
------------
+Autoscaling and margins
+-----------------------
 
 .. autosummary::
    :toctree: _as_gen
    :nosignatures:
+
+   Axes.use_sticky_edges
+
+   Axes.margins
+   Axes.set_xmargin
+   Axes.set_ymargin
 
    Axes.relim
 
@@ -315,33 +321,6 @@ Autoscaling
 
    Axes.get_autoscaley_on
    Axes.set_autoscaley_on
-
-
-
-Margins
-~~~~~~~
-
-.. autosummary::
-   :toctree: _as_gen
-   :nosignatures:
-
-
-   Axes.margins
-   Axes.set_margins
-   Axes.get_margins
-   Axes.bottom_margin
-   Axes.get_bottom_margin
-   Axes.get_left_margin
-   Axes.get_right_margin
-   Axes.get_top_margin
-   Axes.left_margin
-   Axes.right_margin
-   Axes.set_bottom_margin
-   Axes.set_left_margin
-   Axes.set_top_margin
-   Axes.set_right_margin
-   Axes.set_xmargin
-   Axes.top_margin
 
 
 Aspect ratio
@@ -387,7 +366,6 @@ Ticks and tick labels
 
    Axes.set_xticklabels
    Axes.set_xticks
-   Axes.set_ymargin
    Axes.set_yticklabels
    Axes.set_yticks
 

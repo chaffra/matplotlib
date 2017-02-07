@@ -7,13 +7,12 @@ from __future__ import (absolute_import, division, print_function,
 import six
 
 import numpy as np
-from numpy.testing import assert_array_equal
-from numpy.testing import assert_equal
-from numpy.testing import assert_almost_equal
+from numpy.testing import assert_almost_equal, assert_array_equal
+import pytest
 
 from matplotlib.patches import Polygon
 from matplotlib.patches import Rectangle
-from matplotlib.testing.decorators import image_comparison, cleanup
+from matplotlib.testing.decorators import image_comparison
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.collections as mcollections
@@ -176,6 +175,14 @@ def test_patch_alpha_override():
     ax.set_ylim([-1, 2])
 
 
+@pytest.mark.style('default')
+def test_patch_color_none():
+    # Make sure the alpha kwarg does not override 'none' facecolor.
+    # Addresses issue #7478.
+    c = plt.Circle((0, 0), 1, facecolor='none', alpha=1)
+    assert c.get_facecolor()[0] == 0
+
+
 @image_comparison(baseline_images=['patch_custom_linestyle'],
                   remove_text=True)
 def test_patch_custom_linestyle():
@@ -206,7 +213,6 @@ def test_patch_custom_linestyle():
     ax.set_ylim([-1, 2])
 
 
-@cleanup
 def test_patch_linestyle_accents():
     #: Test if linestyle can also be specified with short menoics
     #: like "--"
@@ -247,9 +253,9 @@ def test_wedge_movement():
 
     w = mpatches.Wedge(**init_args)
     for attr, (old_v, new_v, func) in six.iteritems(param_dict):
-        assert_equal(getattr(w, attr), old_v)
+        assert getattr(w, attr) == old_v
         getattr(w, func)(new_v)
-        assert_equal(getattr(w, attr), new_v)
+        assert getattr(w, attr) == new_v
 
 
 # png needs tol>=0.06, pdf tol>=1.617
@@ -283,6 +289,25 @@ def test_wedge_range():
     ax.set_ylim([-2, 9])
 
 
-if __name__ == '__main__':
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)
+def test_patch_str():
+    """
+    Check that patches have nice and working `str` representation.
+
+    Note that the logic is that `__str__` is defined such that:
+    str(eval(str(p))) == str(p)
+    """
+    p = mpatches.Circle(xy=(1, 2), radius=3)
+    assert str(p) == 'Circle(xy=(1, 2), radius=3)'
+
+    p = mpatches.Ellipse(xy=(1, 2), width=3, height=4, angle=5)
+    assert str(p) == 'Ellipse(xy=(1, 2), width=3, height=4, angle=5)'
+
+    p = mpatches.Rectangle(xy=(1, 2), width=3, height=4, angle=5)
+    assert str(p) == 'Rectangle(xy=(1, 2), width=3, height=4, angle=5)'
+
+    p = mpatches.Wedge(center=(1, 2), r=3, theta1=4, theta2=5, width=6)
+    assert str(p) == 'Wedge(center=(1, 2), r=3, theta1=4, theta2=5, width=6)'
+
+    p = mpatches.Arc(xy=(1, 2), width=3, height=4, angle=5, theta1=6, theta2=7)
+    expected = 'Arc(xy=(1, 2), width=3, height=4, angle=5, theta1=6, theta2=7)'
+    assert str(p) == expected

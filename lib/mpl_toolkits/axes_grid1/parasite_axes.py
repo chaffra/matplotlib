@@ -26,8 +26,8 @@ is_string_like = cbook.is_string_like
 class ParasiteAxesBase(object):
 
     def get_images_artists(self):
-        artists = set([a for a in self.get_children() if a.get_visible()])
-        images = set([a for a in self.images if a.get_visible()])
+        artists = {a for a in self.get_children() if a.get_visible()}
+        images = {a for a in self.images if a.get_visible()}
 
         return list(images), list(artists - images)
 
@@ -310,10 +310,6 @@ class HostAxesBase(object):
 
     def twinx(self, y_transform=None, axes_class=None,):
         """
-        call signature::
-
-          ax2 = ax.twinx()
-
         create a twin of Axes for generating a plot with a sharex
         x-axis but independent y axis.  The y-axis of self will have
         ticks on left and the returned axes will have ticks on the
@@ -361,10 +357,6 @@ class HostAxesBase(object):
 
     def twiny(self, axes_class=None):
         """
-        call signature::
-
-          ax2 = ax.twiny()
-
         create a twin of Axes for generating a plot with a shared
         y-axis but independent x axis.  The x-axis of self will have
         ticks on bottom and the returned axes will have ticks on the
@@ -395,10 +387,6 @@ class HostAxesBase(object):
 
     def twin(self, aux_trans=None, axes_class=None):
         """
-        call signature::
-
-          ax2 = ax.twin()
-
         create a twin of Axes for generating a plot with a sharex
         x-axis but independent y axis.  The y-axis of self will have
         ticks on left and the returned axes will have ticks on the

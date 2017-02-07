@@ -3,25 +3,20 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
+from distutils.version import LooseVersion
+
 import pytest
 import numpy as np
 
 import matplotlib.pyplot as plt
-from matplotlib.testing.decorators import cleanup
 import matplotlib.category as cat
 
 import unittest
 
 
-class TestConvertToString(object):
-    testdata = [("abc", "abc"), ("Здравствуйте мир", "Здравствуйте мир"),
-                ("3.14", 3.14), ("nan", np.nan),
-                ("inf", np.inf), ("-inf", -np.inf)]
-    ids = ["string", "unicode", "decimal", "nan", "posinf", "neginf", ]
-
-    @pytest.mark.parametrize("expected, test", testdata, ids=ids)
-    def test_convert_to_string(self, expected, test):
-        assert expected == cat.convert_to_string(test)
+needs_new_numpy = pytest.mark.xfail(
+    LooseVersion(np.__version__) < LooseVersion('1.8.0'),
+    reason='NumPy < 1.8.0 is broken.')
 
 
 class TestUnitData(object):
@@ -33,12 +28,14 @@ class TestUnitData(object):
 
     ids = ["single", "unicode", "mixed"]
 
+    @needs_new_numpy
     @pytest.mark.parametrize("data, seq, locs", testdata, ids=ids)
     def test_unit(self, data, seq, locs):
         act = cat.UnitData(data)
         assert act.seq == seq
         assert act.locs == locs
 
+    @needs_new_numpy
     def test_update_map(self):
         data = ['a', 'd']
         oseq = ['a', 'd']
@@ -90,6 +87,7 @@ class TestStrCategoryConverter(object):
     def mock_axis(self, request):
         self.cc = cat.StrCategoryConverter()
 
+    @needs_new_numpy
     @pytest.mark.parametrize("data, unitmap, exp", testdata, ids=ids)
     def test_convert(self, data, unitmap, exp):
         MUD = MockUnitData(unitmap)
@@ -133,6 +131,25 @@ def lt(tl):
 
 
 class TestPlot(object):
+    bytes_data = [
+        ['a', 'b', 'c'],
+        [b'a', b'b', b'c'],
+        np.array([b'a', b'b', b'c'])
+    ]
+
+    bytes_ids = ['string list', 'bytes list', 'bytes ndarray']
+
+    numlike_data = [
+        ['1', '11', '3'],
+        np.array(['1', '11', '3']),
+        [b'1', b'11', b'3'],
+        np.array([b'1', b'11', b'3']),
+    ]
+
+    numlike_ids = [
+        'string list', 'string ndarray', 'bytes list', 'bytes ndarray'
+    ]
+
     @pytest.fixture
     def data(self):
         self.d = ['a', 'b', 'c', 'a']
@@ -155,9 +172,7 @@ class TestPlot(object):
         np.testing.assert_array_equal(axis.unit_data.locs, unit_data.locs)
         assert axis.unit_data.seq == unit_data.seq
 
-    @cleanup
     def test_plot_unicode(self):
-        # Image test would fail on numpy 1.6
         words = ['Здравствуйте', 'привет']
         locs = [0.0, 1.0]
         unit_data = MockUnitData(zip(words, locs))
@@ -168,7 +183,6 @@ class TestPlot(object):
 
         self.axis_test(ax.yaxis, locs, words, unit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("data")
     def test_plot_1d(self):
         fig, ax = plt.subplots()
@@ -177,7 +191,6 @@ class TestPlot(object):
 
         self.axis_test(ax.yaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("missing_data")
     def test_plot_1d_missing(self):
         fig, ax = plt.subplots()
@@ -186,14 +199,8 @@ class TestPlot(object):
 
         self.axis_test(ax.yaxis, self.dmticks, self.dmlabels, self.dmunit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("data")
-    @pytest.mark.parametrize("bars",
-                             [['a', 'b', 'c'],
-                              [b'a', b'b', b'c'],
-                              np.array([b'a', b'b', b'c'])],
-                             ids=['string list', 'bytes list',
-                                  'bytes ndarray'])
+    @pytest.mark.parametrize("bars", bytes_data, ids=bytes_ids)
     def test_plot_bytes(self, bars):
         counts = np.array([4, 6, 5])
 
@@ -203,14 +210,7 @@ class TestPlot(object):
 
         self.axis_test(ax.xaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
-    @pytest.mark.parametrize("bars",
-                             [['1', '11', '3'],
-                              np.array(['1', '11', '3']),
-                              [b'1', b'11', b'3'],
-                              np.array([b'1', b'11', b'3'])],
-                             ids=['string list', 'string ndarray',
-                                  'bytes list', 'bytes ndarray'])
+    @pytest.mark.parametrize("bars", numlike_data, ids=numlike_ids)
     def test_plot_numlike(self, bars):
         counts = np.array([4, 6, 5])
 
@@ -221,7 +221,6 @@ class TestPlot(object):
         unitmap = MockUnitData([('1', 0), ('11', 1), ('3', 2)])
         self.axis_test(ax.xaxis, [0, 1, 2], ['1', '11', '3'], unitmap)
 
-    @cleanup
     @pytest.mark.usefixtures("data", "missing_data")
     def test_plot_2d(self):
         fig, ax = plt.subplots()
@@ -231,7 +230,6 @@ class TestPlot(object):
         self.axis_test(ax.xaxis, self.dmticks, self.dmlabels, self.dmunit_data)
         self.axis_test(ax.yaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
     @pytest.mark.usefixtures("data", "missing_data")
     def test_scatter_2d(self):
 
@@ -242,7 +240,6 @@ class TestPlot(object):
         self.axis_test(ax.xaxis, self.dmticks, self.dmlabels, self.dmunit_data)
         self.axis_test(ax.yaxis, self.dticks, self.dlabels, self.dunit_data)
 
-    @cleanup
     def test_plot_update(self):
         fig, ax = plt.subplots()
 

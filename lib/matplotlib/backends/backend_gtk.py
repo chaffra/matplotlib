@@ -104,16 +104,20 @@ def new_figure_manager_given_figure(num, figure):
 
 class TimerGTK(TimerBase):
     '''
-    Subclass of :class:`backend_bases.TimerBase` that uses GTK for timer events.
+    Subclass of :class:`backend_bases.TimerBase` using GTK for timer events.
 
-    Attributes:
-    * interval: The time between timer events in milliseconds. Default
-        is 1000 ms.
-    * single_shot: Boolean flag indicating whether this timer should
-        operate as single shot (run once and then stop). Defaults to False.
-    * callbacks: Stores list of (func, args) tuples that will be called
-        upon timer events. This list can be manipulated directly, or the
-        functions add_callback and remove_callback can be used.
+    Attributes
+    ----------
+    interval : int
+        The time between timer events in milliseconds. Default is 1000 ms.
+    single_shot : bool
+        Boolean flag indicating whether this timer should operate as single
+        shot (run once and then stop). Defaults to False.
+    callbacks : list
+        Stores list of (func, args) tuples that will be called upon timer
+        events. This list can be manipulated directly, or the functions
+        `add_callback` and `remove_callback` can be used.
+
     '''
     def _timer_start(self):
         # Need to stop it, otherwise we potentially leak a timer id that will
@@ -510,13 +514,13 @@ class FigureCanvasGTK (gtk.DrawingArea, FigureCanvasBase):
         This is useful for getting periodic events through the backend's native
         event loop. Implemented only for backends with GUIs.
 
-        optional arguments:
-
-        *interval*
-          Timer interval in milliseconds
-        *callbacks*
-          Sequence of (func, args, kwargs) where func(*args, **kwargs) will
-          be executed by the timer every *interval*.
+        Other Parameters
+        ----------------
+        interval : scalar
+            Timer interval in milliseconds
+        callbacks : list
+            Sequence of (func, args, kwargs) where ``func(*args, **kwargs)``
+            will be executed by the timer every *interval*.
         """
         return TimerGTK(*args, **kwargs)
 
@@ -537,13 +541,19 @@ class FigureCanvasGTK (gtk.DrawingArea, FigureCanvasBase):
 
 class FigureManagerGTK(FigureManagerBase):
     """
-    Public attributes
+    Attributes
+    ----------
+    canvas : `FigureCanvas`
+        The FigureCanvas instance
+    num : int or str
+        The Figure number
+    toolbar : gtk.Toolbar
+        The gtk.Toolbar  (gtk only)
+    vbox : gtk.VBox
+        The gtk.VBox containing the canvas and toolbar (gtk only)
+    window : gtk.Window
+        The gtk.Window   (gtk only)
 
-    canvas      : The FigureCanvas instance
-    num         : The Figure number
-    toolbar     : The gtk.Toolbar  (gtk only)
-    vbox        : The gtk.VBox containing the canvas and toolbar (gtk only)
-    window      : The gtk.Window   (gtk only)
     """
     def __init__(self, canvas, num):
         if _debug: print('FigureManagerGTK.%s' % fn_name())
@@ -551,7 +561,7 @@ class FigureManagerGTK(FigureManagerBase):
 
         self.window = gtk.Window()
         self.set_window_title("Figure %d" % num)
-        if (window_icon):
+        if window_icon:
             try:
                 self.window.set_icon_from_file(window_icon)
             except:
@@ -780,13 +790,13 @@ class NavigationToolbar2GTK(NavigationToolbar2, gtk.Toolbar):
         toolfig.subplots_adjust(top=0.9)
         tool =  SubplotTool(self.canvas.figure, toolfig)
 
-        w = int (toolfig.bbox.width)
-        h = int (toolfig.bbox.height)
-
+        w = int(toolfig.bbox.width)
+        h = int(toolfig.bbox.height)
 
         window = gtk.Window()
-        if (window_icon):
-            try: window.set_icon_from_file(window_icon)
+        if window_icon:
+            try:
+                window.set_icon_from_file(window_icon)
             except:
                 # we presumably already logged a message on the
                 # failure of the main plot, don't keep reporting
@@ -819,33 +829,32 @@ class FileChooserDialog(gtk.FileChooserDialog):
                   filetypes = [],
                   default_filetype = None
                   ):
-        super(FileChooserDialog, self).__init__ (title, parent, action,
-                                                 buttons)
+        super(FileChooserDialog, self).__init__(title, parent, action, buttons)
         super(FileChooserDialog, self).set_do_overwrite_confirmation(True)
-        self.set_default_response (gtk.RESPONSE_OK)
+        self.set_default_response(gtk.RESPONSE_OK)
 
-        if not path: path = os.getcwd() + os.sep
+        if not path:
+            path = os.getcwd() + os.sep
 
         # create an extra widget to list supported image formats
         self.set_current_folder (path)
         self.set_current_name ('image.' + default_filetype)
 
-        hbox = gtk.HBox (spacing=10)
-        hbox.pack_start (gtk.Label ("File Format:"), expand=False)
+        hbox = gtk.HBox(spacing=10)
+        hbox.pack_start(gtk.Label ("File Format:"), expand=False)
 
         liststore = gtk.ListStore(gobject.TYPE_STRING)
         cbox = gtk.ComboBox(liststore)
         cell = gtk.CellRendererText()
         cbox.pack_start(cell, True)
         cbox.add_attribute(cell, 'text', 0)
-        hbox.pack_start (cbox)
+        hbox.pack_start(cbox)
 
         self.filetypes = filetypes
-        self.sorted_filetypes = list(six.iteritems(filetypes))
-        self.sorted_filetypes.sort()
+        self.sorted_filetypes = sorted(six.iteritems(filetypes))
         default = 0
         for i, (ext, name) in enumerate(self.sorted_filetypes):
-            cbox.append_text ("%s (*.%s)" % (name, ext))
+            cbox.append_text("%s (*.%s)" % (name, ext))
             if ext == default_filetype:
                 default = i
         cbox.set_active(default)
@@ -864,8 +873,8 @@ class FileChooserDialog(gtk.FileChooserDialog):
             elif ext == '':
                 filename = filename.rstrip('.') + '.' + new_ext
 
-            self.set_current_name (filename)
-        cbox.connect ("changed", cb_cbox_changed)
+            self.set_current_name(filename)
+        cbox.connect("changed", cb_cbox_changed)
 
         hbox.show_all()
         self.set_extra_widget(hbox)
@@ -895,12 +904,11 @@ class DialogLineprops(object):
         )
 
     linestyles = [ls for ls in lines.Line2D.lineStyles if ls.strip()]
-    linestyled = dict([ (s,i) for i,s in enumerate(linestyles)])
+    linestyled = {s: i for i, s in enumerate(linestyles)}
 
-
-    markers =  [m for m in markers.MarkerStyle.markers if cbook.is_string_like(m)]
-
-    markerd = dict([(s,i) for i,s in enumerate(markers)])
+    markers =  [m for m in markers.MarkerStyle.markers
+                if cbook.is_string_like(m)]
+    markerd = {s: i for i, s in enumerate(markers)}
 
     def __init__(self, lines):
         import gtk.glade
@@ -908,12 +916,14 @@ class DialogLineprops(object):
         datadir = matplotlib.get_data_path()
         gladefile = os.path.join(datadir, 'lineprops.glade')
         if not os.path.exists(gladefile):
-            raise IOError('Could not find gladefile lineprops.glade in %s'%datadir)
+            raise IOError(
+                'Could not find gladefile lineprops.glade in %s' % datadir)
 
         self._inited = False
         self._updateson = True # suppress updates when setting widgets manually
         self.wtree = gtk.glade.XML(gladefile, 'dialog_lineprops')
-        self.wtree.signal_autoconnect(dict([(s, getattr(self, s)) for s in self.signals]))
+        self.wtree.signal_autoconnect(
+            {s: getattr(self, s) for s in self.signals})
 
         self.dlg = self.wtree.get_widget('dialog_lineprops')
 
@@ -937,7 +947,6 @@ class DialogLineprops(object):
         self._lastcnt = 0
         self._inited = True
 
-
     def show(self):
         'populate the combo box'
         self._updateson = False
@@ -960,7 +969,6 @@ class DialogLineprops(object):
         ind = self.cbox_lineprops.get_active()
         line = self.lines[ind]
         return line
-
 
     def get_active_linestyle(self):
         'get the active lineinestyle'
@@ -994,8 +1002,6 @@ class DialogLineprops(object):
         line.set_markerfacecolor((r,g,b))
 
         line.figure.canvas.draw()
-
-
 
     def on_combobox_lineprops_changed(self, item):
         'update the widgets from the active line'
@@ -1046,7 +1052,6 @@ class DialogLineprops(object):
 # Unfortunately, the SVG renderer (rsvg) leaks memory under earlier
 # versions of pygtk, so we have to use a PNG file instead.
 try:
-
     if gtk.pygtk_version < (2, 8, 0) or sys.platform == 'win32':
         icon_filename = 'matplotlib.png'
     else:

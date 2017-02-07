@@ -1,8 +1,8 @@
 .. _documenting-matplotlib:
 
-**********************
-Documenting matplotlib
-**********************
+===========================================
+Developer's tips for documenting matplotlib
+===========================================
 
 Getting started
 ===============
@@ -255,10 +255,10 @@ working with Sphinx in general. Here are a few additional things to keep in mind
 * The autodoc extension will handle index entries for the API, but additional
   entries in the index_ need to be explicitly added.
 
-.. _Sphinx: http://sphinx.pocoo.org
-.. _documentation: http://sphinx.pocoo.org/contents.html
-.. _`inline markup`: http://sphinx.pocoo.org/markup/inline.html
-.. _index: http://sphinx.pocoo.org/markup/para.html#index-generating-markup
+.. _Sphinx: http://www.sphinx-doc.org
+.. _documentation: http://www.sphinx-doc.org/contents.html
+.. _`inline markup`: http://www.sphinx-doc.org/markup/inline.html
+.. _index: http://www.sphinx-doc.org/markup/para.html#index-generating-markup
 
 * Please limit the text width of docstrings to 70 characters.
 
@@ -281,7 +281,7 @@ script, this will be done automatically at build time to ensure that
 the code that is included runs and produces the advertised figure.
 
 The path should be relative to the ``doc`` directory.  Any plots
-specific to the documentation should be added to the ``doc/pyplots``
+specific to the documentation should be added to the ``doc/mpl_examples/pyplots``
 directory and committed to git.  Plots from the ``examples`` directory
 may be referenced through the symlink ``mpl_examples`` in the ``doc``
 directory.  e.g.::
@@ -310,7 +310,7 @@ git. Please also add a line to the README in doc/pyplots for any additional
 requirements necessary to generate a new figure. Once these steps have been
 taken, these figures can be included in the usual way::
 
-   .. plot:: pyplots/tex_unicode_demo.py
+   .. plot:: mpl_examples/pyplots/tex_unicode_demo.py
       :include-source:
 
 Examples
@@ -333,7 +333,7 @@ purposes, like hosting google docs or youtube videos.  You can embed a
 matplotlib animation in the docs by first saving the animation as a
 movie using :meth:`matplotlib.animation.Animation.save`, and then
 uploading to `matplotlib's youtube
-channel <http://www.youtube.com/user/matplotlib>`_ and inserting the
+channel <https://www.youtube.com/user/matplotlib>`_ and inserting the
 embedding string youtube provides like::
 
   .. raw:: html

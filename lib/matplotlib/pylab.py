@@ -49,14 +49,12 @@ _Plotting commands
   getp      - get a graphics property
   grid     - set whether gridding is on
   hist     - make a histogram
-  hold     - set the axes hold state
   ioff     - turn interaction mode off
   ion      - turn interaction mode on
   isinteractive - return True if interaction mode is on
   imread   - load image file into array
   imsave   - save array as an image file
   imshow   - plot image data
-  ishold   - return the hold state of the current axes
   legend   - make an axes legend
   locator_params - adjust parameters used in locating axis ticks
   loglog   - a log log plot
@@ -121,7 +119,6 @@ _Plotting commands
   spring - set the default colormap to spring
   summer - set the default colormap to summer
   winter - set the default colormap to winter
-  spectral - set the default colormap to spectral
 
 _Event handling
 
@@ -228,7 +225,9 @@ from matplotlib.cbook import (
 import matplotlib as mpl
 # make mpl.finance module available for backwards compatability, in case folks
 # using pylab interface depended on not having to import it
-import matplotlib.finance
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")  # deprecation: moved to a toolkit
+    import matplotlib.finance
 
 from matplotlib.dates import (
     date2num, num2date, datestr2num, strpdate2num, drange, epoch2num,

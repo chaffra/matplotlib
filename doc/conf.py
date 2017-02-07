@@ -41,7 +41,7 @@ try:
     from IPython.sphinxext import ipython_console_highlighting
 except ImportError:
     raise ImportError(
-        "IPython must be installed to build the matplotlib docs")
+        "IPython must be installed to build the Matplotlib docs")
 else:
     extensions.append('IPython.sphinxext.ipython_console_highlighting')
     extensions.append('IPython.sphinxext.ipython_directive')
@@ -68,9 +68,16 @@ except ImportError:
                           "mock to build the documentation")
 
 try:
+    from PIL import Image
+except ImportError:
+    raise ImportError("No module named Image - you need to install "
+                      "pillow to build the documentation")
+
+
+try:
     import matplotlib
 except ImportError:
-    msg = "Error: matplotlib must be installed before building the documentation"
+    msg = "Error: Matplotlib must be installed before building the documentation"
     sys.exit(msg)
 
 
@@ -93,8 +100,8 @@ master_doc = 'contents'
 # General substitutions.
 project = 'Matplotlib'
 copyright = ('2002 - 2012 John Hunter, Darren Dale, Eric Firing, '
-             'Michael Droettboom and the matplotlib development '
-             'team; 2012 - 2016 The matplotlib development team')
+             'Michael Droettboom and the Matplotlib development '
+             'team; 2012 - 2016 The Matplotlib development team')
 
 # The default replacements for |version| and |release|, also used in various
 # other places throughout the built documents.
@@ -163,7 +170,7 @@ mpl_example_sections = [
 
 # Github extension
 
-github_project_url = "http://github.com/matplotlib/matplotlib/"
+github_project_url = "https://github.com/matplotlib/matplotlib/"
 
 # Options for HTML output
 # -----------------------
@@ -242,9 +249,6 @@ html_favicon = '_static/favicon.ico'
 # The paper size ('letter' or 'a4').
 latex_paper_size = 'letter'
 
-# The font size ('10pt', '11pt' or '12pt').
-latex_font_size = '11pt'
-
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, document class [howto/manual]).
 
@@ -259,8 +263,9 @@ latex_documents = [
 # the title page.
 latex_logo = None
 
+latex_elements = {}
 # Additional stuff for the LaTeX preamble.
-latex_preamble = r"""
+latex_elements['preamble'] = r"""
    % In the parameters section, place a newline after the Parameters
    % header.  (This is stolen directly from Numpy's conf.py, since it
    % affects Numpy-style docstrings).
@@ -280,6 +285,7 @@ latex_preamble = r"""
    \usepackage{enumitem}
    \setlistdepth{2048}
 """
+latex_elements['pointsize'] = '11pt'
 
 # Documents to append as an appendix to all manuals.
 latex_appendices = []
@@ -287,7 +293,10 @@ latex_appendices = []
 # If false, no module index is generated.
 latex_use_modindex = True
 
-latex_use_parts = True
+if hasattr(sphinx, 'version_info') and sphinx.version_info[:2] >= (1, 4):
+    latex_toplevel_sectioning = 'part'
+else:
+    latex_use_parts = True
 
 # Show both class-level docstring and __init__ docstring in class
 # documentation

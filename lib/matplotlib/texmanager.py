@@ -7,13 +7,13 @@ sessions
 Requirements:
 
 * latex
-* \*Agg backends: dvipng
+* \\*Agg backends: dvipng
 * PS backend: latex w/ psfrag, dvips, and Ghostscript 8.51
   (older versions do not work properly)
 
 Backends:
 
-* \*Agg
+* \\*Agg
 * PS
 * PDF
 
@@ -22,7 +22,7 @@ as follows::
 
   texmanager = TexManager()
   s = ('\\TeX\\ is Number '
-       '$\\displaystyle\\sum_{n=1}^\\infty\\frac{-e^{i\pi}}{2^n}$!')
+       '$\\displaystyle\\sum_{n=1}^\\infty\\frac{-e^{i\\pi}}{2^n}$!')
   Z = self.texmanager.get_rgba(s, size=12, dpi=80, rgb=(1,0,0))
 
 To enable tex rendering of all text in your matplotlib figure, set
@@ -68,7 +68,7 @@ else:
 
 def dvipng_hack_alpha():
     try:
-        p = Popen(['dvipng', '-version'], stdin=PIPE, stdout=PIPE,
+        p = Popen([str('dvipng'), '-version'], stdin=PIPE, stdout=PIPE,
                   stderr=STDOUT, close_fds=(sys.platform != 'win32'))
         stdout, stderr = p.communicate()
     except OSError:
@@ -234,7 +234,7 @@ Could not rename old TeX cache dir "%s": a suitable configuration
     def get_font_config(self):
         """Reinitializes self if relevant rcParams on have changed."""
         if self._rc_cache is None:
-            self._rc_cache = dict([(k, None) for k in self._rc_cache_keys])
+            self._rc_cache = dict.fromkeys(self._rc_cache_keys)
         changed = [par for par in self._rc_cache_keys
                    if rcParams[par] != self._rc_cache[par]]
         if changed:

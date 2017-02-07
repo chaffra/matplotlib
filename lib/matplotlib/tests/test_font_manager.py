@@ -1,20 +1,18 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from nose.tools import assert_equal
 import six
 
 import os
-
+import sys
 import tempfile
 import warnings
 
+import pytest
+
 from matplotlib.font_manager import (
     findfont, FontProperties, fontManager, json_dump, json_load, get_font,
-    is_opentype_cff_font, fontManager as fm)
-import os.path
-
-
+    get_fontconfig_fonts, is_opentype_cff_font, fontManager as fm)
 from matplotlib import rc_context
 
 
@@ -24,7 +22,7 @@ def test_font_priority():
             ['cmmi10', 'Bitstream Vera Sans']}):
         font = findfont(
             FontProperties(family=["sans-serif"]))
-    assert_equal(os.path.basename(font), 'cmmi10.ttf')
+    assert os.path.basename(font) == 'cmmi10.ttf'
 
     # Smoketest get_charmap, which isn't used internally anymore
     font = get_font(font)
@@ -51,8 +49,8 @@ def test_json_serialization():
                      {'family': 'Bitstream Vera Sans', 'weight': 700},
                      {'family': 'no such font family'}):
             fp = FontProperties(**prop)
-            assert_equal(fontManager.findfont(fp, rebuild_if_missing=False),
-                         copy.findfont(fp, rebuild_if_missing=False))
+            assert (fontManager.findfont(fp, rebuild_if_missing=False) ==
+                    copy.findfont(fp, rebuild_if_missing=False))
 
 
 def test_otf():
@@ -65,3 +63,8 @@ def test_otf():
         with open(f, 'rb') as fd:
             res = fd.read(4) == b'OTTO'
         assert res == is_opentype_cff_font(f)
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason='no fontconfig on Windows')
+def test_get_fontconfig_fonts():
+    assert len(get_fontconfig_fonts()) > 1

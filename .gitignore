@@ -66,14 +66,18 @@ doc/api/_as_gen
 lib/dateutil
 examples/*/*.pdf
 examples/*/*.png
+examples/*/*.svg
+examples/*/*.eps
+examples/*/*.svgz
 examples/tests/*
 !examples/tests/backend_driver.py
 texput.log
 texput.aux
 result_images
 
-# Nose generated files #
-########################
+# Nose/Pytest generated files #
+###############################
+.cache/
 .coverage
 .coverage.*
 cover/

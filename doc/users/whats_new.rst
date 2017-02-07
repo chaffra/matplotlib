@@ -53,7 +53,7 @@ New rcparams added
 +---------------------------------+--------------------------------------------------+
 | Parameter                       | Description                                      |
 +=================================+==================================================+
-|`date.autoformatter.year`        | foramt string for 'year' scale dates             |
+|`date.autoformatter.year`        | format string for 'year' scale dates             |
 +---------------------------------+--------------------------------------------------+
 |`date.autoformatter.month`       | format string for 'month' scale dates            |
 +---------------------------------+--------------------------------------------------+
@@ -73,7 +73,7 @@ New rcparams added
 +---------------------------------+--------------------------------------------------+
 |`xtick.top`, `xtick.minor.top`,  | Control where major and minor ticks are drawn.   |
 |`xtick.major.top`                | The global values are `and` ed with the          |
-|`xtick.bottom`,                  | corosponding major/minor values.                 |
+|`xtick.bottom`,                  | corresponding major/minor values.                |
 |`xtick.minor.bottom`,            |                                                  |
 |`xtick.major.bottom`             |                                                  |
 |`ytick.left`, `ytick.minor.left`,|                                                  |
@@ -82,13 +82,16 @@ New rcparams added
 |`ytick.minor.right`,             |                                                  |
 |`ytick.major.right`              |                                                  |
 +---------------------------------+--------------------------------------------------+
-|`hist.bins`                      | the default number of bins to use in             |
+|`hist.bins`                      | The default number of bins to use in             |
 |                                 | `~matplotlib.axes.Axes.hist`.  This can be an    |
 |                                 | `int`, a list of floats, or ``'auto'`` if numpy  |
 |                                 | >= 1.11 is installed.                            |
 +---------------------------------+--------------------------------------------------+
-|`lines.scale_dashes`             | If the line dash patterns should scale with      |
-|                                 | linewidth                                        |
+|`lines.scale_dashes`             | Whether the line dash patterns should scale with |
+|                                 | linewidth.                                       |
++---------------------------------+--------------------------------------------------+
+|`axes.formatter.offset_threshold`| Minimum number of digits saved in tick labels    |
+|                                 | that triggers using an offset.                   |
 +---------------------------------+--------------------------------------------------+
 
 
@@ -147,7 +150,7 @@ unrelated to style.  These parameters include::
   'interactive', 'backend', 'backend.qt4', 'webagg.port',
   'webagg.port_retries', 'webagg.open_in_browser', 'backend_fallback',
   'toolbar', 'timezone', 'datapath', 'figure.max_open_warning',
-  'savefig.directory', 'tk.window_focus', 'hardcopy.docstring'
+  'savefig.directory', 'tk.window_focus', 'docstring.hardcopy'
 
 
 Change in default font
@@ -209,6 +212,46 @@ setting the private member ``_image_skew_coordinate`` has been
 removed.  Instead, images will obey the transform of the axes on which
 they are drawn.
 
+Non-linear scales on image plots
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:func:`imshow` now draws data at the requested points in data space after the
+application of non-linear scales.
+
+The image on the left demonstrates the new, correct behavior.
+The old behavior can be recreated using :func:`pcolormesh` as
+demonstrated on the right.
+
+
+.. plot::
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    data = np.arange(30).reshape(5, 6)
+    x = np.linspace(0, 6, 7)
+    y = 10**np.linspace(0, 5, 6)
+    X, Y = np.meshgrid(x, y)
+
+    fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(8, 4))
+
+    ax1.imshow(data, aspect="auto", extent=(0, 6, 1e0, 1e5), interpolation='nearest')
+    ax1.set_yscale('log')
+    ax1.set_title('Using ax.imshow')
+
+    ax2.pcolormesh(x, y, np.flipud(data))
+    ax2.set_yscale('log')
+    ax2.set_title('Using ax.pcolormesh')
+    ax2.autoscale('tight')
+
+    plt.show()
+
+
+This can be understood by analogy to plotting a histogram with linearly spaced bins
+with a logarithmic x-axis.  Equal sized bins will be displayed as wider for small
+*x* and narrower for large *x*.
+
+
 
 Support for HiDPI (Retina) displays in the NbAgg and WebAgg backends
 --------------------------------------------------------------------
@@ -216,6 +259,59 @@ Support for HiDPI (Retina) displays in the NbAgg and WebAgg backends
 The NbAgg and WebAgg backends will now use the full resolution of your
 high-pixel-density display.
 
+Change in the default animation codec
+-------------------------------------
+
+The default animation codec has been changed from ``mpeg4`` to ``h264``,
+which is more efficient. It can be set via the ``animation.codec`` rcParam.
+
+Deprecated support for mencoder in animation
+--------------------------------------------
+
+The use of mencoder for writing video files with mpl is problematic;
+switching to ffmpeg is strongly advised.  All support for mencoder
+will be removed in version 2.2.
+
+Boxplot Zorder Keyword Argument
+-------------------------------
+
+The ``zorder`` parameter now exists for :func:`boxplot`. This allows the zorder
+of a boxplot to be set in the plotting function call.
+
+::
+
+    boxplot(np.arange(10), zorder=10)
+
+Filled ``+`` and ``x`` markers
+------------------------------
+
+New fillable *plus* and *x* markers have been added. See
+the :mod:`~matplotlib.markers` module and
+:ref:`marker reference <lines_bars_and_markers-marker_reference>`
+examples.
+
+`rcount` and `ccount` for `plot_surface()`
+------------------------------------------
+
+As of v2.0, mplot3d's :func:`~mpl_toolkits.mplot3d.axes3d.plot_surface` now
+accepts `rcount` and `ccount` arguments for controlling the sampling of the
+input data for plotting. These arguments specify the maximum number of
+evenly spaced samples to take from the input data. These arguments are
+also the new default sampling method for the function, and is
+considered a style change.
+
+The old `rstride` and `cstride` arguments, which specified the size of the
+evenly spaced samples, become the default when 'classic' mode is invoked,
+and are still available for use. There are no plans for deprecating these
+arguments.
+
+Streamplot Zorder Keyword Argument Changes
+------------------------------------------
+
+The ``zorder`` parameter for :func:`streamplot` now has default
+value of ``None`` instead of ``2``. If ``None`` is given as ``zorder``,
+:func:`streamplot` has a default ``zorder`` of
+``matplotlib.lines.Line2D.zorder``.
 
 
 Previous Whats New

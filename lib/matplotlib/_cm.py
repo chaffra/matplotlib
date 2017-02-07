@@ -9,6 +9,7 @@ with the purpose and type of your colormap if you add data for one here.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
+from matplotlib.cbook import warn_deprecated
 import numpy as np
 
 _binary_data = {
@@ -1282,7 +1283,7 @@ _wistia_data = {
 # (divided by 255)
 #
 
-_Vega10_data = (
+_tab10_data = (
     (0.12156862745098039, 0.4666666666666667,  0.7058823529411765  ),  # 1f77b4
     (1.0,                 0.4980392156862745,  0.054901960784313725),  # ff7f0e
     (0.17254901960784313, 0.6274509803921569,  0.17254901960784313 ),  # 2ca02c
@@ -1295,7 +1296,7 @@ _Vega10_data = (
     (0.09019607843137255, 0.7450980392156863,  0.8117647058823529),    # 17becf
     )
 
-_Vega20_data = (
+_tab20_data = (
 	(0.12156862745098039, 0.4666666666666667,  0.7058823529411765  ),  # 1f77b4
 	(0.6823529411764706,  0.7803921568627451,  0.9098039215686274  ),  # aec7e8
 	(1.0,                 0.4980392156862745,  0.054901960784313725),  # ff7f0e
@@ -1318,7 +1319,7 @@ _Vega20_data = (
 	(0.6196078431372549,  0.8549019607843137,  0.8980392156862745),    # 9edae5
     )
 
-_Vega20b_data = (
+_tab20b_data = (
 	(0.2235294117647059,  0.23137254901960785, 0.4745098039215686 ),  # 393b79
 	(0.3215686274509804,  0.32941176470588235, 0.6392156862745098 ),  # 5254a3
 	(0.4196078431372549,  0.43137254901960786, 0.8117647058823529 ),  # 6b6ecf
@@ -1341,7 +1342,7 @@ _Vega20b_data = (
 	(0.8705882352941177,  0.6196078431372549,  0.8392156862745098 ),  # de9ed6
     )
 
-_Vega20c_data = (
+_tab20c_data = (
 	(0.19215686274509805, 0.5098039215686274,  0.7411764705882353  ),  # 3182bd
 	(0.4196078431372549,  0.6823529411764706,  0.8392156862745098  ),  # 6baed6
 	(0.6196078431372549,  0.792156862745098,   0.8823529411764706  ),  # 9ecae1
@@ -1365,7 +1366,33 @@ _Vega20c_data = (
     )
 
 
-datad = {
+class _deprecation_datad(dict):
+    """
+    This class only exists for the purpose of raising an appropriate warning
+    for the deprecation of spectral. It should be remove in 2.2, once the
+    colormap spectral disappears.
+    """
+    def __getitem__(self, key):
+        if key in ["spectral", "spectral_r"]:
+            warn_deprecated(
+                "2.0",
+                name="spectral and spectral_r",
+                alternative="nipy_spectral and nipy_spectral_r",
+                obj_type="colormap"
+                )
+        elif key in ["Vega10", "Vega10_r", "Vega20", "Vega20_r", "Vega20b",
+                     "Vega20b_r", "Vega20c", "Vega20c_r"]:
+            warn_deprecated(
+                "2.0",
+                name="Vega colormaps",
+                alternative="tab",
+                obj_type="colormap"
+                )
+
+        return super(_deprecation_datad, self).__getitem__(key)
+
+
+datad = _deprecation_datad({
     'afmhot': _afmhot_data,
     'autumn': _autumn_data,
     'bone':   _bone_data,
@@ -1394,7 +1421,7 @@ datad = {
     'winter': _winter_data,
     'nipy_spectral': _nipy_spectral_data,
     'spectral': _nipy_spectral_data,  # alias for backward compatibility
-    }
+    })
 
 
 datad['Blues'] = _Blues_data
@@ -1447,7 +1474,12 @@ datad['Set1'] = {'listed': _Set1_data}
 datad['Set2'] = {'listed': _Set2_data}
 datad['Set3'] = {'listed': _Set3_data}
 
-datad['Vega10'] = {'listed': _Vega10_data}
-datad['Vega20'] = {'listed': _Vega20_data}
-datad['Vega20b'] = {'listed': _Vega20b_data}
-datad['Vega20c'] = {'listed': _Vega20c_data}
+datad['tab10'] = {'listed': _tab10_data}
+datad['tab20'] = {'listed': _tab20_data}
+datad['tab20b'] = {'listed': _tab20b_data}
+datad['tab20c'] = {'listed': _tab20c_data}
+
+datad['Vega10'] = {'listed': _tab10_data}
+datad['Vega20'] = {'listed': _tab20_data}
+datad['Vega20b'] = {'listed': _tab20b_data}
+datad['Vega20c'] = {'listed': _tab20c_data}

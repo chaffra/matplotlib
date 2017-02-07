@@ -1,3 +1,12 @@
+"""
+=========================
+Hatch-filled histograms
+=========================
+
+This example showcases the hatching capabilities of matplotlib by plotting
+various histograms.
+"""
+
 import itertools
 from collections import OrderedDict
 from functools import partial
@@ -61,10 +70,10 @@ def filled_hist(ax, edges, values, bottoms=None, orientation='v',
     values = np.r_[values, values[-1]]
     bottoms = np.r_[bottoms, bottoms[-1]]
     if orientation == 'h':
-        return ax.fill_betweenx(edges, values, bottoms, left_margin=False,
+        return ax.fill_betweenx(edges, values, bottoms,
                                 **kwargs)
     elif orientation == 'v':
-        return ax.fill_between(edges, values, bottoms, bottom_margin=False,
+        return ax.fill_between(edges, values, bottoms,
                                **kwargs)
     else:
         raise AssertionError("you should never be here")
@@ -176,8 +185,9 @@ color_cycle = cycler(facecolor=plt.rcParams['axes.prop_cycle'][:4])
 label_cycle = cycler('label', ['set {n}'.format(n=n) for n in range(4)])
 hatch_cycle = cycler('hatch', ['/', '*', '+', '|'])
 
-# make some synthetic data
-np.random.seed(0)
+# Fixing random state for reproducibility
+np.random.seed(19680801)
+
 stack_data = np.random.randn(4, 12250)
 dict_data = OrderedDict(zip((c['label'] for c in label_cycle), stack_data))
 

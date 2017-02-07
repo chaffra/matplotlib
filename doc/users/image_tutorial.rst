@@ -108,7 +108,7 @@ data.  Why 8 bits? Most displays can only render 8 bits per channel
 worth of color gradation.  Why can they only render 8 bits/channel?
 Because that's about all the human eye can see.  More here (from a
 photography standpoint): `Luminous Landscape bit depth tutorial
-<http://www.luminous-landscape.com/tutorials/bit-depth.shtml>`_.
+<https://luminous-landscape.com/bit-depth/>`_.
 
 Each inner list represents a pixel.  Here, with an RGB image, there
 are 3 values.  Since it's a black and white image, R, G, and B are all
@@ -164,7 +164,7 @@ channel of our data:
     In [7]: lum_img = img[:,:,0]
 
 This is array slicing.  You can read more in the `Numpy tutorial
-<http://www.scipy.org/Tentative_NumPy_Tutorial>`_.
+<https://docs.scipy.org/doc/numpy-dev/user/quickstart.html>`_.
 
 .. sourcecode:: ipython
 
@@ -180,7 +180,7 @@ This is array slicing.  You can read more in the `Numpy tutorial
     plt.imshow(lum_img)
 
 Now, with a luminosity (2D, no color) image, the default colormap (aka lookup table,
-LUT), is applied.  The default is called jet.  There are plenty of
+LUT), is applied.  The default is called viridis.  There are plenty of
 others to choose from.
 
 .. sourcecode:: ipython
@@ -203,7 +203,7 @@ Note that you can also change colormaps on existing plot objects using the
 .. sourcecode:: ipython
 
     In [10]: imgplot = plt.imshow(lum_img)
-    In [11]: imgplot.set_cmap('spectral')
+    In [11]: imgplot.set_cmap('nipy_spectral')
 
 .. plot::
 
@@ -213,17 +213,17 @@ Note that you can also change colormaps on existing plot objects using the
         img = mpimg.imread('../_static/stinkbug.png')
         lum_img = img[:, :, 0]
         imgplot = plt.imshow(lum_img)
-        imgplot.set_cmap('spectral')
+        imgplot.set_cmap('nipy_spectral')
 
 .. note::
 
-   However, remember that in the IPython notebook with the inline backend, 
+   However, remember that in the IPython notebook with the inline backend,
    you can't make changes to plots that have already been rendered.  If you
    create imgplot here in one cell, you cannot call set_cmap() on it in a later
-   cell and expect the earlier plot to change.  Make sure that you enter these 
-   commands together in one cell.  plt commands will not change plots from earlier 
+   cell and expect the earlier plot to change.  Make sure that you enter these
+   commands together in one cell.  plt commands will not change plots from earlier
    cells.
-		
+
 There are many other colormap schemes available.  See the `list and
 images of the colormaps
 <../examples/color/colormaps_reference.html>`_.
@@ -249,7 +249,7 @@ do that by adding color bars.
             img = mpimg.imread('../_static/stinkbug.png')
             lum_img = img[:, :, 0]
             imgplot = plt.imshow(lum_img)
-            imgplot.set_cmap('spectral')
+            imgplot.set_cmap('nipy_spectral')
             plt.colorbar()
 
 This adds a colorbar to your existing figure.  This won't
@@ -333,7 +333,7 @@ only keeping a select few.  Now when we plot it, that data gets blown
 up to the size on your screen.  The old pixels aren't there anymore,
 and the computer has to draw in pixels to fill that space.
 
-We'll use the Pillow library that we used to load the image also to resize 
+We'll use the Pillow library that we used to load the image also to resize
 the image.
 
 .. sourcecode:: ipython

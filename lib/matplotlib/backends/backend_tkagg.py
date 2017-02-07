@@ -50,9 +50,6 @@ cursord = {
     }
 
 
-def round(x):
-    return int(math.floor(x+0.5))
-
 def raise_msg_to_str(msg):
     """msg is a return arg from a raise.  Join with new lines"""
     if not is_string_like(msg):
@@ -120,14 +117,18 @@ class TimerTk(TimerBase):
     '''
     Subclass of :class:`backend_bases.TimerBase` that uses Tk's timer events.
 
-    Attributes:
-    * interval: The time between timer events in milliseconds. Default
-        is 1000 ms.
-    * single_shot: Boolean flag indicating whether this timer should
-        operate as single shot (run once and then stop). Defaults to False.
-    * callbacks: Stores list of (func, args) tuples that will be called
-        upon timer events. This list can be manipulated directly, or the
-        functions add_callback and remove_callback can be used.
+    Attributes
+    ----------
+    interval : int
+        The time between timer events in milliseconds. Default is 1000 ms.
+    single_shot : bool
+        Boolean flag indicating whether this timer should operate as single
+        shot (run once and then stop). Defaults to False.
+    callbacks : list
+        Stores list of (func, args) tuples that will be called upon timer
+        events. This list can be manipulated directly, or the functions
+        `add_callback` and `remove_callback` can be used.
+
     '''
     def __init__(self, parent, *args, **kwargs):
         TimerBase.__init__(self, *args, **kwargs)
@@ -500,13 +501,14 @@ class FigureCanvasTkAgg(FigureCanvasAgg):
         This is useful for getting periodic events through the backend's native
         event loop. Implemented only for backends with GUIs.
 
-        optional arguments:
+        Other Parameters
+        ----------------
+        interval : scalar
+            Timer interval in milliseconds
+        callbacks : list
+            Sequence of (func, args, kwargs) where ``func(*args, **kwargs)``
+            will be executed by the timer every *interval*.
 
-        *interval*
-          Timer interval in milliseconds
-        *callbacks*
-          Sequence of (func, args, kwargs) where func(*args, **kwargs) will
-          be executed by the timer every *interval*.
         """
         return TimerTk(self._tkcanvas, *args, **kwargs)
 
@@ -523,12 +525,17 @@ class FigureCanvasTkAgg(FigureCanvasAgg):
 
 class FigureManagerTkAgg(FigureManagerBase):
     """
-    Public attributes
+    Attributes
+    ----------
+    canvas : `FigureCanvas`
+        The FigureCanvas instance
+    num : int or str
+        The Figure number
+    toolbar : tk.Toolbar
+        The tk.Toolbar
+    window : tk.Window
+        The tk.Window
 
-    canvas      : The FigureCanvas instance
-    num         : The Figure number
-    toolbar     : The tk.Toolbar
-    window      : The tk.Window
     """
     def __init__(self, canvas, num, window):
         FigureManagerBase.__init__(self, canvas, num)
@@ -569,7 +576,7 @@ class FigureManagerTkAgg(FigureManagerBase):
         return toolbar
 
     def _get_toolmanager(self):
-        if rcParams['toolbar'] != 'toolbar2':
+        if rcParams['toolbar'] == 'toolmanager':
             toolmanager = ToolManager(self.canvas.figure)
         else:
             toolmanager = None
@@ -701,10 +708,13 @@ class AxisMenu(object):
 
 class NavigationToolbar2TkAgg(NavigationToolbar2, Tk.Frame):
     """
-    Public attributes
+    Attributes
+    ----------
+    canvas : `FigureCanvas`
+        the figure canvas on which to operate
+    win : tk.Window
+        the tk.Window which owns this toolbar
 
-      canvas   - the FigureCanvas  (gtk.DrawingArea)
-      win   - the gtk.Window
     """
     def __init__(self, canvas, window):
         self.canvas = canvas
@@ -750,6 +760,12 @@ class NavigationToolbar2TkAgg(NavigationToolbar2, Tk.Frame):
         b.pack(side=Tk.LEFT)
         return b
 
+    def _Spacer(self):
+        # Buttons are 30px high, so make this 26px tall with padding to center it
+        s = Tk.Frame(master=self, height=26, relief=Tk.RIDGE, pady=2, bg="DarkGray")
+        s.pack(side=Tk.LEFT, padx=5)
+        return s
+        
     def _init_toolbar(self):
         xmin, xmax = self.canvas.figure.bbox.intervalx
         height, width = 50, xmax-xmin
@@ -761,8 +777,8 @@ class NavigationToolbar2TkAgg(NavigationToolbar2, Tk.Frame):
 
         for text, tooltip_text, image_file, callback in self.toolitems:
             if text is None:
-                # spacer, unhandled in Tk
-                pass
+                # Add a spacer -- we don't need to use the return value for anything
+                self._Spacer()
             else:
                 button = self._Button(text=text, file=image_file,
                                    command=getattr(self, callback))
@@ -791,15 +807,10 @@ class NavigationToolbar2TkAgg(NavigationToolbar2, Tk.Frame):
 
         # Tk doesn't provide a way to choose a default filetype,
         # so we just have to put it first
-        default_filetype_name = filetypes[default_filetype]
-        del filetypes[default_filetype]
-
-        sorted_filetypes = list(six.iteritems(filetypes))
-        sorted_filetypes.sort()
-        sorted_filetypes.insert(0, (default_filetype, default_filetype_name))
-
-        tk_filetypes = [
-            (name, '*.%s' % ext) for (ext, name) in sorted_filetypes]
+        default_filetype_name = filetypes.pop(default_filetype)
+        sorted_filetypes = ([(default_filetype, default_filetype_name)]
+                            + sorted(six.iteritems(filetypes)))
+        tk_filetypes = [(name, '*.%s' % ext) for ext, name in sorted_filetypes]
 
         # adding a default extension seems to break the
         # asksaveasfilename dialog when you choose various save types
@@ -1031,15 +1042,10 @@ class SaveFigureTk(backend_tools.SaveFigureBase):
 
         # Tk doesn't provide a way to choose a default filetype,
         # so we just have to put it first
-        default_filetype_name = filetypes[default_filetype]
-        del filetypes[default_filetype]
-
-        sorted_filetypes = list(six.iteritems(filetypes))
-        sorted_filetypes.sort()
-        sorted_filetypes.insert(0, (default_filetype, default_filetype_name))
-
-        tk_filetypes = [
-            (name, '*.%s' % ext) for (ext, name) in sorted_filetypes]
+        default_filetype_name = filetypes.pop(default_filetype)
+        sorted_filetypes = ([(default_filetype, default_filetype_name)]
+                            + sorted(six.iteritems(filetypes)))
+        tk_filetypes = [(name, '*.%s' % ext) for ext, name in sorted_filetypes]
 
         # adding a default extension seems to break the
         # asksaveasfilename dialog when you choose various save types

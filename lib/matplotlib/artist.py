@@ -2,7 +2,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import six
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 
 import re
 import warnings
@@ -76,6 +76,9 @@ def _stale_axes_callback(self, val):
         self.axes.stale = val
 
 
+_XYPair = namedtuple("_XYPair", "x y")
+
+
 class Artist(object):
     """
     Abstract base class for someone who renders into a
@@ -123,8 +126,7 @@ class Artist(object):
         self._snap = None
         self._sketch = rcParams['path.sketch']
         self._path_effects = rcParams['path.effects']
-
-        self._margins = {}
+        self._sticky_edges = _XYPair([], [])
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -392,7 +394,7 @@ class Artist(object):
         selection, such as which points are contained in the pick radius.  See
         individual artists for details.
         """
-        if six.callable(self._contains):
+        if callable(self._contains):
             return self._contains(self, mouseevent)
         warnings.warn("'%s' needs 'contains' method" % self.__class__.__name__)
         return False, {}
@@ -426,11 +428,8 @@ class Artist(object):
                 self._picker is not None)
 
     def pick(self, mouseevent):
-        """Process pick event
-
-        call signature::
-
-          pick(mouseevent)
+        """
+        Process pick event
 
         each child artist will fire a pick event if *mouseevent* is over
         the artist and the artist has picker set
@@ -438,7 +437,7 @@ class Artist(object):
         # Pick self
         if self.pickable():
             picker = self.get_picker()
-            if six.callable(picker):
+            if callable(picker):
                 inside, prop = picker(self, mouseevent)
             else:
                 inside, prop = self.contains(mouseevent)
@@ -449,8 +448,8 @@ class Artist(object):
         for a in self.get_children():
             # make sure the event happened in the same axes
             ax = getattr(a, 'axes', None)
-            if mouseevent.inaxes is None or ax is None or \
-                    mouseevent.inaxes == ax:
+            if (mouseevent.inaxes is None or ax is None
+                    or mouseevent.inaxes == ax):
                 # we need to check if mouseevent.inaxes is None
                 # because some objects associated with an axes (e.g., a
                 # tick label) can be outside the bounding box of the
@@ -876,7 +875,7 @@ class Artist(object):
                 return setattr(self, k, v)
             else:
                 func = getattr(self, 'set_' + k, None)
-                if func is None or not six.callable(func):
+                if not callable(func):
                     raise AttributeError('Unknown property %s' % k)
                 return func(v)
 
@@ -929,98 +928,28 @@ class Artist(object):
         self.pchanged()
         self.stale = True
 
-    def get_top_margin(self):
+    @property
+    def sticky_edges(self):
         """
-        Get whether a margin should be applied to the top of the Artist.
-        """
-        return self._margins.get('top', True)
+        `x` and `y` sticky edge lists.
 
-    def set_top_margin(self, margin):
-        """
-        Set whether a margin should be applied to the top of the Artist.
-        """
-        if margin != self._margins.get('top', True):
-            self.stale = True
-        self._margins['top'] = margin
+        When performing autoscaling, if a data limit coincides with a value in
+        the corresponding sticky_edges list, then no margin will be added--the
+        view limit "sticks" to the edge. A typical usecase is histograms,
+        where one usually expects no margin on the bottom edge (0) of the
+        histogram.
 
-    top_margin = property(get_top_margin, set_top_margin)
+        This attribute cannot be assigned to; however, the `x` and `y` lists
+        can be modified in place as needed.
 
-    def get_bottom_margin(self):
-        """
-        Get whether a margin should be applied to the bottom of the Artist.
-        """
-        return self._margins.get('bottom', True)
+        Examples
+        --------
 
-    def set_bottom_margin(self, margin):
-        """
-        Set whether a margin should be applied to the bottom of the Artist.
-        """
-        if margin != self._margins.get('bottom', True):
-            self.stale = True
-        self._margins['bottom'] = margin
+        >>> artist.sticky_edges.x[:] = (xmin, xmax)
+        >>> artist.sticky_edges.y[:] = (ymin, ymax)
 
-    bottom_margin = property(get_bottom_margin, set_bottom_margin)
-
-    def get_left_margin(self):
         """
-        Get whether a margin should be applied to the left of the Artist.
-        """
-        return self._margins.get('left', True)
-
-    def set_left_margin(self, margin):
-        """
-        Set whether a margin should be applied to the left of the Artist.
-        """
-        if margin != self._margins.get('left', True):
-            self.stale = True
-        self._margins['left'] = margin
-
-    left_margin = property(get_left_margin, set_left_margin)
-
-    def get_right_margin(self):
-        """
-        Get whether a margin should be applied to the right of the Artist.
-        """
-        return self._margins.get('right', True)
-
-    def set_right_margin(self, margin):
-        """
-        Set whether a margin should be applied to the right of the Artist.
-        """
-        if margin != self._margins.get('right', True):
-            self.stale = True
-        self._margins['right'] = margin
-
-    right_margin = property(get_right_margin, set_right_margin)
-
-    def get_margins(self):
-        """
-        Returns a dictionary describing whether a margin should be applied on
-        each of the sides (top, bottom, left and right).
-        """
-        return self._margins
-
-    def set_margins(self, margins):
-        """
-        Set the dictionary describing whether a margin should be applied on
-        each of the sides (top, bottom, left and right).  Missing keys are
-        assumed to be `True`.  If `True` or `False` are passed in, all
-        sides are set to that value.
-        """
-        if margins in (True, False):
-            margins = {
-                'top': margins,
-                'bottom': margins,
-                'left': margins,
-                'right': margins
-            }
-
-        if margins != self._margins:
-            self.stale = True
-
-        self._margins = margins
-
-    margins = property(get_margins, set_margins)
+        return self._sticky_edges
 
     def update_from(self, other):
         'Copy properties from *other* to *self*.'
@@ -1034,6 +963,8 @@ class Artist(object):
         self._label = other._label
         self._sketch = other._sketch
         self._path_effects = other._path_effects
+        self.sticky_edges.x[:] = other.sticky_edges.x[:]
+        self.sticky_edges.y[:] = other.sticky_edges.y[:]
         self.pchanged()
         self.stale = True
 
@@ -1075,24 +1006,16 @@ class Artist(object):
         if match is None:  # always return True
             def matchfunc(x):
                 return True
-        elif cbook.issubclass_safe(match, Artist):
+        elif isinstance(match, type) and issubclass(match, Artist):
             def matchfunc(x):
                 return isinstance(x, match)
-        elif six.callable(match):
+        elif callable(match):
             matchfunc = match
         else:
             raise ValueError('match must be None, a matplotlib.artist.Artist '
                              'subclass, or a callable')
 
-        artists = []
-
-        for c in self.get_children():
-            if matchfunc(c):
-                artists.append(c)
-            artists.extend([thisc for thisc in
-                            c.findobj(matchfunc, include_self=False)
-                            if matchfunc(thisc)])
-
+        artists = sum([c.findobj(matchfunc) for c in self.get_children()], [])
         if include_self and matchfunc(self):
             artists.append(self)
         return artists
@@ -1169,9 +1092,9 @@ class ArtistInspector(object):
           }
 
         """
-        names = [name for name in dir(self.o) if
-                 (name.startswith('set_') or name.startswith('get_'))
-                 and six.callable(getattr(self.o, name))]
+        names = [name for name in dir(self.o)
+                 if name.startswith(('set_', 'get_'))
+                    and callable(getattr(self.o, name))]
         aliases = {}
         for name in names:
             func = getattr(self.o, name)
@@ -1225,17 +1148,14 @@ class ArtistInspector(object):
         for name in dir(self.o):
             if not name.startswith('set_'):
                 continue
-            o = getattr(self.o, name)
-            if not six.callable(o):
+            func = getattr(self.o, name)
+            if not callable(func):
                 continue
             if six.PY2:
-                nargs = len(inspect.getargspec(o)[0])
+                nargs = len(inspect.getargspec(func)[0])
             else:
-                nargs = len(inspect.getfullargspec(o)[0])
-            if nargs < 2:
-                continue
-            func = o
-            if self.is_alias(func):
+                nargs = len(inspect.getfullargspec(func)[0])
+            if nargs < 2 or self.is_alias(func):
                 continue
             source_class = self.o.__module__ + "." + self.o.__name__
             for cls in self.o.mro():
@@ -1347,12 +1267,11 @@ class ArtistInspector(object):
 
         ########
         names = [self.aliased_name_rest(prop, target)
-                 for prop, target
-                 in attrs]
+                 for prop, target in attrs]
         accepts = [self.get_valid_values(prop) for prop, target in attrs]
 
-        col0_len = max([len(n) for n in names])
-        col1_len = max([len(a) for a in accepts])
+        col0_len = max(len(n) for n in names)
+        col1_len = max(len(a) for a in accepts)
         table_formatstr = pad + '=' * col0_len + '   ' + '=' * col1_len
 
         lines.append('')
@@ -1374,8 +1293,7 @@ class ArtistInspector(object):
         """
         o = self.oorig
         getters = [name for name in dir(o)
-                   if name.startswith('get_')
-                   and six.callable(getattr(o, name))]
+                   if name.startswith('get_') and callable(getattr(o, name))]
         getters.sort()
         d = dict()
         for name in getters:
@@ -1399,12 +1317,8 @@ class ArtistInspector(object):
         Return the getters and actual values as list of strings.
         """
 
-        d = self.properties()
-        names = list(six.iterkeys(d))
-        names.sort()
         lines = []
-        for name in names:
-            val = d[name]
+        for name, val in sorted(six.iteritems(self.properties())):
             if getattr(val, 'shape', ()) != () and len(val) > 6:
                 s = str(val[:6]) + '...'
             else:
@@ -1415,46 +1329,6 @@ class ArtistInspector(object):
             name = self.aliased_name(name)
             lines.append('    %s = %s' % (name, s))
         return lines
-
-    def findobj(self, match=None):
-        """
-        Recursively find all :class:`matplotlib.artist.Artist`
-        instances contained in *self*.
-
-        If *match* is not None, it can be
-
-          - function with signature ``boolean = match(artist)``
-
-          - class instance: e.g., :class:`~matplotlib.lines.Line2D`
-
-        used to filter matches.
-        """
-        if match is None:  # always return True
-            def matchfunc(x):
-                return True
-        elif issubclass(match, Artist):
-            def matchfunc(x):
-                return isinstance(x, match)
-        elif six.callable(match):
-            matchfunc = func
-        else:
-            raise ValueError('match must be None, an '
-                             'matplotlib.artist.Artist '
-                             'subclass, or a callable')
-
-        artists = []
-
-        for c in self.get_children():
-            if matchfunc(c):
-                artists.append(c)
-            artists.extend([thisc
-                            for thisc
-                            in c.findobj(matchfunc)
-                            if matchfunc(thisc)])
-
-        if matchfunc(self):
-            artists.append(self)
-        return artists
 
 
 def getp(obj, property=None):
@@ -1552,6 +1426,9 @@ def setp(obj, *args, **kwargs):
         objs = [obj]
     else:
         objs = list(cbook.flatten(obj))
+
+    if not objs:
+        return
 
     insp = ArtistInspector(objs[0])
 

@@ -1,6 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Fixing random state for reproducibility
+np.random.seed(19680801)
+
+
 # create some data to use for the plot
 dt = 0.001
 t = np.arange(0.0, 10.0, dt)
@@ -10,7 +14,7 @@ s = np.convolve(x, r)[:len(x)]*dt  # colored noise
 
 # the main axes is subplot(111) by default
 plt.plot(t, s)
-plt.axis([0, 1, 1.1*np.amin(s), 2*np.amax(s)])
+plt.axis([0, 1, 1.1 * np.min(s), 2 * np.max(s)])
 plt.xlabel('time (s)')
 plt.ylabel('current (nA)')
 plt.title('Gaussian colored noise')

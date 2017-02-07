@@ -182,8 +182,8 @@ class RendererAgg
     template <class CoordinateArray, class OffsetArray, class ColorArray>
     void draw_quad_mesh(GCAgg &gc,
                         agg::trans_affine &master_transform,
-                        size_t mesh_width,
-                        size_t mesh_height,
+                        unsigned int mesh_width,
+                        unsigned int mesh_height,
                         CoordinateArray &coordinates,
                         OffsetArray &offsets,
                         agg::trans_affine &offset_trans,
@@ -239,8 +239,8 @@ class RendererAgg
     void *lastclippath;
     agg::trans_affine lastclippath_transform;
 
-    static const size_t HATCH_SIZE = 72;
-    agg::int8u hatchBuffer[HATCH_SIZE * HATCH_SIZE * 4];
+    size_t hatch_size;
+    agg::int8u *hatchBuffer;
     agg::rendering_buffer hatchRenderingBuffer;
 
     agg::rgba _fill_color;
@@ -359,7 +359,7 @@ RendererAgg::_draw_path(path_t &path, bool has_clippath, const facepair_t &face,
         agg::trans_affine hatch_trans;
         hatch_trans *= agg::trans_affine_scaling(1.0, -1.0);
         hatch_trans *= agg::trans_affine_translation(0.0, 1.0);
-        hatch_trans *= agg::trans_affine_scaling(HATCH_SIZE, HATCH_SIZE);
+        hatch_trans *= agg::trans_affine_scaling(hatch_size, hatch_size);
         hatch_path_trans_t hatch_path_trans(hatch_path, hatch_trans);
         hatch_path_curve_t hatch_path_curve(hatch_path_trans);
         hatch_path_stroke_t hatch_path_stroke(hatch_path_curve);
@@ -371,7 +371,7 @@ RendererAgg::_draw_path(path_t &path, bool has_clippath, const facepair_t &face,
         renderer_base rb(hatch_img_pixf);
         renderer_aa rs(rb);
         rb.clear(_fill_color);
-        rs.color(gc.color);
+        rs.color(gc.hatch_color);
 
         theRasterizer.add_path(hatch_path_curve);
         agg::render_scanlines(theRasterizer, slineP8, rs);
@@ -1148,8 +1148,8 @@ class QuadMeshGenerator
 template <class CoordinateArray, class OffsetArray, class ColorArray>
 inline void RendererAgg::draw_quad_mesh(GCAgg &gc,
                                         agg::trans_affine &master_transform,
-                                        size_t mesh_width,
-                                        size_t mesh_height,
+                                        unsigned int mesh_width,
+                                        unsigned int mesh_height,
                                         CoordinateArray &coordinates,
                                         OffsetArray &offsets,
                                         agg::trans_affine &offset_trans,

@@ -203,9 +203,7 @@ class Path(object):
         if internals:
             raise ValueError('Unexpected internals provided to '
                              '_fast_from_codes_and_verts: '
-                             '{0}'.format('\n *'.join(six.iterkeys(
-                                 internals
-                             ))))
+                             '{0}'.format('\n *'.join(internals)))
         return pth
 
     def _update_values(self):
@@ -864,9 +862,7 @@ class Path(object):
            polylines, quadratic or cubic Bezier curves
            <http://www.spaceroots.org/documents/ellipse/index.html>`_.
         """
-        # degrees to radians
-        theta1 *= np.pi / 180.0
-        theta2 *= np.pi / 180.0
+        theta1, theta2 = np.deg2rad([theta1, theta2])
 
         twopi = np.pi * 2.0
         halfpi = np.pi * 0.5

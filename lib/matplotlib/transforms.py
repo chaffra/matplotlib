@@ -42,6 +42,7 @@ from numpy.linalg import inv
 import weakref
 import warnings
 
+from . import cbook
 from .path import Path
 
 DEBUG = False
@@ -761,10 +762,10 @@ class BboxBase(TransformNode):
                           bbox2.ymax < bbox1.ymin)
 
         if intersects:
-            x0 = max([bbox1.xmin, bbox2.xmin])
-            x1 = min([bbox1.xmax, bbox2.xmax])
-            y0 = max([bbox1.ymin, bbox2.ymin])
-            y1 = min([bbox1.ymax, bbox2.ymax])
+            x0 = max(bbox1.xmin, bbox2.xmin)
+            x1 = min(bbox1.xmax, bbox2.xmax)
+            y0 = max(bbox1.ymin, bbox2.ymin)
+            y1 = min(bbox1.ymax, bbox2.ymax)
             return Bbox.from_extents(x0, y0, x1, y1)
 
         return None
@@ -789,7 +790,7 @@ class Bbox(BboxBase):
             raise ValueError('Bbox points must be of the form '
                              '"[[x0, y0], [x1, y1]]".')
         self._points = points
-        self._minpos = np.array([0.0000001, 0.0000001])
+        self._minpos = np.array([np.inf, np.inf])
         self._ignore = True
         # it is helpful in some contexts to know if the bbox is a
         # default or has been mutated; we store the orig points to
@@ -857,19 +858,19 @@ class Bbox(BboxBase):
     def ignore(self, value):
         """
         Set whether the existing bounds of the box should be ignored
-        by subsequent calls to :meth:`update_from_data` or
-        :meth:`update_from_data_xy`.
+        by subsequent calls to :meth:`update_from_data_xy`.
 
         *value*:
 
-           - When True, subsequent calls to :meth:`update_from_data`
+           - When True, subsequent calls to :meth:`update_from_data_xy`
              will ignore the existing bounds of the :class:`Bbox`.
 
-           - When False, subsequent calls to :meth:`update_from_data`
+           - When False, subsequent calls to :meth:`update_from_data_xy`
              will include the existing bounds of the :class:`Bbox`.
         """
         self._ignore = value
 
+    @cbook.deprecated('2.0', alternative='update_from_data_xy')
     def update_from_data(self, x, y, ignore=None):
         """
         Update the bounds of the :class:`Bbox` based on the passed in
@@ -1826,13 +1827,6 @@ class Affine2D(Affine2DBase):
     def __repr__(self):
         return "Affine2D(%s)" % repr(self._mtx)
 
-#    def __cmp__(self, other):
-#        # XXX redundant. this only tells us eq.
-#        if (isinstance(other, Affine2D) and
-#            (self.get_matrix() == other.get_matrix()).all()):
-#            return 0
-#        return -1
-
     @staticmethod
     def from_values(a, b, c, d, e, f):
         """
@@ -2115,7 +2109,7 @@ class BlendedGenericTransform(Transform):
 
     @property
     def depth(self):
-        return max([self._x.depth, self._y.depth])
+        return max(self._x.depth, self._y.depth)
 
     def contains_branch(self, other):
         # a blended transform cannot possibly contain a branch from two different transforms.

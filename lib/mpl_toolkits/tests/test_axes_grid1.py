@@ -5,7 +5,7 @@ import six
 
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.testing.decorators import image_comparison, cleanup
+from matplotlib.testing.decorators import image_comparison
 
 from mpl_toolkits.axes_grid1 import host_subplot
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -43,7 +43,7 @@ def test_divider_append_axes():
 
     # now determine nice limits by hand:
     binwidth = 0.25
-    xymax = np.max([np.max(np.fabs(x)), np.max(np.fabs(y))])
+    xymax = max(np.max(np.abs(x)), np.max(np.abs(y)))
     lim = (int(xymax/binwidth) + 1) * binwidth
 
     bins = np.arange(-lim, lim + binwidth, binwidth)
@@ -91,7 +91,6 @@ def test_twin_axes_empty_and_removed():
     plt.subplots_adjust(wspace=0.5, hspace=1)
 
 
-@cleanup
 def test_axesgrid_colorbar_log_smoketest():
     fig = plt.figure()
     grid = AxesGrid(fig, 111,  # modified to be only subplot
@@ -155,8 +154,3 @@ def test_inset_locator():
                           pad=0.1, borderpad=0.5, sep=5,
                           frameon=False)
     ax.add_artist(asb)
-
-
-if __name__ == '__main__':
-    import nose
-    nose.runmodule(argv=['-s', '--with-doctest'], exit=False)

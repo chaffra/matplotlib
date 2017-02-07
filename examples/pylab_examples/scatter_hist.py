@@ -2,6 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import NullFormatter
 
+# Fixing random state for reproducibility
+np.random.seed(19680801)
+
+
 # the random data
 x = np.random.randn(1000)
 y = np.random.randn(1000)
@@ -33,7 +37,7 @@ axScatter.scatter(x, y)
 
 # now determine nice limits by hand:
 binwidth = 0.25
-xymax = np.max([np.max(np.fabs(x)), np.max(np.fabs(y))])
+xymax = max(np.max(np.abs(x)), np.max(np.abs(y)))
 lim = (int(xymax/binwidth) + 1) * binwidth
 
 axScatter.set_xlim((-lim, lim))

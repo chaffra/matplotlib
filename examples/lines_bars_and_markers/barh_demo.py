@@ -1,8 +1,15 @@
 """
-Simple demo of a horizontal bar chart.
+====================
+Horizontal bar chart
+====================
+
+This example showcases a simple horizontal bar chart.
 """
 import matplotlib.pyplot as plt
 import numpy as np
+
+# Fixing random state for reproducibility
+np.random.seed(19680801)
 
 
 plt.rcdefaults()
