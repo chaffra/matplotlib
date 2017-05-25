@@ -356,8 +356,8 @@ class CallbackRegistry(object):
 
     def process(self, s, *args, **kwargs):
         """
-        process signal *s*.  All of the functions registered to receive
-        callbacks on *s* will be called with *\*args* and *\*\*kwargs*
+        process signal `s`.  All of the functions registered to receive
+        callbacks on `s` will be called with ``**args`` and ``**kwargs``
         """
         if s in self.callbacks:
             for cid, proxy in list(six.iteritems(self.callbacks[s])):
@@ -543,6 +543,7 @@ def file_requires_unicode(x):
         return False
 
 
+@deprecated('2.1')
 def is_scalar(obj):
     """return true if *obj* is not string like and is not iterable"""
     return not is_string_like(obj) and not iterable(obj)
@@ -582,6 +583,7 @@ def to_filehandle(fname, flag='rU', return_opened=False):
     return fh
 
 
+@deprecated('2.1')
 def is_scalar_or_string(val):
     """Return whether the given object is a scalar or string like."""
     return is_string_like(val) or not iterable(val)
@@ -929,7 +931,7 @@ def wrap(prefix, text, cols):
 # A regular expression used to determine the amount of space to
 # remove.  It looks for the first sequence of spaces immediately
 # following the first newline, or at the beginning of the string.
-_find_dedent_regex = re.compile("(?:(?:\n\r?)|^)( *)\S")
+_find_dedent_regex = re.compile(r"(?:(?:\n\r?)|^)( *)\S")
 # A cache to hold the regexs that actually remove the indent.
 _dedent_regex = {}
 
@@ -1495,15 +1497,12 @@ class Grouper(object):
         The iterator is invalid if interleaved with calls to join().
         """
         self.clean()
-
-        class Token:
-            pass
-        token = Token()
+        token = object()
 
         # Mark each group as we come across if by appending a token,
         # and don't yield it twice
         for group in six.itervalues(self._mapping):
-            if not group[-1] is token:
+            if group[-1] is not token:
                 yield [x() for x in group]
                 group.append(token)
 
@@ -1707,7 +1706,7 @@ def boxplot_stats(X, whis=1.5, bootstrap=None, labels=None,
 
     .. math::
 
-        \mathrm{med} \pm 1.57 \\times \\frac{\mathrm{iqr}}{\sqrt{N}}
+        \\mathrm{med} \\pm 1.57 \\times \\frac{\\mathrm{iqr}}{\\sqrt{N}}
 
     General approach from:
     McGill, R., Tukey, J.W., and Larsen, W.A. (1978) "Variations of
@@ -2694,7 +2693,7 @@ class _StringFuncParser(object):
     def _get_key_params(self):
         str_func = self._str_func
         # Checking if it comes with parameters
-        regex = '\{(.*?)\}'
+        regex = r'\{(.*?)\}'
         params = re.findall(regex, str_func)
 
         for i, param in enumerate(params):
