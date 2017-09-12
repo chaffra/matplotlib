@@ -26,7 +26,7 @@ Matplotlib's LaTeX support requires a working LaTeX_ installation, dvipng_
 external dependencies must all be located on your :envvar:`PATH`.
 
 There are a couple of options to mention, which can be changed using :ref:`rc
-settings <sphx_glr_tutorials_01_introductory_customizing.py>`. Here is an example matplotlibrc file::
+settings <sphx_glr_tutorials_introductory_customizing.py>`. Here is an example matplotlibrc file::
 
   font.family        : serif
   font.serif         : Times, Palatino, New Century Schoolbook, Bookman, Computer Modern Roman
@@ -98,7 +98,7 @@ which removes some postscript operators used by LaTeX that are illegal in an
 eps file. This step produces results which may be unacceptable to some users,
 because the text is coarsely rasterized and converted to bitmaps, which are not
 scalable like standard postscript, and the text is not searchable. One
-workaround is to to set ``ps.distiller.res`` to a higher value (perhaps 6000)
+workaround is to set ``ps.distiller.res`` to a higher value (perhaps 6000)
 in your rc settings, which will produce larger files but may look better and
 scale reasonably. A better workaround, which requires Poppler_ or Xpdf_, can be
 activated by changing the ``ps.usedistiller`` rc setting to ``xpdf``. This
@@ -118,10 +118,6 @@ Possible hangups
 
 * Using MiKTeX with Computer Modern fonts, if you get odd \*Agg and PNG
   results, go to MiKTeX/Options and update your format files
-
-* The fonts look terrible on screen. You are probably running Mac OS, and there
-  is some funny business with older versions of dvipng on the mac. Set
-  ``text.dvipnghack : True`` in your matplotlibrc file.
 
 * On Ubuntu and Gentoo, the base texlive install does not ship with
   the type1cm package. You may need to install some of the extra

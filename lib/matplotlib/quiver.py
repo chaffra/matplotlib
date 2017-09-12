@@ -45,7 +45,7 @@ Call signatures::
   quiver(X, Y, U, V, **kw)
   quiver(X, Y, U, V, C, **kw)
 
-*U* and *V* are the arrow data, *X* and *Y* set the locaiton of the
+*U* and *V* are the arrow data, *X* and *Y* set the location of the
 arrows, and *C* sets the color of the arrows. These arguments may be 1-D or
 2-D arrays or sequences.
 
@@ -523,7 +523,7 @@ class Quiver(mcollections.PolyCollection):
                                             (ax.bbox.width, ax.bbox.height))
             self.span = sx
             if self.width is None:
-                sn = max(8, min(25, math.sqrt(self.N)))
+                sn = np.clip(math.sqrt(self.N), 8, 25)
                 self.width = 0.06 * self.span / sn
 
             # _make_verts sets self.scale if not already specified
@@ -982,12 +982,12 @@ class Barbs(mcollections.PolyCollection):
         # If rounding, round to the nearest multiple of half, the smallest
         # increment
         if rounding:
-            mag = half * (mag / half + 0.5).astype(np.int)
+            mag = half * (mag / half + 0.5).astype(int)
 
-        num_flags = np.floor(mag / flag).astype(np.int)
+        num_flags = np.floor(mag / flag).astype(int)
         mag = np.mod(mag, flag)
 
-        num_barb = np.floor(mag / full).astype(np.int)
+        num_barb = np.floor(mag / full).astype(int)
         mag = np.mod(mag, full)
 
         half_flag = mag >= half

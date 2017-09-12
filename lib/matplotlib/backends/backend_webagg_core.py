@@ -18,7 +18,7 @@ import six
 import io
 import json
 import os
-import datetime
+import time
 import warnings
 
 import numpy as np
@@ -26,27 +26,10 @@ import tornado
 import datetime
 
 from matplotlib.backends import backend_agg
+from matplotlib.backend_bases import _Backend
 from matplotlib.figure import Figure
 from matplotlib import backend_bases
 from matplotlib import _png
-
-
-def new_figure_manager(num, *args, **kwargs):
-    """
-    Create a new figure manager instance
-    """
-    FigureClass = kwargs.pop('FigureClass', Figure)
-    thisFig = FigureClass(*args, **kwargs)
-    return new_figure_manager_given_figure(num, thisFig)
-
-
-def new_figure_manager_given_figure(num, figure):
-    """
-    Create a new figure manager instance for the given figure.
-    """
-    canvas = FigureCanvasWebAggCore(figure)
-    manager = FigureManagerWebAgg(canvas, num)
-    return manager
 
 
 # http://www.cambiaresearch.com/articles/15/javascript-char-codes-key-codes
@@ -497,7 +480,6 @@ class FigureManagerWebAgg(backend_bases.FigureManagerBase):
         with io.open(os.path.join(
                 os.path.dirname(__file__),
                 "web_backend",
-                "js",
                 "mpl.js"), encoding='utf8') as fd:
             output.write(fd.read())
 
@@ -566,3 +548,9 @@ class TimerTornado(backend_bases.TimerBase):
         if self._timer is not None:
             self._timer_stop()
             self._timer_start()
+
+
+@_Backend.export
+class _BackendWebAggCoreAgg(_Backend):
+    FigureCanvas = FigureCanvasWebAggCore
+    FigureManager = FigureManagerWebAgg

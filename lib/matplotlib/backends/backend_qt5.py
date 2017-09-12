@@ -2,6 +2,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 import six
 
+import functools
 import os
 import re
 import signal
@@ -10,22 +11,16 @@ from six import unichr
 
 import matplotlib
 
-from matplotlib.backend_bases import FigureManagerBase
-from matplotlib.backend_bases import FigureCanvasBase
-from matplotlib.backend_bases import NavigationToolbar2
-
-from matplotlib.backend_bases import cursors
-from matplotlib.backend_bases import TimerBase
-from matplotlib.backend_bases import ShowBase
-
 from matplotlib._pylab_helpers import Gcf
+from matplotlib.backend_bases import (
+    _Backend, FigureCanvasBase, FigureManagerBase, NavigationToolbar2,
+    TimerBase, cursors)
+import matplotlib.backends.qt_editor.figureoptions as figureoptions
+from matplotlib.backends.qt_editor.formsubplottool import UiSubplotTool
 from matplotlib.figure import Figure
 
-import matplotlib.backends.qt_editor.figureoptions as figureoptions
-
-from .qt_compat import (QtCore, QtGui, QtWidgets, _getSaveFileName,
-                        __version__, is_pyqt5)
-from matplotlib.backends.qt_editor.formsubplottool import UiSubplotTool
+from .qt_compat import (
+    QtCore, QtGui, QtWidgets, _getSaveFileName, is_pyqt5, __version__, QT_API)
 
 backend_version = __version__
 
@@ -95,17 +90,9 @@ cursord = {
     cursors.HAND: QtCore.Qt.PointingHandCursor,
     cursors.POINTER: QtCore.Qt.ArrowCursor,
     cursors.SELECT_REGION: QtCore.Qt.CrossCursor,
+    cursors.WAIT: QtCore.Qt.WaitCursor,
     }
 
-
-def draw_if_interactive():
-    """
-    Is called after every pylab drawing command
-    """
-    if matplotlib.is_interactive():
-        figManager = Gcf.get_active()
-        if figManager is not None:
-            figManager.canvas.draw_idle()
 
 # make place holder
 qApp = None
@@ -147,32 +134,49 @@ def _create_qApp():
             pass
 
 
-class Show(ShowBase):
-    def mainloop(self):
-        # allow KeyboardInterrupt exceptions to close the plot window.
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        global qApp
-        qApp.exec_()
-
-
-show = Show()
-
-
-def new_figure_manager(num, *args, **kwargs):
+def _allow_super_init(__init__):
     """
-    Create a new figure manager instance
+    Decorator for ``__init__`` to allow ``super().__init__`` on PyQt4/PySide2.
     """
-    thisFig = Figure(*args, **kwargs)
-    return new_figure_manager_given_figure(num, thisFig)
 
+    if QT_API == "PyQt5":
 
-def new_figure_manager_given_figure(num, figure):
-    """
-    Create a new figure manager instance for the given figure.
-    """
-    canvas = FigureCanvasQT(figure)
-    manager = FigureManagerQT(canvas, num)
-    return manager
+        return __init__
+
+    else:
+        # To work around lack of cooperative inheritance in PyQt4, PySide,
+        # and PySide2, when calling FigureCanvasQT.__init__, we temporarily
+        # patch QWidget.__init__ by a cooperative version, that first calls
+        # QWidget.__init__ with no additional arguments, and then finds the
+        # next class in the MRO with an __init__ that does support cooperative
+        # inheritance (i.e., not defined by the PyQt4, PySide, PySide2, sip
+        # or Shiboken packages), and manually call its `__init__`, once again
+        # passing the additional arguments.
+
+        qwidget_init = QtWidgets.QWidget.__init__
+
+        def cooperative_qwidget_init(self, *args, **kwargs):
+            qwidget_init(self)
+            mro = type(self).__mro__
+            next_coop_init = next(
+                cls for cls in mro[mro.index(QtWidgets.QWidget) + 1:]
+                if cls.__module__.split(".")[0] not in [
+                    "PyQt4", "sip", "PySide", "PySide2", "Shiboken"])
+            next_coop_init.__init__(self, *args, **kwargs)
+
+        @functools.wraps(__init__)
+        def wrapper(self, **kwargs):
+            try:
+                QtWidgets.QWidget.__init__ = cooperative_qwidget_init
+                __init__(self, **kwargs)
+            finally:
+                try:
+                    # Restore __init__ to sip.simplewrapper.__init__.
+                    del QtWidgets.QWidget.__init__
+                except AttributeError:
+                    pass
+
+        return wrapper
 
 
 class TimerQT(TimerBase):
@@ -225,22 +229,35 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
                # QtCore.Qt.XButton2: None,
                }
 
+    def _update_figure_dpi(self):
+        dpi = self._dpi_ratio * self.figure._original_dpi
+        self.figure._set_dpi(dpi, forward=False)
+
+    @_allow_super_init
     def __init__(self, figure):
         _create_qApp()
+        figure._original_dpi = figure.dpi
 
-        # NB: Using super for this call to avoid a TypeError:
-        # __init__() takes exactly 2 arguments (1 given) on QWidget
-        # PyQt5
-        # The need for this change is documented here
-        # http://pyqt.sourceforge.net/Docs/PyQt5/pyqt4_differences.html#cooperative-multi-inheritance
         super(FigureCanvasQT, self).__init__(figure=figure)
+
         self.figure = figure
-        self.setMouseTracking(True)
+        self._update_figure_dpi()
+
         w, h = self.get_width_height()
         self.resize(w, h)
 
+        self.setMouseTracking(True)
         # Key auto-repeat enabled by default
         self._keyautorepeat = True
+
+        # In cases with mixed resolution displays, we need to be careful if the
+        # dpi_ratio changes - in this case we need to resize the canvas
+        # accordingly. We could watch for screenChanged events from Qt, but
+        # the issue is that we can't guarantee this will be emitted *before*
+        # the first paintEvent for the canvas, so instead we keep track of the
+        # dpi_ratio value here and in paintEvent we resize the canvas if
+        # needed.
+        self._dpi_ratio_prev = None
 
     @property
     def _dpi_ratio(self):
@@ -335,6 +352,10 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
         self._keyautorepeat = bool(val)
 
     def resizeEvent(self, event):
+        # _dpi_ratio_prev will be set the first time the canvas is painted, and
+        # the rendered buffer is useless before anyways.
+        if self._dpi_ratio_prev is None:
+            return
         w = event.size().width() * self._dpi_ratio
         h = event.size().height() * self._dpi_ratio
         dpival = self.figure.dpi
@@ -538,6 +559,8 @@ class FigureManagerQT(FigureManagerBase):
 
     def show(self):
         self.window.show()
+        self.window.activateWindow()
+        self.window.raise_()
 
     def destroy(self, *args):
         # check for qApp first, as PySide deletes it in its atexit handler
@@ -639,8 +662,8 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
             QtWidgets.QMessageBox.warning(
                 self.parent, "Error", "There are no axes to edit.")
             return
-        if len(allaxes) == 1:
-            axes = allaxes[0]
+        elif len(allaxes) == 1:
+            axes, = allaxes
         else:
             titles = []
             for axes in allaxes:
@@ -684,11 +707,7 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
         height = self.canvas.figure.bbox.height
         y1 = height - y1
         y0 = height - y0
-
-        w = abs(x1 - x0)
-        h = abs(y1 - y0)
-
-        rect = [int(val) for val in (min(x0, x1), min(y0, y1), w, h)]
+        rect = [int(val) for val in (x0, y0, x1 - x0, y1 - y0)]
         self.canvas.drawRectangle(rect)
 
     def remove_rubberband(self):
@@ -706,8 +725,8 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
         sorted_filetypes = sorted(six.iteritems(filetypes))
         default_filetype = self.canvas.get_default_filetype()
 
-        startpath = matplotlib.rcParams.get('savefig.directory', '')
-        startpath = os.path.expanduser(startpath)
+        startpath = os.path.expanduser(
+            matplotlib.rcParams['savefig.directory'])
         start = os.path.join(startpath, self.canvas.get_default_filename())
         filters = []
         selectedFilter = None
@@ -721,17 +740,14 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
 
         fname, filter = _getSaveFileName(self.parent,
                                          "Choose a filename to save to",
-                                 start, filters, selectedFilter)
+                                         start, filters, selectedFilter)
         if fname:
-            if startpath == '':
-                # explicitly missing key or empty str signals to use cwd
-                matplotlib.rcParams['savefig.directory'] = startpath
-            else:
-                # save dir for next time
-                savefig_dir = os.path.dirname(six.text_type(fname))
-                matplotlib.rcParams['savefig.directory'] = savefig_dir
+            # Save dir for next time, unless empty str (i.e., use cwd).
+            if startpath != "":
+                matplotlib.rcParams['savefig.directory'] = (
+                    os.path.dirname(six.text_type(fname)))
             try:
-                self.canvas.print_figure(six.text_type(fname))
+                self.canvas.figure.savefig(six.text_type(fname))
             except Exception as e:
                 QtWidgets.QMessageBox.critical(
                     self, "Error saving file", six.text_type(e),
@@ -830,5 +846,19 @@ def exception_handler(type, value, tb):
     if len(msg):
         error_msg_qt(msg)
 
-FigureCanvas = FigureCanvasQT
-FigureManager = FigureManagerQT
+
+@_Backend.export
+class _BackendQT5(_Backend):
+    FigureCanvas = FigureCanvasQT
+    FigureManager = FigureManagerQT
+
+    @staticmethod
+    def trigger_manager_draw(manager):
+        manager.canvas.draw_idle()
+
+    @staticmethod
+    def mainloop():
+        # allow KeyboardInterrupt exceptions to close the plot window.
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        global qApp
+        qApp.exec_()

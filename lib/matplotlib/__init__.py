@@ -103,26 +103,27 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import six
-import sys
-import distutils.version
-from itertools import chain
 
 from collections import MutableMapping
+import contextlib
+import distutils.version
+import distutils.sysconfig
+import functools
 import io
 import inspect
+import itertools
 import locale
 import os
 import re
+import sys
 import tempfile
 import warnings
-import contextlib
-import distutils.sysconfig
-import functools
+
 # cbook must import matplotlib only within function
 # definitions, so it is safe to import from it here.
 from . import cbook
 from matplotlib.cbook import (
-    mplDeprecation, dedent, get_label, sanitize_sequence)
+    _backports, mplDeprecation, dedent, get_label, sanitize_sequence)
 from matplotlib.compat import subprocess
 from matplotlib.rcsetup import defaultParams, validate_backend, cycler
 
@@ -212,28 +213,7 @@ def _is_writable_dir(p):
     p is a string pointing to a putative writable dir -- return True p
     is such a string, else False
     """
-    try:
-        p + ''  # test is string like
-    except TypeError:
-        return False
-
-    # Test whether the operating system thinks it's a writable directory.
-    # Note that this check is necessary on Google App Engine, because the
-    # subsequent check will succeed even though p may not be writable.
-    if not os.access(p, os.W_OK) or not os.path.isdir(p):
-        return False
-
-    # Also test that it is actually possible to write to a file here.
-    try:
-        t = tempfile.TemporaryFile(dir=p)
-        try:
-            t.write(b'1')
-        finally:
-            t.close()
-    except:
-        return False
-
-    return True
+    return os.access(p, os.W_OK) and os.path.isdir(p)
 
 
 class Verbose(object):
@@ -371,6 +351,9 @@ checkdep_ghostscript.executable = None
 checkdep_ghostscript.version = None
 
 
+# Deprecated, as it is unneeded and some distributions (e.g. MiKTeX 2.9.6350)
+# do not actually report the TeX version.
+@cbook.deprecated("2.1")
 def checkdep_tex():
     try:
         s = subprocess.Popen([str('tex'), '-version'], stdout=subprocess.PIPE,
@@ -440,16 +423,9 @@ def checkdep_ps_distiller(s):
         return False
 
     flag = True
-    gs_req = '7.07'
-    gs_sugg = '7.07'
+    gs_req = '8.60'
     gs_exec, gs_v = checkdep_ghostscript()
-    if compare_versions(gs_v, gs_sugg):
-        pass
-    elif compare_versions(gs_v, gs_req):
-        verbose.report(('ghostscript-%s found. ghostscript-%s or later '
-                        'is recommended to use the ps.usedistiller option.')
-                       % (gs_v, gs_sugg))
-    else:
+    if not compare_versions(gs_v, gs_req):
         flag = False
         warnings.warn(('matplotlibrc ps.usedistiller option can not be used '
                        'unless ghostscript-%s or later is installed on your '
@@ -480,42 +456,28 @@ def checkdep_usetex(s):
     if not s:
         return False
 
-    tex_req = '3.1415'
-    gs_req = '7.07'
-    gs_sugg = '7.07'
-    dvipng_req = '1.5'
+    gs_req = '8.60'
+    dvipng_req = '1.6'
     flag = True
 
-    tex_v = checkdep_tex()
-    if compare_versions(tex_v, tex_req):
-        pass
-    else:
+    if _backports.which("tex") is None:
         flag = False
-        warnings.warn(('matplotlibrc text.usetex option can not be used '
-                       'unless TeX-%s or later is '
-                       'installed on your system') % tex_req)
+        warnings.warn('matplotlibrc text.usetex option can not be used unless '
+                      'TeX is installed on your system')
 
     dvipng_v = checkdep_dvipng()
-    if compare_versions(dvipng_v, dvipng_req):
-        pass
-    else:
+    if not compare_versions(dvipng_v, dvipng_req):
         flag = False
         warnings.warn('matplotlibrc text.usetex can not be used with *Agg '
-                      'backend unless dvipng-1.5 or later is '
-                      'installed on your system')
+                      'backend unless dvipng-%s or later is installed on '
+                      'your system' % dvipng_req)
 
     gs_exec, gs_v = checkdep_ghostscript()
-    if compare_versions(gs_v, gs_sugg):
-        pass
-    elif compare_versions(gs_v, gs_req):
-        verbose.report(('ghostscript-%s found. ghostscript-%s or later is '
-                        'recommended for use with the text.usetex '
-                        'option.') % (gs_v, gs_sugg))
-    else:
+    if not compare_versions(gs_v, gs_req):
         flag = False
-        warnings.warn(('matplotlibrc text.usetex can not be used '
-                       'unless ghostscript-%s or later is '
-                       'installed on your system') % gs_req)
+        warnings.warn('matplotlibrc text.usetex can not be used unless '
+                      'ghostscript-%s or later is installed on your system'
+                      % gs_req)
 
     return flag
 
@@ -527,17 +489,12 @@ def _get_home():
     :see:
         http://mail.python.org/pipermail/python-list/2005-February/325395.html
     """
-    try:
-        if six.PY2 and sys.platform == 'win32':
-            path = os.path.expanduser(b"~").decode(sys.getfilesystemencoding())
-        else:
-            path = os.path.expanduser("~")
-    except ImportError:
-        # This happens on Google App Engine (pwd module is not present).
-        pass
+    if six.PY2 and sys.platform == 'win32':
+        path = os.path.expanduser(b"~").decode(sys.getfilesystemencoding())
     else:
-        if os.path.isdir(path):
-            return path
+        path = os.path.expanduser("~")
+    if os.path.isdir(path):
+        return path
     for evar in ('HOME', 'USERPROFILE', 'TMP'):
         path = os.environ.get(evar)
         if path is not None and os.path.isdir(path):
@@ -549,17 +506,9 @@ def _create_tmp_config_dir():
     """
     If the config directory can not be created, create a temporary
     directory.
-
-    Returns None if a writable temporary directory could not be created.
     """
-    try:
-        tempdir = tempfile.gettempdir()
-    except NotImplementedError:
-        # Some restricted platforms (such as Google App Engine) do not provide
-        # gettempdir.
-        return None
     configdir = os.environ['MPLCONFIGDIR'] = (
-        tempfile.mkdtemp(prefix='matplotlib-', dir=tempdir))
+        tempfile.mkdtemp(prefix='matplotlib-'))
     return configdir
 
 
@@ -811,14 +760,13 @@ _deprecated_map = {
 
 _deprecated_ignore_map = {}
 
-_obsolete_set = {'legend.isaxes'}
+_obsolete_set = {'text.dvipnghack', 'legend.isaxes'}
 
 # The following may use a value of None to suppress the warning.
 _deprecated_set = {'axes.hold'}  # do NOT include in _all_deprecated
 
-_all_deprecated = set(chain(_deprecated_ignore_map,
-                            _deprecated_map,
-                            _obsolete_set))
+_all_deprecated = set(itertools.chain(
+    _deprecated_ignore_map, _deprecated_map, _obsolete_set))
 
 
 class RcParams(MutableMapping, dict):
@@ -1241,7 +1189,8 @@ def rc_file(fname):
     rcParams.update(rc_params_from_file(fname))
 
 
-class rc_context(object):
+@contextlib.contextmanager
+def rc_context(rc=None, fname=None):
     """
     Return a context manager for managing rc settings.
 
@@ -1274,26 +1223,16 @@ class rc_context(object):
 
     """
 
-    def __init__(self, rc=None, fname=None):
-        self.rcdict = rc
-        self.fname = fname
-        self._rcparams = rcParams.copy()
-        try:
-            if self.fname:
-                rc_file(self.fname)
-            if self.rcdict:
-                rcParams.update(self.rcdict)
-        except:
-            # if anything goes wrong, revert rc parameters and re-raise
-            rcParams.clear()
-            rcParams.update(self._rcparams)
-            raise
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, tb):
-        rcParams.update(self._rcparams)
+    orig = rcParams.copy()
+    try:
+        if fname:
+            rc_file(fname)
+        if rc:
+            rcParams.update(rc)
+        yield
+    finally:
+        # No need to revalidate the original values.
+        dict.update(rcParams, orig)
 
 
 _use_error_msg = """
@@ -1398,16 +1337,6 @@ def tk_window_focus():
     if rcParams['backend'] != 'TkAgg':
         return False
     return rcParams['tk.window_focus']
-
-
-# Jupyter extension paths
-def _jupyter_nbextension_paths():
-    return [{
-        'section': 'notebook',
-        'src': 'backends/web_backend/js',
-        'dest': 'matplotlib',
-        'require': 'matplotlib/extension'
-    }]
 
 
 default_test_modules = [
@@ -1534,7 +1463,7 @@ _DATA_DOC_APPENDIX = """
 
 
 def _preprocess_data(replace_names=None, replace_all_args=False,
-                        label_namer=None, positional_parameter_names=None):
+                     label_namer=None, positional_parameter_names=None):
     """
     A decorator to add a 'data' kwarg to any a function.  The signature
     of the input function must include the ax argument at the first position ::
@@ -1791,7 +1720,7 @@ def _preprocess_data(replace_names=None, replace_all_args=False,
             if len(replace_names) != 0:
                 _repl = "* All arguments with the following names: '{names}'."
             if replace_all_args:
-                _repl += "\n* All positional arguments."
+                _repl += "\n    * All positional arguments."
             _repl = _repl.format(names="', '".join(sorted(replace_names)))
         inner.__doc__ = (pre_doc +
                          _DATA_DOC_APPENDIX.format(replaced=_repl))
