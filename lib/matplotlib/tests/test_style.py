@@ -1,17 +1,17 @@
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from __future__ import absolute_import, division, print_function
 
+from collections import OrderedDict
+from contextlib import contextmanager
+import gc
 import os
 import shutil
 import tempfile
 import warnings
-from collections import OrderedDict
-from contextlib import contextmanager
 
 import pytest
 
 import matplotlib as mpl
-from matplotlib import style
+from matplotlib import pyplot as plt, style
 from matplotlib.style.core import USER_LIBRARY_PATHS, STYLE_EXTENSION
 
 import six
@@ -45,9 +45,9 @@ def temp_style(style_name, settings=None):
         style.reload_library()
 
 
-def test_deprecated_rc_warning_includes_filename():
-    SETTINGS = {'axes.color_cycle': 'ffffff'}
-    basename = 'color_cycle'
+def test_invalid_rc_warning_includes_filename():
+    SETTINGS = {'foo': 'bar'}
+    basename = 'basename'
     with warnings.catch_warnings(record=True) as warns:
         with temp_style(basename, SETTINGS):
             # style.reload_library() in temp_style() triggers the warning
@@ -158,3 +158,18 @@ def test_alias(equiv_styles):
     rc_base = rc_dicts[0]
     for nm, rc in zip(equiv_styles[1:], rc_dicts[1:]):
         assert rc_base == rc
+
+
+def test_xkcd_no_cm():
+    assert mpl.rcParams["path.sketch"] is None
+    plt.xkcd()
+    assert mpl.rcParams["path.sketch"] == (1, 100, 2)
+    gc.collect()
+    assert mpl.rcParams["path.sketch"] == (1, 100, 2)
+
+
+def test_xkcd_cm():
+    assert mpl.rcParams["path.sketch"] is None
+    with plt.xkcd():
+        assert mpl.rcParams["path.sketch"] == (1, 100, 2)
+    assert mpl.rcParams["path.sketch"] is None

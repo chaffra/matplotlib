@@ -83,25 +83,19 @@ referred to from other docs for the valid inputs from marker inputs and in
 those cases `None` still means 'default'.
 """
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
-from six.moves import xrange
-
 from collections import Sized
+from numbers import Number
 
 import numpy as np
 
-from . import rcParams
-from .cbook import is_math_text, is_numlike
+from . import cbook, rcParams
 from .path import Path
 from .transforms import IdentityTransform, Affine2D
 
 # special-purpose marker identifiers:
 (TICKLEFT, TICKRIGHT, TICKUP, TICKDOWN,
  CARETLEFT, CARETRIGHT, CARETUP, CARETDOWN,
- CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE) = xrange(12)
+ CARETLEFTBASE, CARETRIGHTBASE, CARETUPBASE, CARETDOWNBASE) = range(12)
 
 _empty_path = Path(np.empty((0, 2)))
 
@@ -170,7 +164,7 @@ class MarkerStyle(object):
 
         Attributes
         ----------
-        markers : list of known markes
+        markers : list of known marks
 
         fillstyles : list of known fillstyles
 
@@ -188,15 +182,6 @@ class MarkerStyle(object):
         self.set_fillstyle(fillstyle)
         self.set_marker(marker)
 
-    def __getstate__(self):
-        d = self.__dict__.copy()
-        d.pop('_marker_function')
-        return d
-
-    def __setstate__(self, statedict):
-        self.__dict__ = statedict
-        self.set_marker(self._marker)
-
     def _recache(self):
         if self._marker_function is None:
             return
@@ -210,12 +195,8 @@ class MarkerStyle(object):
         self._filled = True
         self._marker_function()
 
-    if six.PY3:
-        def __bool__(self):
-            return bool(len(self._path.vertices))
-    else:
-        def __nonzero__(self):
-            return bool(len(self._path.vertices))
+    def __bool__(self):
+        return bool(len(self._path.vertices))
 
     def is_filled(self):
         return self._filled
@@ -252,6 +233,10 @@ class MarkerStyle(object):
         if (isinstance(marker, np.ndarray) and marker.ndim == 2 and
                 marker.shape[1] == 2):
             self._marker_function = self._set_vertices
+        elif isinstance(marker, str) and cbook.is_math_text(marker):
+            self._marker_function = self._set_mathtext_path
+        elif isinstance(marker, Path):
+            self._marker_function = self._set_path_marker
         elif (isinstance(marker, Sized) and len(marker) in (2, 3) and
                 marker[1] in (0, 1, 2, 3)):
             self._marker_function = self._set_tuple_marker
@@ -259,10 +244,6 @@ class MarkerStyle(object):
               marker in self.markers):
             self._marker_function = getattr(
                 self, '_set_' + self.markers[marker])
-        elif isinstance(marker, six.string_types) and is_math_text(marker):
-            self._marker_function = self._set_mathtext_path
-        elif isinstance(marker, Path):
-            self._marker_function = self._set_path_marker
         else:
             try:
                 Path(marker)
@@ -309,7 +290,7 @@ class MarkerStyle(object):
 
     def _set_tuple_marker(self):
         marker = self._marker
-        if is_numlike(marker[0]):
+        if isinstance(marker[0], Number):
             if len(marker) == 2:
                 numsides, rotation = marker[0], 0.0
             elif len(marker) == 3:

@@ -4,23 +4,18 @@ Anchored Artists
 ================
 
 """
-from matplotlib.patches import Rectangle, Ellipse
 
-from matplotlib.offsetbox import AnchoredOffsetbox, AuxTransformBox, VPacker,\
-    TextArea, DrawingArea
+from matplotlib.patches import Rectangle, Ellipse
+from matplotlib.offsetbox import (
+    AnchoredOffsetbox, AuxTransformBox, DrawingArea, TextArea, VPacker)
 
 
 class AnchoredText(AnchoredOffsetbox):
     def __init__(self, s, loc, pad=0.4, borderpad=0.5,
                  prop=None, frameon=True):
-
-        self.txt = TextArea(s,
-                            minimumdescent=False)
-
-        super(AnchoredText, self).__init__(loc, pad=pad, borderpad=borderpad,
-                                           child=self.txt,
-                                           prop=prop,
-                                           frameon=frameon)
+        self.txt = TextArea(s, minimumdescent=False)
+        super().__init__(loc, pad=pad, borderpad=borderpad,
+                         child=self.txt, prop=prop, frameon=frameon)
 
 
 class AnchoredSizeBar(AnchoredOffsetbox):
@@ -34,7 +29,7 @@ class AnchoredSizeBar(AnchoredOffsetbox):
         sep in points.
         """
         self.size_bar = AuxTransformBox(transform)
-        self.size_bar.add_artist(Rectangle((0, 0), size, 0, fc="none", lw=1.0))
+        self.size_bar.add_artist(Rectangle((0, 0), size, 0, ec="black", lw=1.0))
 
         self.txt_label = TextArea(label, minimumdescent=False)
 
@@ -42,10 +37,8 @@ class AnchoredSizeBar(AnchoredOffsetbox):
                             align="center",
                             pad=0, sep=sep)
 
-        AnchoredOffsetbox.__init__(self, loc, pad=pad, borderpad=borderpad,
-                                   child=self._box,
-                                   prop=prop,
-                                   frameon=frameon)
+        super().__init__(loc, pad=pad, borderpad=borderpad,
+                         child=self._box, prop=prop, frameon=frameon)
 
 
 class AnchoredEllipse(AnchoredOffsetbox):
@@ -59,24 +52,16 @@ class AnchoredEllipse(AnchoredOffsetbox):
         self._box = AuxTransformBox(transform)
         self.ellipse = Ellipse((0, 0), width, height, angle)
         self._box.add_artist(self.ellipse)
-
-        AnchoredOffsetbox.__init__(self, loc, pad=pad, borderpad=borderpad,
-                                   child=self._box,
-                                   prop=prop,
-                                   frameon=frameon)
+        super().__init__(loc, pad=pad, borderpad=borderpad,
+                         child=self._box, prop=prop, frameon=frameon)
 
 
 class AnchoredDrawingArea(AnchoredOffsetbox):
     def __init__(self, width, height, xdescent, ydescent,
                  loc, pad=0.4, borderpad=0.5, prop=None, frameon=True):
-
         self.da = DrawingArea(width, height, xdescent, ydescent)
-
-        super(AnchoredDrawingArea, self).__init__(loc, pad=pad,
-                                                  borderpad=borderpad,
-                                                  child=self.da,
-                                                  prop=None,
-                                                  frameon=frameon)
+        super().__init__(loc, pad=pad, borderpad=borderpad,
+                         child=self.da, prop=None, frameon=frameon)
 
 
 if __name__ == "__main__":

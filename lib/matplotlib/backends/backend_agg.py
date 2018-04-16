@@ -28,11 +28,9 @@ import threading
 import numpy as np
 from collections import OrderedDict
 from math import radians, cos, sin
-from matplotlib import verbose, rcParams, __version__
+from matplotlib import cbook, rcParams, __version__
 from matplotlib.backend_bases import (
     _Backend, FigureCanvasBase, FigureManagerBase, RendererBase, cursors)
-from matplotlib.cbook import maxdict
-from matplotlib.figure import Figure
 from matplotlib.font_manager import findfont, get_font
 from matplotlib.ft2font import (LOAD_FORCE_AUTOHINT, LOAD_NO_HINTING,
                                 LOAD_DEFAULT, LOAD_NO_AUTOHINT)
@@ -69,7 +67,6 @@ class RendererAgg(RendererBase):
     The renderer handles all the drawing primitives using a graphics
     context instance that controls the colors/styles
     """
-    debug=1
 
     # we want to cache the fonts at the class level so that when
     # multiple figures are created we can reuse them.  This helps with
@@ -80,16 +77,17 @@ class RendererAgg(RendererBase):
     # draw, and release it when it is done.  This allows multiple
     # renderers to share the cached fonts, but only one figure can
     # draw at time and so the font cache is used by only one
-    # renderer at a time
+    # renderer at a time.
 
     lock = threading.RLock()
+
     def __init__(self, width, height, dpi):
         RendererBase.__init__(self)
 
         self.dpi = dpi
         self.width = width
         self.height = height
-        self._renderer = _RendererAgg(int(width), int(height), dpi, debug=False)
+        self._renderer = _RendererAgg(int(width), int(height), dpi)
         self._filter_renderers = []
 
         self._update_methods()
@@ -143,7 +141,7 @@ class RendererAgg(RendererBase):
 
         if (nmax > 100 and npts > nmax and path.should_simplify and
                 rgbFace is None and gc.get_hatch() is None):
-            nch = np.ceil(npts / float(nmax))
+            nch = np.ceil(npts / nmax)
             chsize = int(np.ceil(npts / nch))
             i0 = np.arange(0, npts, chsize)
             i1 = np.zeros_like(i0)
@@ -159,12 +157,14 @@ class RendererAgg(RendererBase):
                 try:
                     self._renderer.draw_path(gc, p, transform, rgbFace)
                 except OverflowError:
-                    raise OverflowError("Exceeded cell block limit (set 'agg.path.chunksize' rcparam)")
+                    raise OverflowError("Exceeded cell block limit (set "
+                                        "'agg.path.chunksize' rcparam)")
         else:
             try:
                 self._renderer.draw_path(gc, path, transform, rgbFace)
             except OverflowError:
-                raise OverflowError("Exceeded cell block limit (set 'agg.path.chunksize' rcparam)")
+                raise OverflowError("Exceeded cell block limit (set "
+                                    "'agg.path.chunksize' rcparam)")
 
 
     def draw_mathtext(self, gc, x, y, s, prop, angle):
@@ -200,14 +200,13 @@ class RendererAgg(RendererBase):
             font.set_text(s, 0, flags=flags)
         font.draw_glyphs_to_bitmap(antialiased=rcParams['text.antialiased'])
         d = font.get_descent() / 64.0
-        # The descent needs to be adjusted for the angle
+        # The descent needs to be adjusted for the angle.
         xo, yo = font.get_bitmap_offset()
         xo /= 64.0
         yo /= 64.0
         xd = -d * sin(radians(angle))
         yd = d * cos(radians(angle))
 
-        #print x, y, int(x), int(y), s
         self._renderer.draw_text_image(
             font, np.round(x - xd + xo), np.round(y + yd + yo) + 1, angle, gc)
 
@@ -217,7 +216,7 @@ class RendererAgg(RendererBase):
         to the baseline), in display coords, of the string *s* with
         :class:`~matplotlib.font_manager.FontProperties` *prop*
         """
-        if rcParams['text.usetex']:
+        if ismath in ["TeX", "TeX!"]:
             # todo: handle props
             size = prop.get_size_in_points()
             texmanager = self.get_texmanager()
@@ -233,8 +232,8 @@ class RendererAgg(RendererBase):
 
         flags = get_hinting_flag()
         font = self._get_agg_font(prop)
-        font.set_text(s, 0.0, flags=flags)  # the width and height of unrotated string
-        w, h = font.get_width_height()
+        font.set_text(s, 0.0, flags=flags)
+        w, h = font.get_width_height()  # width and height of unrotated string
         d = font.get_descent()
         w /= 64.0  # convert from subpixels
         h /= 64.0
@@ -267,9 +266,7 @@ class RendererAgg(RendererBase):
         Get the font for text instance t, cacheing for efficiency
         """
         fname = findfont(prop)
-        font = get_font(
-            fname,
-            hinting_factor=rcParams['text.hinting_factor'])
+        font = get_font(fname)
 
         font.clear()
         size = prop.get_size_in_points()
@@ -370,9 +367,8 @@ class RendererAgg(RendererBase):
         post_processing is plotted (using draw_image) on it.
         """
 
-        # WARNING.
-        # For agg_filter to work, the rendere's method need
-        # to overridden in the class. See draw_markers, and draw_path_collections
+        # WARNING:  For agg_filter to work, the renderer's method need to
+        # overridden in the class. See draw_markers and draw_path_collections.
 
         width, height = int(self.width), int(self.height)
 
@@ -425,12 +421,15 @@ class FigureCanvasAgg(FigureCanvasBase):
 
         toolbar = self.toolbar
         try:
-            if toolbar:
-                toolbar.set_cursor(cursors.WAIT)
+            # if toolbar:
+            #     toolbar.set_cursor(cursors.WAIT)
             self.figure.draw(self.renderer)
+            # A GUI class may be need to update a window using this draw, so
+            # don't forget to call the superclass.
+            super().draw()
         finally:
-            if toolbar:
-                toolbar.set_cursor(toolbar._lastCursor)
+            # if toolbar:
+            #     toolbar.set_cursor(toolbar._lastCursor)
             RendererAgg.lock.release()
 
     def get_renderer(self, cleared=False):
@@ -487,59 +486,33 @@ class FigureCanvasAgg(FigureCanvasBase):
     def print_raw(self, filename_or_obj, *args, **kwargs):
         FigureCanvasAgg.draw(self)
         renderer = self.get_renderer()
-        original_dpi = renderer.dpi
-        renderer.dpi = self.figure.dpi
-        if isinstance(filename_or_obj, six.string_types):
-            fileobj = open(filename_or_obj, 'wb')
-            close = True
-        else:
-            fileobj = filename_or_obj
-            close = False
-        try:
-            fileobj.write(renderer._renderer.buffer_rgba())
-        finally:
-            if close:
-                fileobj.close()
-            renderer.dpi = original_dpi
+        with cbook._setattr_cm(renderer, dpi=self.figure.dpi), \
+                cbook.open_file_cm(filename_or_obj, "wb") as fh:
+            fh.write(renderer._renderer.buffer_rgba())
     print_rgba = print_raw
 
     def print_png(self, filename_or_obj, *args, **kwargs):
         FigureCanvasAgg.draw(self)
         renderer = self.get_renderer()
-        original_dpi = renderer.dpi
-        renderer.dpi = self.figure.dpi
-        if isinstance(filename_or_obj, six.string_types):
-            filename_or_obj = open(filename_or_obj, 'wb')
-            close = True
-        else:
-            close = False
 
-        version_str = 'matplotlib version ' + __version__ + \
-            ', http://matplotlib.org/'
+        version_str = (
+            'matplotlib version ' + __version__ + ', http://matplotlib.org/')
         metadata = OrderedDict({'Software': version_str})
         user_metadata = kwargs.pop("metadata", None)
         if user_metadata is not None:
             metadata.update(user_metadata)
 
-        try:
-            _png.write_png(renderer._renderer, filename_or_obj,
-                           self.figure.dpi, metadata=metadata)
-        finally:
-            if close:
-                filename_or_obj.close()
-            renderer.dpi = original_dpi
+        with cbook._setattr_cm(renderer, dpi=self.figure.dpi), \
+                cbook.open_file_cm(filename_or_obj, "wb") as fh:
+            _png.write_png(renderer._renderer, fh,
+                            self.figure.dpi, metadata=metadata)
 
     def print_to_buffer(self):
         FigureCanvasAgg.draw(self)
         renderer = self.get_renderer()
-        original_dpi = renderer.dpi
-        renderer.dpi = self.figure.dpi
-        try:
-            result = (renderer._renderer.buffer_rgba(),
-                      (int(renderer.width), int(renderer.height)))
-        finally:
-            renderer.dpi = original_dpi
-        return result
+        with cbook._setattr_cm(renderer, dpi=self.figure.dpi):
+            return (renderer._renderer.buffer_rgba(),
+                    (int(renderer.width), int(renderer.height)))
 
     if _has_pil:
         # add JPEG support
@@ -548,11 +521,10 @@ class FigureCanvasAgg(FigureCanvasBase):
             Other Parameters
             ----------------
             quality : int
-                The image quality, on a scale from 1 (worst) to
-                95 (best). The default is 95, if not given in the
-                matplotlibrc file in the savefig.jpeg_quality parameter.
-                Values above 95 should be avoided; 100 completely
-                disables the JPEG quantization stage.
+                The image quality, on a scale from 1 (worst) to 100 (best).
+                The default is :rc:`savefig.jpeg_quality`.  Values above
+                95 should be avoided; 100 completely disables the JPEG
+                quantization stage.
 
             optimize : bool
                 If present, indicates that the encoder should
@@ -570,7 +542,7 @@ class FigureCanvasAgg(FigureCanvasBase):
             # handle any transparency
             image = Image.frombuffer('RGBA', size, buf, 'raw', 'RGBA', 0, 1)
             rgba = mcolors.to_rgba(rcParams['savefig.facecolor'])
-            color = tuple([int(x * 255.0) for x in rgba[:3]])
+            color = tuple([int(x * 255) for x in rgba[:3]])
             background = Image.new('RGB', size, color)
             background.paste(image, image)
             options = {k: kwargs[k]
@@ -591,8 +563,7 @@ class FigureCanvasAgg(FigureCanvasBase):
                 return
             image = Image.frombuffer('RGBA', size, buf, 'raw', 'RGBA', 0, 1)
             dpi = (self.figure.dpi, self.figure.dpi)
-            return image.save(filename_or_obj, format='tiff',
-                              dpi=dpi)
+            return image.save(filename_or_obj, format='tiff', dpi=dpi)
         print_tiff = print_tif
 
 

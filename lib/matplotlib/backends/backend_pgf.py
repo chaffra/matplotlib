@@ -1,41 +1,36 @@
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
-
+import atexit
+import codecs
+import errno
+import logging
 import math
 import os
-import sys
-import errno
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
-import codecs
-import atexit
-import weakref
 import warnings
-
-import numpy as np
+import weakref
 
 import matplotlib as mpl
+from matplotlib import _png, rcParams, __version__
 from matplotlib.backend_bases import (
     _Backend, FigureCanvasBase, FigureManagerBase, GraphicsContextBase,
     RendererBase)
 from matplotlib.backends.backend_mixed import MixedModeRenderer
-from matplotlib.figure import Figure
-from matplotlib.text import Text
-from matplotlib.path import Path
-from matplotlib import _png, rcParams
 from matplotlib.cbook import is_writable_file_like
-from matplotlib.compat import subprocess
-from matplotlib.compat.subprocess import check_output
+from matplotlib.path import Path
+from matplotlib.figure import Figure
+from matplotlib._pylab_helpers import Gcf
+
+_log = logging.getLogger(__name__)
 
 
 ###############################################################################
 
 # create a list of system fonts, all of these should work with xe/lua-latex
 system_fonts = []
-if sys.platform.startswith('win'):
+if sys.platform == 'win32':
     from matplotlib import font_manager
     for f in font_manager.win32InstalledFonts():
         try:
@@ -46,18 +41,37 @@ else:
     # assuming fontconfig is installed and the command 'fc-list' exists
     try:
         # list scalable (non-bitmap) fonts
-        fc_list = check_output([str('fc-list'), ':outline,scalable', 'family'])
+        fc_list = subprocess.check_output(
+            ['fc-list', ':outline,scalable', 'family'])
         fc_list = fc_list.decode('utf8')
         system_fonts = [f.split(',')[0] for f in fc_list.splitlines()]
         system_fonts = list(set(system_fonts))
     except:
         warnings.warn('error getting fonts from fc-list', UserWarning)
 
+
+_luatex_version_re = re.compile(
+    r'This is LuaTeX, Version (?:beta-)?([0-9]+)\.([0-9]+)\.([0-9]+)'
+)
+
+
 def get_texcommand():
     """Get chosen TeX system from rc."""
     texsystem_options = ["xelatex", "lualatex", "pdflatex"]
     texsystem = rcParams["pgf.texsystem"]
     return texsystem if texsystem in texsystem_options else "xelatex"
+
+
+def _get_lualatex_version():
+    """Get version of luatex"""
+    output = subprocess.check_output(['lualatex', '--version'])
+    return _parse_lualatex_version(output.decode())
+
+
+def _parse_lualatex_version(output):
+    '''parse the lualatex version from the output of `lualatex --version`'''
+    match = _luatex_version_re.match(output)
+    return tuple(map(int, match.groups()))
 
 
 def get_fontspec():
@@ -177,9 +191,9 @@ def make_pdf_to_png_converter():
     tools_available = []
     # check for pdftocairo
     try:
-        check_output([str("pdftocairo"), "-v"], stderr=subprocess.STDOUT)
+        subprocess.check_output(["pdftocairo", "-v"], stderr=subprocess.STDOUT)
         tools_available.append("pdftocairo")
-    except:
+    except OSError:
         pass
     # check for ghostscript
     gs, ver = mpl.checkdep_ghostscript()
@@ -189,17 +203,19 @@ def make_pdf_to_png_converter():
     # pick converter
     if "pdftocairo" in tools_available:
         def cairo_convert(pdffile, pngfile, dpi):
-            cmd = [str("pdftocairo"), "-singlefile", "-png", "-r", "%d" % dpi,
+            cmd = ["pdftocairo", "-singlefile", "-png", "-r", "%d" % dpi,
                    pdffile, os.path.splitext(pngfile)[0]]
-            check_output(cmd, stderr=subprocess.STDOUT)
+            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         return cairo_convert
     elif "gs" in tools_available:
         def gs_convert(pdffile, pngfile, dpi):
-            cmd = [str(gs), '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT',
-                   '-sDEVICE=png16m', '-dUseCIEColor', '-dTextAlphaBits=4',
-                   '-dGraphicsAlphaBits=4', '-dDOINTERPOLATE', '-sOutputFile=%s' % pngfile,
+            cmd = [gs,
+                   '-dQUIET', '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT',
+                   '-dUseCIEColor', '-dTextAlphaBits=4',
+                   '-dGraphicsAlphaBits=4', '-dDOINTERPOLATE',
+                   '-sDEVICE=png16m', '-sOutputFile=%s' % pngfile,
                    '-r%d' % dpi, pdffile]
-            check_output(cmd, stderr=subprocess.STDOUT)
+            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         return gs_convert
     else:
         raise RuntimeError("No suitable pdf to png renderer found.")
@@ -207,11 +223,11 @@ def make_pdf_to_png_converter():
 
 class LatexError(Exception):
     def __init__(self, message, latex_output=""):
-        Exception.__init__(self, message)
+        super().__init__(message)
         self.latex_output = latex_output
 
 
-class LatexManagerFactory(object):
+class LatexManagerFactory:
     previous_instance = None
 
     @staticmethod
@@ -223,18 +239,16 @@ class LatexManagerFactory(object):
         # Check if the previous instance of LatexManager can be reused.
         if (prev and prev.latex_header == latex_header
                 and prev.texcommand == texcommand):
-            if rcParams["pgf.debug"]:
-                print("reusing LatexManager")
+            _log.debug("reusing LatexManager")
             return prev
         else:
-            if rcParams["pgf.debug"]:
-                print("creating LatexManager")
+            _log.debug("creating LatexManager")
             new_inst = LatexManager()
             LatexManagerFactory.previous_instance = new_inst
             return new_inst
 
 
-class LatexManager(object):
+class LatexManager:
     """
     The LatexManager opens an instance of the LaTeX application for
     determining the metrics of text elements. The LaTeX environment can be
@@ -246,8 +260,8 @@ class LatexManager(object):
     def _build_latex_header():
         latex_preamble = get_preamble()
         latex_fontspec = get_fontspec()
-        # Create LaTeX header with some content, else LaTeX will load some
-        # math fonts later when we don't expect the additional output on stdout.
+        # Create LaTeX header with some content, else LaTeX will load some math
+        # fonts later when we don't expect the additional output on stdout.
         # TODO: is this sufficient?
         latex_header = [r"\documentclass{minimal}",
                         latex_preamble,
@@ -287,7 +301,6 @@ class LatexManager(object):
         # store references for __del__
         self._os_path = os.path
         self._shutil = shutil
-        self._debug = rcParams["pgf.debug"]
 
         # create a tmp directory for running latex, remember to cleanup
         self.tmpdir = tempfile.mkdtemp(prefix="mpl_pgf_lm_")
@@ -298,25 +311,24 @@ class LatexManager(object):
         self.latex_header = LatexManager._build_latex_header()
         latex_end = "\n\\makeatletter\n\\@@end\n"
         try:
-            latex = subprocess.Popen([str(self.texcommand), "-halt-on-error"],
+            latex = subprocess.Popen([self.texcommand, "-halt-on-error"],
                                      stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE,
                                      cwd=self.tmpdir)
-        except OSError as e:
-            if e.errno == errno.ENOENT:
-                raise RuntimeError("Latex command not found. "
-                    "Install '%s' or change pgf.texsystem to the desired command."
-                    % self.texcommand
-                )
-            else:
-                raise RuntimeError("Error starting process '%s'" % self.texcommand)
+        except FileNotFoundError:
+            raise RuntimeError(
+                "Latex command not found. Install %r or change "
+                "pgf.texsystem to the desired command." % self.texcommand)
+        except OSError:
+            raise RuntimeError("Error starting process %r" % self.texcommand)
         test_input = self.latex_header + latex_end
         stdout, stderr = latex.communicate(test_input.encode("utf-8"))
         if latex.returncode != 0:
-            raise LatexError("LaTeX returned an error, probably missing font or error in preamble:\n%s" % stdout)
+            raise LatexError("LaTeX returned an error, probably missing font "
+                             "or error in preamble:\n%s" % stdout)
 
         # open LaTeX process for real work
-        latex = subprocess.Popen([str(self.texcommand), "-halt-on-error"],
+        latex = subprocess.Popen([self.texcommand, "-halt-on-error"],
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  cwd=self.tmpdir)
         self.latex = latex
@@ -346,8 +358,7 @@ class LatexManager(object):
             sys.stderr.write("error deleting tmp directory %s\n" % self.tmpdir)
 
     def __del__(self):
-        if self._debug:
-            print("deleting LatexManager")
+        _log.debug("deleting LatexManager")
         self._cleanup()
 
     def get_width_height_descent(self, text, prop):
@@ -369,8 +380,8 @@ class LatexManager(object):
         try:
             self._expect_prompt()
         except LatexError as e:
-            msg = "Error processing '%s'\nLaTeX Output:\n%s"
-            raise ValueError(msg % (text, e.latex_output))
+            raise ValueError("Error processing '{}'\nLaTeX Output:\n{}"
+                             .format(text, e.latex_output))
 
         # typeout width, height and text offset of the last textbox
         self._stdin_writeln(r"\typeout{\the\wd0,\the\ht0,\the\dp0}")
@@ -378,15 +389,15 @@ class LatexManager(object):
         try:
             answer = self._expect_prompt()
         except LatexError as e:
-            msg = "Error processing '%s'\nLaTeX Output:\n%s"
-            raise ValueError(msg % (text, e.latex_output))
+            raise ValueError("Error processing '{}'\nLaTeX Output:\n{}"
+                             .format(text, e.latex_output))
 
         # parse metrics from the answer string
         try:
             width, height, offset = answer.splitlines()[0].split(",")
         except:
-            msg = "Error processing '%s'\nLaTeX Output:\n%s" % (text, answer)
-            raise ValueError(msg)
+            raise ValueError("Error processing '{}'\nLaTeX Output:\n{}"
+                             .format(text, answer))
         w, h, o = float(width[:-2]), float(height[:-2]), float(offset[:-2])
 
         # the height returned from LaTeX goes from base to top.
@@ -433,7 +444,8 @@ class RendererPgf(RendererBase):
                               UserWarning)
                 self.__dict__["draw_image"] = lambda *args, **kwargs: None
 
-    def draw_markers(self, gc, marker_path, marker_trans, path, trans, rgbFace=None):
+    def draw_markers(self, gc, marker_path, marker_trans, path, trans,
+                     rgbFace=None):
         writeln(self.fh, r"\begin{pgfscope}")
 
         # convert from display units to in
@@ -446,7 +458,9 @@ class RendererPgf(RendererBase):
         # build marker definition
         bl, tr = marker_path.get_extents(marker_trans).get_points()
         coords = bl[0] * f, bl[1] * f, tr[0] * f, tr[1] * f
-        writeln(self.fh, r"\pgfsys@defobject{currentmarker}{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}}{" % coords)
+        writeln(self.fh,
+                r"\pgfsys@defobject{currentmarker}"
+                r"{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}}{" % coords)
         self._print_pgf_path(None, marker_path, marker_trans)
         self._pgf_path_draw(stroke=gc.get_linewidth() != 0.0,
                             fill=rgbFace is not None)
@@ -483,9 +497,13 @@ class RendererPgf(RendererBase):
             writeln(self.fh, r"\pgfusepath{clip}")
 
             # build pattern definition
-            writeln(self.fh, r"\pgfsys@defobject{currentpattern}{\pgfqpoint{0in}{0in}}{\pgfqpoint{1in}{1in}}{")
+            writeln(self.fh,
+                    r"\pgfsys@defobject{currentpattern}"
+                    r"{\pgfqpoint{0in}{0in}}{\pgfqpoint{1in}{1in}}{")
             writeln(self.fh, r"\begin{pgfscope}")
-            writeln(self.fh, r"\pgfpathrectangle{\pgfqpoint{0in}{0in}}{\pgfqpoint{1in}{1in}}")
+            writeln(self.fh,
+                    r"\pgfpathrectangle"
+                    r"{\pgfqpoint{0in}{0in}}{\pgfqpoint{1in}{1in}}")
             writeln(self.fh, r"\pgfusepath{clip}")
             scale = mpl.transforms.Affine2D().scale(self.dpi)
             self._print_pgf_path(None, gc.get_hatch_path(), scale)
@@ -494,11 +512,13 @@ class RendererPgf(RendererBase):
             writeln(self.fh, r"}")
             # repeat pattern, filling the bounding rect of the path
             f = 1. / self.dpi
-            (xmin, ymin), (xmax, ymax) = path.get_extents(transform).get_points()
+            (xmin, ymin), (xmax, ymax) = \
+                path.get_extents(transform).get_points()
             xmin, xmax = f * xmin, f * xmax
             ymin, ymax = f * ymin, f * ymax
             repx, repy = int(math.ceil(xmax-xmin)), int(math.ceil(ymax-ymin))
-            writeln(self.fh, r"\pgfsys@transformshift{%fin}{%fin}" % (xmin, ymin))
+            writeln(self.fh,
+                    r"\pgfsys@transformshift{%fin}{%fin}" % (xmin, ymin))
             for iy in range(repy):
                 for ix in range(repx):
                     writeln(self.fh, r"\pgfsys@useobject{currentpattern}{}")
@@ -516,7 +536,10 @@ class RendererPgf(RendererBase):
             p1, p2 = bbox.get_points()
             w, h = p2 - p1
             coords = p1[0] * f, p1[1] * f, w * f, h * f
-            writeln(self.fh, r"\pgfpathrectangle{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}} " % coords)
+            writeln(self.fh,
+                    r"\pgfpathrectangle"
+                    r"{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}}"
+                    % coords)
             writeln(self.fh, r"\pgfusepath{clip}")
 
         # check for clip path
@@ -548,7 +571,9 @@ class RendererPgf(RendererBase):
             fillopacity = rgbFace[3] if has_fill and len(rgbFace) > 3 else 1.0
 
         if has_fill:
-            writeln(self.fh, r"\definecolor{currentfill}{rgb}{%f,%f,%f}" % tuple(rgbFace[:3]))
+            writeln(self.fh,
+                    r"\definecolor{currentfill}{rgb}{%f,%f,%f}"
+                    % tuple(rgbFace[:3]))
             writeln(self.fh, r"\pgfsetfillcolor{currentfill}")
         if has_fill and fillopacity != 1.0:
             writeln(self.fh, r"\pgfsetfillopacity{%f}" % fillopacity)
@@ -557,7 +582,9 @@ class RendererPgf(RendererBase):
         lw = gc.get_linewidth() * mpl_pt_to_in * latex_in_to_pt
         stroke_rgba = gc.get_rgb()
         writeln(self.fh, r"\pgfsetlinewidth{%fpt}" % lw)
-        writeln(self.fh, r"\definecolor{currentstroke}{rgb}{%f,%f,%f}" % stroke_rgba[:3])
+        writeln(self.fh,
+                r"\definecolor{currentstroke}{rgb}{%f,%f,%f}"
+                % stroke_rgba[:3])
         writeln(self.fh, r"\pgfsetstrokecolor{currentstroke}")
         if strokeopacity != 1.0:
             writeln(self.fh, r"\pgfsetstrokeopacity{%f}" % strokeopacity)
@@ -567,11 +594,10 @@ class RendererPgf(RendererBase):
         if dash_list is None:
             writeln(self.fh, r"\pgfsetdash{}{0pt}")
         else:
-            dash_str = r"\pgfsetdash{"
-            for dash in dash_list:
-                dash_str += r"{%fpt}" % dash
-            dash_str += r"}{%fpt}" % dash_offset
-            writeln(self.fh, dash_str)
+            writeln(self.fh,
+                    r"\pgfsetdash{%s}{%fpt}"
+                    % ("".join(r"{%fpt}" % dash for dash in dash_list),
+                       dash_offset))
 
     def _print_pgf_path(self, gc, path, transform, rgbFace=None):
         f = 1. / self.dpi
@@ -586,22 +612,32 @@ class RendererPgf(RendererBase):
         for points, code in path.iter_segments(transform, clip=clip):
             if code == Path.MOVETO:
                 x, y = tuple(points)
-                writeln(self.fh, r"\pgfpathmoveto{\pgfqpoint{%fin}{%fin}}" %
+                writeln(self.fh,
+                        r"\pgfpathmoveto{\pgfqpoint{%fin}{%fin}}" %
                         (f * x, f * y))
             elif code == Path.CLOSEPOLY:
                 writeln(self.fh, r"\pgfpathclose")
             elif code == Path.LINETO:
                 x, y = tuple(points)
-                writeln(self.fh, r"\pgfpathlineto{\pgfqpoint{%fin}{%fin}}" %
+                writeln(self.fh,
+                        r"\pgfpathlineto{\pgfqpoint{%fin}{%fin}}" %
                         (f * x, f * y))
             elif code == Path.CURVE3:
                 cx, cy, px, py = tuple(points)
                 coords = cx * f, cy * f, px * f, py * f
-                writeln(self.fh, r"\pgfpathquadraticcurveto{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}}" % coords)
+                writeln(self.fh,
+                        r"\pgfpathquadraticcurveto"
+                        r"{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}}"
+                        % coords)
             elif code == Path.CURVE4:
                 c1x, c1y, c2x, c2y, px, py = tuple(points)
                 coords = c1x * f, c1y * f, c2x * f, c2y * f, px * f, py * f
-                writeln(self.fh, r"\pgfpathcurveto{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}}{\pgfqpoint{%fin}{%fin}}" % coords)
+                writeln(self.fh,
+                        r"\pgfpathcurveto"
+                        r"{\pgfqpoint{%fin}{%fin}}"
+                        r"{\pgfqpoint{%fin}{%fin}}"
+                        r"{\pgfqpoint{%fin}{%fin}}"
+                        % coords)
 
     def _pgf_path_draw(self, stroke=True, fill=False):
         actions = []
@@ -742,7 +778,7 @@ class GraphicsContextPgf(GraphicsContextBase):
 ########################################################################
 
 
-class TmpDirCleaner(object):
+class TmpDirCleaner:
     remaining_tmpdirs = set()
 
     @staticmethod
@@ -752,10 +788,10 @@ class TmpDirCleaner(object):
     @staticmethod
     def cleanup_remaining_tmpdirs():
         for tmpdir in TmpDirCleaner.remaining_tmpdirs:
-            try:
-                shutil.rmtree(tmpdir)
-            except:
-                sys.stderr.write("error deleting tmp directory %s\n" % tmpdir)
+            shutil.rmtree(
+                tmpdir,
+                onerror=lambda *args: print("error deleting tmp directory %s"
+                                            % tmpdir, file=sys.stderr))
 
 
 class FigureCanvasPgf(FigureCanvasBase):
@@ -809,7 +845,9 @@ class FigureCanvasPgf(FigureCanvasBase):
         writeln(fh, r"\begingroup")
         writeln(fh, r"\makeatletter")
         writeln(fh, r"\begin{pgfpicture}")
-        writeln(fh, r"\pgfpathrectangle{\pgfpointorigin}{\pgfqpoint{%fin}{%fin}}" % (w, h))
+        writeln(fh,
+                r"\pgfpathrectangle{\pgfpointorigin}{\pgfqpoint{%fin}{%fin}}"
+                % (w, h))
         writeln(fh, r"\pgfusepath{use as bounding box, clip}")
         _bbox_inches_restore = kwargs.pop("bbox_inches_restore", None)
         renderer = MixedModeRenderer(self.figure, w, h, dpi,
@@ -832,7 +870,7 @@ class FigureCanvasPgf(FigureCanvasBase):
             return
 
         # figure out where the pgf is to be written to
-        if isinstance(fname_or_fh, six.string_types):
+        if isinstance(fname_or_fh, str):
             with codecs.open(fname_or_fh, "w", encoding="utf-8") as fh:
                 self._print_pgf_to_fh(fh, *args, **kwargs)
         elif is_writable_file_like(fname_or_fh):
@@ -871,12 +909,15 @@ class FigureCanvasPgf(FigureCanvasBase):
                 fh_tex.write(latexcode)
 
             texcommand = get_texcommand()
-            cmdargs = [str(texcommand), "-interaction=nonstopmode",
+            cmdargs = [texcommand, "-interaction=nonstopmode",
                        "-halt-on-error", "figure.tex"]
             try:
-                check_output(cmdargs, stderr=subprocess.STDOUT, cwd=tmpdir)
+                subprocess.check_output(
+                    cmdargs, stderr=subprocess.STDOUT, cwd=tmpdir)
             except subprocess.CalledProcessError as e:
-                raise RuntimeError("%s was not able to process your file.\n\nFull log:\n%s" % (texcommand, e.output))
+                raise RuntimeError(
+                    "%s was not able to process your file.\n\nFull log:\n%s"
+                    % (texcommand, e.output))
 
             # copy file contents to target
             with open(fname_pdf, "rb") as fh_src:
@@ -896,7 +937,7 @@ class FigureCanvasPgf(FigureCanvasBase):
             return
 
         # figure out where the pdf is to be written to
-        if isinstance(fname_or_fh, six.string_types):
+        if isinstance(fname_or_fh, str):
             with open(fname_or_fh, "wb") as fh:
                 self._print_pdf_to_fh(fh, *args, **kwargs)
         elif is_writable_file_like(fname_or_fh):
@@ -932,7 +973,7 @@ class FigureCanvasPgf(FigureCanvasBase):
             self._print_pgf_to_fh(None, *args, **kwargs)
             return
 
-        if isinstance(fname_or_fh, six.string_types):
+        if isinstance(fname_or_fh, str):
             with open(fname_or_fh, "wb") as fh:
                 self._print_png_to_fh(fh, *args, **kwargs)
         elif is_writable_file_like(fname_or_fh):
@@ -945,8 +986,7 @@ class FigureCanvasPgf(FigureCanvasBase):
 
 
 class FigureManagerPgf(FigureManagerBase):
-    def __init__(self, *args):
-        FigureManagerBase.__init__(self, *args)
+    pass
 
 
 @_Backend.export
@@ -959,4 +999,221 @@ def _cleanup_all():
     LatexManager._cleanup_remaining_instances()
     TmpDirCleaner.cleanup_remaining_tmpdirs()
 
+
 atexit.register(_cleanup_all)
+
+
+class PdfPages:
+    """
+    A multi-page PDF file using the pgf backend
+
+    Examples
+    --------
+
+    >>> import matplotlib.pyplot as plt
+    >>> # Initialize:
+    >>> with PdfPages('foo.pdf') as pdf:
+    ...     # As many times as you like, create a figure fig and save it:
+    ...     fig = plt.figure()
+    ...     pdf.savefig(fig)
+    ...     # When no figure is specified the current figure is saved
+    ...     pdf.savefig()
+    """
+    __slots__ = (
+        '_outputfile',
+        'keep_empty',
+        '_tmpdir',
+        '_basename',
+        '_fname_tex',
+        '_fname_pdf',
+        '_n_figures',
+        '_file',
+        'metadata',
+    )
+
+    def __init__(self, filename, *, keep_empty=True, metadata=None):
+        """
+        Create a new PdfPages object.
+
+        Parameters
+        ----------
+
+        filename : str
+            Plots using :meth:`PdfPages.savefig` will be written to a file at
+            this location. Any older file with the same name is overwritten.
+        keep_empty : bool, optional
+            If set to False, then empty pdf files will be deleted automatically
+            when closed.
+        metadata : dictionary, optional
+            Information dictionary object (see PDF reference section 10.2.1
+            'Document Information Dictionary'), e.g.:
+            `{'Creator': 'My software', 'Author': 'Me',
+            'Title': 'Awesome fig'}`
+
+            The standard keys are `'Title'`, `'Author'`, `'Subject'`,
+            `'Keywords'`, `'Producer'`, `'Creator'` and `'Trapped'`.
+            Values have been predefined for `'Creator'` and `'Producer'`.
+            They can be removed by setting them to the empty string.
+        """
+        self._outputfile = filename
+        self._n_figures = 0
+        self.keep_empty = keep_empty
+        self.metadata = metadata or {}
+
+        # create temporary directory for compiling the figure
+        self._tmpdir = tempfile.mkdtemp(prefix="mpl_pgf_pdfpages_")
+        self._basename = 'pdf_pages'
+        self._fname_tex = os.path.join(self._tmpdir, self._basename + ".tex")
+        self._fname_pdf = os.path.join(self._tmpdir, self._basename + ".pdf")
+        self._file = open(self._fname_tex, 'wb')
+
+    def _write_header(self, width_inches, height_inches):
+        supported_keys = {
+            'title', 'author', 'subject', 'keywords', 'creator',
+            'producer', 'trapped'
+        }
+        infoDict = {
+            'creator': 'matplotlib %s, https://matplotlib.org' % __version__,
+            'producer': 'matplotlib pgf backend %s' % __version__,
+        }
+        metadata = {k.lower(): v for k, v in self.metadata.items()}
+        infoDict.update(metadata)
+        hyperref_options = ''
+        for k, v in infoDict.items():
+            if k not in supported_keys:
+                raise ValueError(
+                    'Not a supported pdf metadata field: "{}"'.format(k)
+                )
+            hyperref_options += 'pdf' + k + '={' + str(v) + '},'
+
+        latex_preamble = get_preamble()
+        latex_fontspec = get_fontspec()
+        latex_header = r"""\PassOptionsToPackage{{
+  {metadata}
+}}{{hyperref}}
+\RequirePackage{{hyperref}}
+\documentclass[12pt]{{minimal}}
+\usepackage[
+    paperwidth={width}in,
+    paperheight={height}in,
+    margin=0in
+]{{geometry}}
+{preamble}
+{fontspec}
+\usepackage{{pgf}}
+\setlength{{\parindent}}{{0pt}}
+
+\begin{{document}}%%
+""".format(
+            width=width_inches,
+            height=height_inches,
+            preamble=latex_preamble,
+            fontspec=latex_fontspec,
+            metadata=hyperref_options,
+        )
+        self._file.write(latex_header.encode('utf-8'))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self):
+        """
+        Finalize this object, running LaTeX in a temporary directory
+        and moving the final pdf file to `filename`.
+        """
+        self._file.write(rb'\end{document}\n')
+        self._file.close()
+
+        if self._n_figures > 0:
+            try:
+                self._run_latex()
+            finally:
+                try:
+                    shutil.rmtree(self._tmpdir)
+                except:
+                    TmpDirCleaner.add(self._tmpdir)
+        elif self.keep_empty:
+            open(self._outputfile, 'wb').close()
+
+    def _run_latex(self):
+        texcommand = get_texcommand()
+        cmdargs = [
+            str(texcommand),
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            os.path.basename(self._fname_tex),
+        ]
+        try:
+            subprocess.check_output(
+                cmdargs, stderr=subprocess.STDOUT, cwd=self._tmpdir
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                "%s was not able to process your file.\n\nFull log:\n%s"
+                % (texcommand, e.output.decode('utf-8')))
+
+        # copy file contents to target
+        shutil.copyfile(self._fname_pdf, self._outputfile)
+
+    def savefig(self, figure=None, **kwargs):
+        """
+        Saves a :class:`~matplotlib.figure.Figure` to this file as a new page.
+
+        Any other keyword arguments are passed to
+        :meth:`~matplotlib.figure.Figure.savefig`.
+
+        Parameters
+        ----------
+
+        figure : :class:`~matplotlib.figure.Figure` or int, optional
+            Specifies what figure is saved to file. If not specified, the
+            active figure is saved. If a :class:`~matplotlib.figure.Figure`
+            instance is provided, this figure is saved. If an int is specified,
+            the figure instance to save is looked up by number.
+        """
+        if not isinstance(figure, Figure):
+            if figure is None:
+                manager = Gcf.get_active()
+            else:
+                manager = Gcf.get_fig_manager(figure)
+            if manager is None:
+                raise ValueError("No figure {}".format(figure))
+            figure = manager.canvas.figure
+
+        try:
+            orig_canvas = figure.canvas
+            figure.canvas = FigureCanvasPgf(figure)
+
+            width, height = figure.get_size_inches()
+            if self._n_figures == 0:
+                self._write_header(width, height)
+            else:
+                self._file.write(self._build_newpage_command(width, height))
+
+            figure.savefig(self._file, format="pgf", **kwargs)
+            self._n_figures += 1
+        finally:
+            figure.canvas = orig_canvas
+
+    def _build_newpage_command(self, width, height):
+        r'''LuaLaTeX from version 0.85 removed the `\pdf*` primitives,
+        so we need to check the lualatex version and use `\pagewidth` if
+        the version is 0.85 or newer
+        '''
+        texcommand = get_texcommand()
+        if texcommand == 'lualatex' and _get_lualatex_version() >= (0, 85, 0):
+            cmd = r'\page'
+        else:
+            cmd = r'\pdfpage'
+
+        newpage = r'\newpage{cmd}width={w}in,{cmd}height={h}in%' + '\n'
+        return newpage.format(cmd=cmd, w=width, h=height).encode('utf-8')
+
+    def get_pagecount(self):
+        """
+        Returns the current number of pages in the multipage pdf file.
+        """
+        return self._n_figures

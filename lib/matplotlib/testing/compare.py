@@ -2,25 +2,22 @@
 Provides a collection of utilities for comparing (image) results.
 
 """
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
 
 import atexit
 import functools
 import hashlib
 import itertools
 import os
+from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 from tempfile import TemporaryFile
 
 import numpy as np
 
 import matplotlib
-from matplotlib.compat import subprocess
 from matplotlib.testing.exceptions import ImageComparisonFailure
 from matplotlib import _png
 from matplotlib import _get_cachedir
@@ -86,11 +83,10 @@ def get_cache_dir():
     if cachedir is None:
         raise RuntimeError('Could not find a suitable configuration directory')
     cache_dir = os.path.join(cachedir, 'test_cache')
-    if not os.path.exists(cache_dir):
-        try:
-            cbook.mkdirs(cache_dir)
-        except IOError:
-            return None
+    try:
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+    except IOError:
+        return None
     if not os.access(cache_dir, os.W_OK):
         return None
     return cache_dir
@@ -185,15 +181,14 @@ class _SVGConverter(object):
             # reported as a regular exception below).
             env.pop("DISPLAY", None)  # May already be unset.
             # Do not load any user options.
-            # `os.environ` needs native strings on Py2+Windows.
-            env[str("INKSCAPE_PROFILE_DIR")] = os.devnull
+            env["INKSCAPE_PROFILE_DIR"] = os.devnull
             # Old versions of Inkscape (0.48.3.1, used on Travis as of now)
             # seem to sometimes deadlock when stderr is redirected to a pipe,
             # so we redirect it to a temporary file instead.  This is not
             # necessary anymore as of Inkscape 0.92.1.
             self._stderr = TemporaryFile()
             self._proc = subprocess.Popen(
-                [str("inkscape"), "--without-gui", "--shell"],
+                ["inkscape", "--without-gui", "--shell"],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=self._stderr, env=env)
             if not self._read_to_prompt():
@@ -214,7 +209,7 @@ class _SVGConverter(object):
             # slow solution (Inkscape uses `fgets` so it will always stop at a
             # newline).
             return make_external_conversion_command(lambda old, new: [
-                str('inkscape'), '-z', old, '--export-png', new])(orig, dest)
+                'inkscape', '-z', old, '--export-png', new])(orig, dest)
         self._proc.stdin.write(orig_b + b" --export-png=" + dest_b + b"\n")
         self._proc.stdin.flush()
         if not self._read_to_prompt():
@@ -264,7 +259,7 @@ def comparable_formats():
     on this system.
 
     """
-    return ['png'] + list(converter)
+    return ['png', *converter]
 
 
 def convert(filename, cache):
@@ -317,39 +312,6 @@ def convert(filename, cache):
 
     return newname
 
-#: Maps file extensions to a function which takes a filename as its
-#: only argument to return a list suitable for execution with Popen.
-#: The purpose of this is so that the result file (with the given
-#: extension) can be verified with tools such as xmllint for svg.
-verifiers = {}
-
-# Turning this off, because it seems to cause multiprocessing issues
-if False and matplotlib.checkdep_xmllint():
-    verifiers['svg'] = lambda filename: [
-        'xmllint', '--valid', '--nowarning', '--noout', filename]
-
-
-@cbook.deprecated("2.1")
-def verify(filename):
-    """Verify the file through some sort of verification tool."""
-    if not os.path.exists(filename):
-        raise IOError("'%s' does not exist" % filename)
-    base, extension = filename.rsplit('.', 1)
-    verifier = verifiers.get(extension, None)
-    if verifier is not None:
-        cmd = verifier(filename)
-        pipe = subprocess.Popen(cmd, universal_newlines=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = pipe.communicate()
-        errcode = pipe.wait()
-        if errcode != 0:
-            msg = "File verification command failed:\n%s\n" % ' '.join(cmd)
-            if stdout:
-                msg += "Standard output:\n%s\n" % stdout
-            if stderr:
-                msg += "Standard error:\n%s\n" % stderr
-            raise IOError(msg)
-
 
 def crop_to_same(actual_path, actual_image, expected_path, expected_image):
     # clip the images to the same size -- this is useful only when
@@ -366,14 +328,10 @@ def calculate_rms(expectedImage, actualImage):
     "Calculate the per-pixel errors, then compute the root mean square error."
     if expectedImage.shape != actualImage.shape:
         raise ImageComparisonFailure(
-            "Image sizes do not match expected size: {0} "
-            "actual size {1}".format(expectedImage.shape, actualImage.shape))
-    num_values = expectedImage.size
-    abs_diff_image = abs(expectedImage - actualImage)
-    histogram = np.bincount(abs_diff_image.ravel(), minlength=256)
-    sum_of_squares = np.sum(histogram * np.arange(len(histogram)) ** 2)
-    rms = np.sqrt(float(sum_of_squares) / num_values)
-    return rms
+            "Image sizes do not match expected size: {} "
+            "actual size {}".format(expectedImage.shape, actualImage.shape))
+    # Convert to float to avoid overflowing finite integer types.
+    return np.sqrt(((expectedImage - actualImage).astype(float) ** 2).mean())
 
 
 def compare_images(expected, actual, tol, in_decorator=False):
@@ -402,7 +360,7 @@ def compare_images(expected, actual, tol, in_decorator=False):
     --------
     img1 = "./baseline/plot.png"
     img2 = "./output/plot.png"
-    compare_images( img1, img2, 0.001 ):
+    compare_images(img1, img2, 0.001):
 
     """
     if not os.path.exists(actual):
@@ -432,7 +390,7 @@ def compare_images(expected, actual, tol, in_decorator=False):
 
     diff_image = make_test_filename(actual, 'failed-diff')
 
-    if tol <= 0.0:
+    if tol <= 0:
         if np.array_equal(expectedImage, actualImage):
             return None
 
@@ -472,8 +430,8 @@ def save_diff_image(expected, actual, output):
     actualImage = np.array(actualImage).astype(float)
     if expectedImage.shape != actualImage.shape:
         raise ImageComparisonFailure(
-            "Image sizes do not match expected size: {0} "
-            "actual size {1}".format(expectedImage.shape, actualImage.shape))
+            "Image sizes do not match expected size: {} "
+            "actual size {}".format(expectedImage.shape, actualImage.shape))
     absDiffImage = np.abs(expectedImage - actualImage)
 
     # expand differences in luminance domain

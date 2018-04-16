@@ -14,13 +14,11 @@ deviation ellipses, which can and will be derived very easily from
 the Quiver code.
 """
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
+import math
 import weakref
 
 import numpy as np
+
 from numpy import ma
 import matplotlib.collections as mcollections
 import matplotlib.transforms as transforms
@@ -29,10 +27,8 @@ import matplotlib.artist as martist
 from matplotlib.artist import allow_rasterization
 from matplotlib import docstring
 import matplotlib.font_manager as font_manager
-import matplotlib.cbook as cbook
 from matplotlib.cbook import delete_masked_points
 from matplotlib.patches import CirclePolygon
-import math
 
 
 _quiver_doc = """
@@ -407,9 +403,9 @@ def _parse_args(*args):
 
 
 def _check_consistent_shapes(*arrays):
-    all_shapes = set(a.shape for a in arrays)
+    all_shapes = {a.shape for a in arrays}
     if len(all_shapes) != 1:
-        raise ValueError('The shapes of the passed in arrays do not match.')
+        raise ValueError('The shapes of the passed in arrays do not match')
 
 
 class Quiver(mcollections.PolyCollection):
@@ -444,7 +440,7 @@ class Quiver(mcollections.PolyCollection):
         X, Y, U, V, C = _parse_args(*args)
         self.X = X
         self.Y = Y
-        self.XY = np.hstack((X[:, np.newaxis], Y[:, np.newaxis]))
+        self.XY = np.column_stack((X, Y))
         self.N = len(X)
         self.scale = kw.pop('scale', None)
         self.headwidth = kw.pop('headwidth', 3)
@@ -617,7 +613,7 @@ class Quiver(mcollections.PolyCollection):
 
     def _angles_lengths(self, U, V, eps=1):
         xy = self.ax.transData.transform(self.XY)
-        uv = np.hstack((U[:, np.newaxis], V[:, np.newaxis]))
+        uv = np.column_stack((U, V))
         xyp = self.ax.transData.transform(self.XY + eps * uv)
         dxy = xyp - xy
         angles = np.arctan2(dxy[:, 1], dxy[:, 0])
@@ -626,7 +622,7 @@ class Quiver(mcollections.PolyCollection):
 
     def _make_verts(self, U, V, angles):
         uv = (U + V * 1j)
-        str_angles = angles if isinstance(angles, six.string_types) else ''
+        str_angles = angles if isinstance(angles, str) else ''
         if str_angles == 'xy' and self.scale_units == 'xy':
             # Here eps is 1 so that if we get U, V by diffing
             # the X, Y arrays, the vectors will connect the
@@ -673,8 +669,7 @@ class Quiver(mcollections.PolyCollection):
             theta = ma.masked_invalid(np.deg2rad(angles)).filled(0)
         theta = theta.reshape((-1, 1))  # for broadcasting
         xy = (X + Y * 1j) * np.exp(1j * theta) * self.width
-        xy = xy[:, :, np.newaxis]
-        XY = np.concatenate((xy.real, xy.imag), axis=2)
+        XY = np.stack((xy.real, xy.imag), axis=2)
         if self.Umask is not ma.nomask:
             XY = ma.array(XY)
             XY[self.Umask] = ma.masked
@@ -793,13 +788,13 @@ Keyword arguments:
 
   *barbcolor*: [ color | color sequence ]
     Specifies the color all parts of the barb except any flags.  This
-    parameter is analagous to the *edgecolor* parameter for polygons,
+    parameter is analogous to the *edgecolor* parameter for polygons,
     which can be used instead. However this parameter will override
     facecolor.
 
   *flagcolor*: [ color | color sequence ]
     Specifies the color of any flags on the barb.  This parameter is
-    analagous to the *facecolor* parameter for polygons, which can be
+    analogous to the *facecolor* parameter for polygons, which can be
     used instead. However this parameter will override facecolor.  If
     this is not set (and *C* has not either) then *flagcolor* will be
     set to match *barbcolor* so that the barb has a uniform color. If
@@ -952,7 +947,7 @@ class Barbs(mcollections.PolyCollection):
         x, y, u, v, c = _parse_args(*args)
         self.x = x
         self.y = y
-        xy = np.hstack((x[:, np.newaxis], y[:, np.newaxis]))
+        xy = np.column_stack((x, y))
 
         # Make a collection
         barb_size = self._length ** 2 / 4  # Empirically determined
@@ -1171,7 +1166,7 @@ class Barbs(mcollections.PolyCollection):
             self.set_array(c)
 
         # Update the offsets in case the masked data changed
-        xy = np.hstack((x[:, np.newaxis], y[:, np.newaxis]))
+        xy = np.column_stack((x, y))
         self._offsets = xy
         self.stale = True
 
@@ -1188,7 +1183,7 @@ class Barbs(mcollections.PolyCollection):
         x, y, u, v = delete_masked_points(self.x.ravel(), self.y.ravel(),
                                           self.u, self.v)
         _check_consistent_shapes(x, y, u, v)
-        xy = np.hstack((x[:, np.newaxis], y[:, np.newaxis]))
+        xy = np.column_stack((x, y))
         mcollections.PolyCollection.set_offsets(self, xy)
         self.stale = True
 

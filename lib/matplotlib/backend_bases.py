@@ -32,11 +32,7 @@ graphics contexts must implement to serve as a matplotlib backend
     The base class for the messaging area.
 """
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
 import six
-from six.moves import xrange
 
 from contextlib import contextmanager
 from functools import partial
@@ -46,25 +42,16 @@ import os
 import sys
 import time
 import warnings
+from weakref import WeakKeyDictionary
 
 import numpy as np
-import matplotlib.cbook as cbook
-import matplotlib.colors as colors
-import matplotlib.transforms as transforms
-import matplotlib.widgets as widgets
-from matplotlib import rcParams
-from matplotlib import is_interactive
-from matplotlib import get_backend
-from matplotlib import lines
+
+from matplotlib import (
+    backend_tools as tools, cbook, colors, textpath, tight_bbox, transforms,
+    widgets, get_backend, is_interactive, rcParams)
 from matplotlib._pylab_helpers import Gcf
-
 from matplotlib.transforms import Bbox, TransformedBbox, Affine2D
-
-import matplotlib.tight_bbox as tight_bbox
-import matplotlib.textpath as textpath
 from matplotlib.path import Path
-from matplotlib.cbook import mplDeprecation, warn_deprecated
-import matplotlib.backend_tools as tools
 
 try:
     from PIL import Image
@@ -192,13 +179,20 @@ class _Backend(object):
         is ``None`` and we are neither in IPython's ``%pylab`` mode, nor in
         `interactive` mode.
         """
-        if cls.mainloop is None:
-            return
         managers = Gcf.get_all_fig_managers()
         if not managers:
             return
         for manager in managers:
-            manager.show()
+            try:
+                manager.show()
+            except NonGuiException:
+                warnings.warn(
+                    ('matplotlib is currently using %s, which is a ' +
+                     'non-GUI backend, so cannot show the figure.')
+                    % get_backend())
+                return
+        if cls.mainloop is None:
+            return
         if block is None:
             # Hack: Are we in IPython's pylab mode?
             from matplotlib import pyplot
@@ -449,7 +443,7 @@ class RendererBase(object):
             return
 
         transform = transforms.IdentityTransform()
-        for i in xrange(N):
+        for i in range(N):
             path = paths[i % Npaths]
             if Ntransforms:
                 transform = Affine2D(all_transforms[i % Ntransforms])
@@ -527,7 +521,7 @@ class RendererBase(object):
             gc0.set_linewidth(0.0)
 
         xo, yo = 0, 0
-        for i in xrange(N):
+        for i in range(N):
             path_id = path_ids[i % Npaths]
             if Noffsets:
                 xo, yo = toffsets[i % Noffsets]
@@ -964,14 +958,6 @@ class GraphicsContextBase(object):
         """
         return self._joinstyle
 
-    @cbook.deprecated("2.1")
-    def get_linestyle(self):
-        """
-        Return the linestyle: one of ('solid', 'dashed', 'dashdot',
-        'dotted').
-        """
-        return self._linestyle
-
     def get_linewidth(self):
         """
         Return the line width in points as a scalar
@@ -1056,11 +1042,10 @@ class GraphicsContextBase(object):
         Set the clip path and transformation.  Path should be a
         :class:`~matplotlib.transforms.TransformedPath` instance.
         """
-        if path is not None and not isinstance(path,
-                transforms.TransformedPath):
-            msg = ("Path should be a matplotlib.transforms.TransformedPath"
-                   "instance.")
-            raise ValueError(msg)
+        if (path is not None
+                and not isinstance(path, transforms.TransformedPath)):
+            raise ValueError("Path should be a "
+                             "matplotlib.transforms.TransformedPath instance")
         self._clippath = path
 
     def set_dashes(self, dash_offset, dash_list):
@@ -1080,7 +1065,8 @@ class GraphicsContextBase(object):
         if dash_list is not None:
             dl = np.asarray(dash_list)
             if np.any(dl < 0.0):
-                raise ValueError("All values in the dash list must be positive")
+                raise ValueError(
+                    "All values in the dash list must be positive")
         self._dashes = dash_offset, dash_list
 
     def set_foreground(self, fg, isRGBA=False):
@@ -1114,17 +1100,6 @@ class GraphicsContextBase(object):
         Set the linewidth in points
         """
         self._linewidth = float(w)
-
-    @cbook.deprecated("2.1")
-    def set_linestyle(self, style):
-        """
-        Set the linestyle to be one of ('solid', 'dashed', 'dashdot',
-        'dotted'). These are defined in the rcParams
-        `lines.dashed_pattern`, `lines.dashdot_pattern` and
-        `lines.dotted_pattern`.  One may also specify customized dash
-        styles by providing a tuple of (offset, dash pairs).
-        """
-        self._linestyle = style
 
     def set_url(self, url):
         """
@@ -1277,10 +1252,10 @@ class TimerBase(object):
         Boolean flag indicating whether this timer should operate as single
         shot (run once and then stop). Defaults to `False`.
 
-    callbacks : list
-        Stores list of (func, args) tuples that will be called upon timer
-        events. This list can be manipulated directly, or the functions
-        `add_callback` and `remove_callback` can be used.
+    callbacks : List[Tuple[callable, Tuple, Dict]]
+        Stores list of (func, args, kwargs) tuples that will be called upon
+        timer events. This list can be manipulated directly, or the
+        functions `add_callback` and `remove_callback` can be used.
 
     '''
     def __init__(self, interval=None, callbacks=None):
@@ -1380,9 +1355,12 @@ class TimerBase(object):
         '''
         for func, args, kwargs in self.callbacks:
             ret = func(*args, **kwargs)
-            # docstring above explains why we use `if ret == False` here,
+            # docstring above explains why we use `if ret == 0` here,
             # instead of `if not ret`.
-            if ret == False:
+            # This will also catch `ret == False` as `False == 0`
+            # but does not annoy the linters
+            # https://docs.python.org/3/library/stdtypes.html#boolean-values
+            if ret == 0:
                 self.callbacks.remove((func, args, kwargs))
 
         if len(self.callbacks) == 0:
@@ -1413,17 +1391,19 @@ class Event(object):
         self.guiEvent = guiEvent
 
 
-@cbook.deprecated("2.1")
-class IdleEvent(Event):
-    """
-    An event triggered by the GUI backend when it is idle -- useful
-    for passive animation
-    """
-
-
 class DrawEvent(Event):
     """
     An event triggered by a draw operation on the canvas
+
+    In most backends callbacks subscribed to this callback will be
+    fired after the rendering is complete but before the screen is
+    updated.  Any extra artists drawn to the canvas's renderer will
+    be reflected without an explicit call to ``blit``.
+
+    .. warning ::
+
+       Calling ``canvas.draw`` and ``canvas.blit`` in these callbacks may
+       not be safe with all backends and may cause infinite recursion.
 
     In addition to the :class:`Event` attributes, the following event
     attributes are defined:
@@ -1527,22 +1507,19 @@ class LocationEvent(Event):
         else:
             axes_list = [self.canvas.mouse_grabber]
 
-        if axes_list:  # Use highest zorder.
-            self.inaxes = max(axes_list, key=lambda x: x.zorder)
-        else:  # None found.
-            self.inaxes = None
-            self._update_enter_leave()
-            return
-
-        try:
-            trans = self.inaxes.transData.inverted()
-            xdata, ydata = trans.transform_point((x, y))
-        except ValueError:
-            self.xdata = None
-            self.ydata = None
+        if axes_list:
+            self.inaxes = cbook._topmost_artist(axes_list)
+            try:
+                trans = self.inaxes.transData.inverted()
+                xdata, ydata = trans.transform_point((x, y))
+            except ValueError:
+                self.xdata = None
+                self.ydata = None
+            else:
+                self.xdata = xdata
+                self.ydata = ydata
         else:
-            self.xdata = xdata
-            self.ydata = ydata
+            self.inaxes = None
 
         self._update_enter_leave()
 
@@ -1796,6 +1773,7 @@ class FigureCanvasBase(object):
         """
         return self._is_saving
 
+    @cbook.deprecated("2.2")
     def onRemove(self, ev):
         """
         Mouse event processor which removes the top artist
@@ -1805,7 +1783,7 @@ class FigureCanvasBase(object):
             canvas.mpl_connect('mouse_press_event',canvas.onRemove)
         """
         # Find the top artist under the cursor
-        under = sorted(self.figure.hitlist(ev), key=lambda x: x.zorder)
+        under = cbook._topmost_artist(self.figure.hitlist(ev))
         h = None
         if under:
             h = under[-1]
@@ -1845,6 +1823,7 @@ class FigureCanvasBase(object):
         s = 'resize_event'
         event = ResizeEvent(s, self)
         self.callbacks.process(s, event)
+        self.draw_idle()
 
     def close_event(self, guiEvent=None):
         """Pass a `CloseEvent` to all functions connected to ``close_event``.
@@ -2008,16 +1987,15 @@ class FigureCanvasBase(object):
         if xy is not None:
             x, y = xy
             self._lastx, self._lasty = x, y
+        else:
+            x = None
+            y = None
+            cbook.warn_deprecated('3.0', 'enter_notify_event expects a '
+                                         'location but '
+                                 'your backend did not pass one.')
 
-        event = Event('figure_enter_event', self, guiEvent)
+        event = LocationEvent('figure_enter_event', self, x, y, guiEvent)
         self.callbacks.process('figure_enter_event', event)
-
-    @cbook.deprecated("2.1")
-    def idle_event(self, guiEvent=None):
-        """Called when GUI is idle."""
-        s = 'idle_event'
-        event = IdleEvent(s, self, guiEvent=guiEvent)
-        self.callbacks.process(s, event)
 
     def grab_mouse(self, ax):
         """
@@ -2081,27 +2059,24 @@ class FigureCanvasBase(object):
             groupings[name].sort()
         return groupings
 
-    def _get_output_canvas(self, format):
-        """Return a canvas that is suitable for saving figures to a specified
-        file format. If necessary, this function will switch to a registered
-        backend that supports the format.
+    def _get_output_canvas(self, fmt):
         """
-        method_name = 'print_%s' % format
+        Return a canvas suitable for saving figures to a specified file format.
 
-        # check if this canvas supports the requested format
-        if hasattr(self, method_name):
+        If necessary, this function will switch to a registered backend that
+        supports the format.
+        """
+        # Return the current canvas if it supports the requested format.
+        if hasattr(self, 'print_{}'.format(fmt)):
             return self
-
-        # check if there is a default canvas for the requested format
-        canvas_class = get_registered_canvas_class(format)
+        # Return a default canvas for the requested format, if it exists.
+        canvas_class = get_registered_canvas_class(fmt)
         if canvas_class:
             return self.switch_backends(canvas_class)
-
-        # else report error for unsupported format
-        formats = sorted(self.get_supported_filetypes())
-        raise ValueError('Format "%s" is not supported.\n'
-                         'Supported formats: '
-                         '%s.' % (format, ', '.join(formats)))
+        # Else report error for unsupported format.
+        raise ValueError(
+            "Format {!r} is not supported (supported formats: {})"
+            .format(fmt, ", ".join(sorted(self.get_supported_filetypes()))))
 
     def print_figure(self, filename, dpi=None, facecolor=None, edgecolor=None,
                      orientation='portrait', format=None, **kwargs):
@@ -2145,10 +2120,10 @@ class FigureCanvasBase(object):
             tight bbox is calculated.
 
         """
-        self._is_saving = True
-
         if format is None:
             # get format from filename, or from backend's default filetype
+            if isinstance(filename, getattr(os, "PathLike", ())):
+                filename = os.fspath(filename)
             if isinstance(filename, six.string_types):
                 format = os.path.splitext(filename)[1][1:]
             if format is None or format == '':
@@ -2163,110 +2138,107 @@ class FigureCanvasBase(object):
 
         if dpi is None:
             dpi = rcParams['savefig.dpi']
-
         if dpi == 'figure':
             dpi = getattr(self.figure, '_original_dpi', self.figure.dpi)
 
-        if facecolor is None:
-            facecolor = rcParams['savefig.facecolor']
-        if edgecolor is None:
-            edgecolor = rcParams['savefig.edgecolor']
+        # Remove the figure manager, if any, to avoid resizing the GUI widget.
+        # Some code (e.g. Figure.show) differentiates between having *no*
+        # manager and a *None* manager, which should be fixed at some point,
+        # but this should be fine.
+        with cbook._setattr_cm(self, _is_saving=True, manager=None), \
+                cbook._setattr_cm(self.figure, dpi=dpi):
 
-        origDPI = self.figure.dpi
-        origfacecolor = self.figure.get_facecolor()
-        origedgecolor = self.figure.get_edgecolor()
+            if facecolor is None:
+                facecolor = rcParams['savefig.facecolor']
+            if edgecolor is None:
+                edgecolor = rcParams['savefig.edgecolor']
 
-        self.figure.dpi = dpi
-        self.figure.set_facecolor(facecolor)
-        self.figure.set_edgecolor(edgecolor)
+            origfacecolor = self.figure.get_facecolor()
+            origedgecolor = self.figure.get_edgecolor()
 
-        bbox_inches = kwargs.pop("bbox_inches", None)
-        if bbox_inches is None:
-            bbox_inches = rcParams['savefig.bbox']
+            self.figure.dpi = dpi
+            self.figure.set_facecolor(facecolor)
+            self.figure.set_edgecolor(edgecolor)
 
-        if bbox_inches:
-            # call adjust_bbox to save only the given area
-            if bbox_inches == "tight":
-                # when bbox_inches == "tight", it saves the figure
-                # twice. The first save command is just to estimate
-                # the bounding box of the figure. A stringIO object is
-                # used as a temporary file object, but it causes a
-                # problem for some backends (ps backend with
-                # usetex=True) if they expect a filename, not a
-                # file-like object. As I think it is best to change
-                # the backend to support file-like object, i'm going
-                # to leave it as it is. However, a better solution
-                # than stringIO seems to be needed. -JJL
+            bbox_inches = kwargs.pop("bbox_inches", None)
+            if bbox_inches is None:
+                bbox_inches = rcParams['savefig.bbox']
+
+            if bbox_inches:
+                # call adjust_bbox to save only the given area
+                if bbox_inches == "tight":
+                    # When bbox_inches == "tight", it saves the figure twice.
+                    # The first save command (to a BytesIO) is just to estimate
+                    # the bounding box of the figure.
+                    result = print_method(
+                        io.BytesIO(),
+                        dpi=dpi,
+                        facecolor=facecolor,
+                        edgecolor=edgecolor,
+                        orientation=orientation,
+                        dryrun=True,
+                        **kwargs)
+                    renderer = self.figure._cachedRenderer
+                    bbox_inches = self.figure.get_tightbbox(renderer)
+
+                    bbox_artists = kwargs.pop("bbox_extra_artists", None)
+                    if bbox_artists is None:
+                        bbox_artists = \
+                            self.figure.get_default_bbox_extra_artists()
+
+                    bbox_filtered = []
+                    for a in bbox_artists:
+                        bbox = a.get_window_extent(renderer)
+                        if a.get_clip_on():
+                            clip_box = a.get_clip_box()
+                            if clip_box is not None:
+                                bbox = Bbox.intersection(bbox, clip_box)
+                            clip_path = a.get_clip_path()
+                            if clip_path is not None and bbox is not None:
+                                clip_path = \
+                                    clip_path.get_fully_transformed_path()
+                                bbox = Bbox.intersection(
+                                    bbox, clip_path.get_extents())
+                        if bbox is not None and (
+                                bbox.width != 0 or bbox.height != 0):
+                            bbox_filtered.append(bbox)
+
+                    if bbox_filtered:
+                        _bbox = Bbox.union(bbox_filtered)
+                        trans = Affine2D().scale(1.0 / self.figure.dpi)
+                        bbox_extra = TransformedBbox(_bbox, trans)
+                        bbox_inches = Bbox.union([bbox_inches, bbox_extra])
+
+                    pad = kwargs.pop("pad_inches", None)
+                    if pad is None:
+                        pad = rcParams['savefig.pad_inches']
+
+                    bbox_inches = bbox_inches.padded(pad)
+
+                restore_bbox = tight_bbox.adjust_bbox(self.figure, bbox_inches,
+                                                      canvas.fixed_dpi)
+
+                _bbox_inches_restore = (bbox_inches, restore_bbox)
+            else:
+                _bbox_inches_restore = None
+
+            try:
                 result = print_method(
-                    io.BytesIO(),
+                    filename,
                     dpi=dpi,
                     facecolor=facecolor,
                     edgecolor=edgecolor,
                     orientation=orientation,
-                    dryrun=True,
+                    bbox_inches_restore=_bbox_inches_restore,
                     **kwargs)
-                renderer = self.figure._cachedRenderer
-                bbox_inches = self.figure.get_tightbbox(renderer)
+            finally:
+                if bbox_inches and restore_bbox:
+                    restore_bbox()
 
-                bbox_artists = kwargs.pop("bbox_extra_artists", None)
-                if bbox_artists is None:
-                    bbox_artists = self.figure.get_default_bbox_extra_artists()
-
-                bbox_filtered = []
-                for a in bbox_artists:
-                    bbox = a.get_window_extent(renderer)
-                    if a.get_clip_on():
-                        clip_box = a.get_clip_box()
-                        if clip_box is not None:
-                            bbox = Bbox.intersection(bbox, clip_box)
-                        clip_path = a.get_clip_path()
-                        if clip_path is not None and bbox is not None:
-                            clip_path = clip_path.get_fully_transformed_path()
-                            bbox = Bbox.intersection(bbox,
-                                                     clip_path.get_extents())
-                    if bbox is not None and (bbox.width != 0 or
-                                             bbox.height != 0):
-                        bbox_filtered.append(bbox)
-
-                if bbox_filtered:
-                    _bbox = Bbox.union(bbox_filtered)
-                    trans = Affine2D().scale(1.0 / self.figure.dpi)
-                    bbox_extra = TransformedBbox(_bbox, trans)
-                    bbox_inches = Bbox.union([bbox_inches, bbox_extra])
-
-                pad = kwargs.pop("pad_inches", None)
-                if pad is None:
-                    pad = rcParams['savefig.pad_inches']
-
-                bbox_inches = bbox_inches.padded(pad)
-
-            restore_bbox = tight_bbox.adjust_bbox(self.figure, bbox_inches,
-                                                  canvas.fixed_dpi)
-
-            _bbox_inches_restore = (bbox_inches, restore_bbox)
-        else:
-            _bbox_inches_restore = None
-
-        try:
-            result = print_method(
-                filename,
-                dpi=dpi,
-                facecolor=facecolor,
-                edgecolor=edgecolor,
-                orientation=orientation,
-                bbox_inches_restore=_bbox_inches_restore,
-                **kwargs)
-        finally:
-            if bbox_inches and restore_bbox:
-                restore_bbox()
-
-            self.figure.dpi = origDPI
-            self.figure.set_facecolor(origfacecolor)
-            self.figure.set_edgecolor(origedgecolor)
-            self.figure.set_canvas(self)
-            self._is_saving = False
-            #self.figure.canvas.draw() ## seems superfluous
-        return result
+                self.figure.set_facecolor(origfacecolor)
+                self.figure.set_edgecolor(origedgecolor)
+                self.figure.set_canvas(self)
+            return result
 
     @classmethod
     def get_default_filetype(cls):
@@ -2302,16 +2274,6 @@ class FigureCanvasBase(object):
         default_basename = default_basename.replace(' ', '_')
         default_filetype = self.get_default_filetype()
         default_filename = default_basename + '.' + default_filetype
-
-        save_dir = os.path.expanduser(rcParams['savefig.directory'])
-
-        # ensure non-existing filename in save dir
-        i = 1
-        while os.path.isfile(os.path.join(save_dir, default_filename)):
-            # attach numerical count to basename
-            default_filename = '{0}-{1}.{2}'.format(default_basename, i, default_filetype)
-            i += 1
-
         return default_filename
 
     def switch_backends(self, FigureCanvasClass):
@@ -2371,13 +2333,7 @@ class FigureCanvasBase(object):
                 print('you pressed', event.button, event.xdata, event.ydata)
 
             cid = canvas.mpl_connect('button_press_event', on_press)
-
         """
-        if s == 'idle_event':
-            warn_deprecated(1.5,
-                "idle_event is only implemented for the wx backend, and will "
-                "be removed in matplotlib 2.1. Use the animations module "
-                "instead.")
 
         return self.callbacks.connect(s, func)
 
@@ -2406,63 +2362,44 @@ class FigureCanvasBase(object):
         ----------------
         interval : scalar
             Timer interval in milliseconds
-        callbacks : list
+
+        callbacks : List[Tuple[callable, Tuple, Dict]]
             Sequence of (func, args, kwargs) where ``func(*args, **kwargs)``
             will be executed by the timer every *interval*.
+
+            callbacks which return ``False`` or ``0`` will be removed from the
+            timer.
+
+        Examples
+        --------
+
+        >>> timer = fig.canvas.new_timer(callbacks=[(f1, (1, ), {'a': 3}),])
 
         """
         return TimerBase(*args, **kwargs)
 
     def flush_events(self):
-        """
-        Flush the GUI events for the figure. Implemented only for
-        backends with GUIs.
-        """
-        raise NotImplementedError
+        """Flush the GUI events for the figure.
 
-    def start_event_loop(self, timeout):
+        Interactive backends need to reimplement this method.
         """
-        Start an event loop.  This is used to start a blocking event
-        loop so that interactive functions, such as ginput and
-        waitforbuttonpress, can wait for events.  This should not be
-        confused with the main GUI event loop, which is always running
-        and has nothing to do with this.
 
-        This is implemented only for backends with GUIs.
+    def start_event_loop(self, timeout=0):
+        """Start a blocking event loop.
+
+        Such an event loop is used by interactive functions, such as `ginput`
+        and `waitforbuttonpress`, to wait for events.
+
+        The event loop blocks until a callback function triggers
+        `stop_event_loop`, or *timeout* is reached.
+
+        If *timeout* is negative, never timeout.
+
+        Only interactive backends need to reimplement this method and it relies
+        on `flush_events` being properly implemented.
+
+        Interactive backends should implement this in a more native way.
         """
-        raise NotImplementedError
-
-    def stop_event_loop(self):
-        """
-        Stop an event loop.  This is used to stop a blocking event
-        loop so that interactive functions, such as ginput and
-        waitforbuttonpress, can wait for events.
-
-        This is implemented only for backends with GUIs.
-        """
-        raise NotImplementedError
-
-    def start_event_loop_default(self, timeout=0):
-        """
-        Start an event loop.  This is used to start a blocking event
-        loop so that interactive functions, such as ginput and
-        waitforbuttonpress, can wait for events.  This should not be
-        confused with the main GUI event loop, which is always running
-        and has nothing to do with this.
-
-        This function provides default event loop functionality based
-        on time.sleep that is meant to be used until event loop
-        functions for each of the GUI backends can be written.  As
-        such, it throws a deprecated warning.
-
-        This call blocks until a callback function triggers
-        stop_event_loop() or *timeout* is reached.  If *timeout* is
-        <=0, never timeout.
-        """
-        str = "Using default event loop until function specific"
-        str += " to this GUI is implemented"
-        warnings.warn(str, mplDeprecation)
-
         if timeout <= 0:
             timeout = np.inf
         timestep = 0.01
@@ -2473,12 +2410,11 @@ class FigureCanvasBase(object):
             time.sleep(timestep)
             counter += 1
 
-    def stop_event_loop_default(self):
-        """
-        Stop an event loop.  This is used to stop a blocking event
-        loop so that interactive functions, such as ginput and
-        waitforbuttonpress, can wait for events.
+    def stop_event_loop(self):
+        """Stop the current blocking event loop.
 
+        Interactive backends need to reimplement this to match
+        `start_event_loop`
         """
         self._looping = False
 
@@ -2503,7 +2439,7 @@ def key_press_handler(event, canvas, toolbar=None):
     if event.key is None:
         return
 
-    # Load key-mappings from your matplotlibrc file.
+    # Load key-mappings from rcParams.
     fullscreen_keys = rcParams['keymap.fullscreen']
     home_keys = rcParams['keymap.home']
     back_keys = rcParams['keymap.back']
@@ -2629,7 +2565,7 @@ def key_press_handler(event, canvas, toolbar=None):
         elif scalex == 'linear':
             try:
                 ax.set_xscale('log')
-            except ValueError:
+            except ValueError as exc:
                 warnings.warn(str(exc))
                 ax.set_xscale('linear')
             ax.figure.canvas.draw_idle()
@@ -2638,13 +2574,13 @@ def key_press_handler(event, canvas, toolbar=None):
         # keys in list 'all' enables all axes (default key 'a'),
         # otherwise if key is a number only enable this particular axes
         # if it was the axes, where the event was raised
-        if not (event.key in all_keys):
+        if event.key not in all_keys:
             n = int(event.key) - 1
         for i, a in enumerate(canvas.figure.get_axes()):
             # consider axes, in which the event was raised
             # FIXME: Why only this axes?
-            if event.x is not None and event.y is not None \
-                    and a.in_axes(event):
+            if (event.x is not None and event.y is not None
+                    and a.in_axes(event)):
                 if event.key in all_keys:
                     a.set_navigate(True)
                 else:
@@ -2667,6 +2603,12 @@ class FigureManagerBase(object):
     num : int or str
         The figure number
 
+    key_press_handler_id : int
+        The default key handler cid, when using the toolmanager.  Can be used
+        to disable default key press handling ::
+
+            figure.canvas.mpl_disconnect(
+                figure.canvas.manager.key_press_handler_id)
     """
     def __init__(self, canvas, num):
         self.canvas = canvas
@@ -2674,20 +2616,19 @@ class FigureManagerBase(object):
         self.num = num
 
         self.key_press_handler_id = None
-        """
-        The returned id from connecting the default key handler via
-        :meth:`FigureCanvasBase.mpl_connect`.
-
-        To disable default key press handling::
-
-            manager, canvas = figure.canvas.manager, figure.canvas
-            canvas.mpl_disconnect(manager.key_press_handler_id)
-
-        """
         if rcParams['toolbar'] != 'toolmanager':
             self.key_press_handler_id = self.canvas.mpl_connect(
                 'key_press_event',
                 self.key_press)
+
+        self.toolmanager = None
+        self.toolbar = None
+
+        @self.canvas.figure.add_axobserver
+        def notify_axes_change(fig):
+            # Called whenever the current axes is changed.
+            if self.toolmanager is None and self.toolbar is not None:
+                self.toolbar.update()
 
     def show(self):
         """
@@ -2715,6 +2656,7 @@ class FigureManagerBase(object):
         if rcParams['toolbar'] != 'toolmanager':
             key_press_handler(event, self.canvas, self.canvas.toolbar)
 
+    @cbook.deprecated("2.2")
     def show_popup(self, msg):
         """Display message in a popup -- GUI only."""
 
@@ -2798,9 +2740,7 @@ class NavigationToolbar2(object):
     def __init__(self, canvas):
         self.canvas = canvas
         canvas.toolbar = self
-        # a dict from axes index to a list of view limits
-        self._views = cbook.Stack()
-        self._positions = cbook.Stack()  # stack of subplot positions
+        self._nav_stack = cbook.Stack()
         self._xypress = None  # the location and axis info at the time
                               # of the press
         self._idPress = None
@@ -2821,26 +2761,14 @@ class NavigationToolbar2(object):
         self.mode = ''  # a mode string for the status bar
         self.set_history_buttons()
 
-        @partial(canvas.mpl_connect, 'draw_event')
-        def define_home(event):
-            self.push_current()
-            # The decorator sets `define_home` to the callback cid, so we can
-            # disconnect it after the first use.
-            canvas.mpl_disconnect(define_home)
-
     def set_message(self, s):
         """Display a message on toolbar or in status bar."""
 
     def back(self, *args):
         """move back up the view lim stack"""
-        self._views.back()
-        self._positions.back()
+        self._nav_stack.back()
         self.set_history_buttons()
         self._update_view()
-
-    @cbook.deprecated("2.1", alternative="canvas.draw_idle")
-    def dynamic_update(self):
-        self.canvas.draw_idle()
 
     def draw_rubberband(self, event, x0, y0, x1, y1):
         """Draw a rectangle rubberband to indicate zoom limits.
@@ -2853,15 +2781,13 @@ class NavigationToolbar2(object):
 
     def forward(self, *args):
         """Move forward in the view lim stack."""
-        self._views.forward()
-        self._positions.forward()
+        self._nav_stack.forward()
         self.set_history_buttons()
         self._update_view()
 
     def home(self, *args):
         """Restore the original view."""
-        self._views.home()
-        self._positions.home()
+        self._nav_stack.home()
         self.set_history_buttons()
         self._update_view()
 
@@ -2916,11 +2842,13 @@ class NavigationToolbar2(object):
                            if a.contains(event) and a.get_visible()]
 
                 if artists:
-                    a = max(artists, key=lambda x: x.zorder)
+                    a = cbook._topmost_artist(artists)
                     if a is not event.inaxes.patch:
                         data = a.get_cursor_data(event)
                         if data is not None:
-                            s += ' [%s]' % a.format_cursor_data(data)
+                            data_str = a.format_cursor_data(data)
+                            if data_str is not None:
+                                s = s + ' ' + data_str
 
                 if len(self.mode):
                     self.set_message('%s, %s' % (self.mode, s))
@@ -2962,7 +2890,7 @@ class NavigationToolbar2(object):
         self.set_message(self.mode)
 
     def press(self, event):
-        """Called whenver a mouse button is pressed."""
+        """Called whenever a mouse button is pressed."""
 
     def press_pan(self, event):
         """Callback for mouse button press in pan/zoom mode."""
@@ -2974,6 +2902,10 @@ class NavigationToolbar2(object):
         else:
             self._button_pressed = None
             return
+
+        if self._nav_stack() is None:
+            # set the home button to this view
+            self.push_current()
 
         x, y = event.x, event.y
         self._xypress = []
@@ -3010,6 +2942,10 @@ class NavigationToolbar2(object):
             self._button_pressed = None
             return
 
+        if self._nav_stack() is None:
+            # set the home button to this view
+            self.push_current()
+
         x, y = event.x, event.y
         self._xypress = []
         for i, a in enumerate(self.canvas.figure.get_axes()):
@@ -3038,16 +2974,13 @@ class NavigationToolbar2(object):
 
     def push_current(self):
         """Push the current view limits and position onto the stack."""
-        views = []
-        pos = []
-        for a in self.canvas.figure.get_axes():
-            views.append(a._get_view())
-            # Store both the original and modified positions
-            pos.append((
-                a.get_position(True).frozen(),
-                a.get_position().frozen()))
-        self._views.push(views)
-        self._positions.push(pos)
+        self._nav_stack.push(
+            WeakKeyDictionary(
+                {ax: (ax._get_view(),
+                      # Store both the original and modified positions.
+                      (ax.get_position(True).frozen(),
+                       ax.get_position().frozen()))
+                 for ax in self.canvas.figure.axes}))
         self.set_history_buttons()
 
     def release(self, event):
@@ -3168,19 +3101,17 @@ class NavigationToolbar2(object):
         """Update the viewlim and position from the view and
         position stack for each axes.
         """
-
-        views = self._views()
-        if views is None:
+        nav_info = self._nav_stack()
+        if nav_info is None:
             return
-        pos = self._positions()
-        if pos is None:
-            return
-        for i, a in enumerate(self.canvas.figure.get_axes()):
-            a._set_view(views[i])
+        # Retrieve all items at once to avoid any risk of GC deleting an Axes
+        # while in the middle of the loop below.
+        items = list(nav_info.items())
+        for ax, (view, (pos_orig, pos_active)) in items:
+            ax._set_view(view)
             # Restore both the original and modified positions
-            a.set_position(pos[i][0], 'original')
-            a.set_position(pos[i][1], 'active')
-
+            ax._set_position(pos_orig, 'original')
+            ax._set_position(pos_active, 'active')
         self.canvas.draw_idle()
 
     def save_figure(self, *args):
@@ -3198,8 +3129,7 @@ class NavigationToolbar2(object):
 
     def update(self):
         """Reset the axes stack."""
-        self._views.clear()
-        self._positions.clear()
+        self._nav_stack.clear()
         self.set_history_buttons()
 
     def zoom(self, *args):
@@ -3246,6 +3176,13 @@ class ToolContainerBase(object):
         The tools with which this `ToolContainer` wants to communicate.
     """
 
+    _icon_extension = '.png'
+    """
+    Toolcontainer button icon image format extension
+
+    **String**: Image extension
+    """
+
     def __init__(self, toolmanager):
         self.toolmanager = toolmanager
         self.toolmanager.toolmanager_connect('tool_removed_event',
@@ -3290,14 +3227,19 @@ class ToolContainerBase(object):
 
     def _get_image_filename(self, image):
         """Find the image based on its name."""
-        # TODO: better search for images, they are not always in the
-        # datapath
+        if not image:
+            return None
+
         basedir = os.path.join(rcParams['datapath'], 'images')
-        if image is not None:
-            fname = os.path.join(basedir, image)
-        else:
-            fname = None
-        return fname
+        possible_images = (
+            image,
+            image + self._icon_extension,
+            os.path.join(basedir, image),
+            os.path.join(basedir, image) + self._icon_extension)
+
+        for fname in possible_images:
+            if os.path.isfile(fname):
+                return fname
 
     def trigger_tool(self, name):
         """

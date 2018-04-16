@@ -1,8 +1,6 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from matplotlib.externals import six
-
 import mpl_toolkits.axes_grid1.axes_grid as axes_grid_orig
 from .axes_divider import LocatableAxes
 
@@ -15,10 +13,10 @@ class CbarAxes(axes_grid_orig.CbarAxesBase, LocatableAxes):
         self._default_label_on = False
         self.locator = None
 
-        super(LocatableAxes, self).__init__(*kl, **kwargs)
+        super().__init__(*kl, **kwargs)
 
     def cla(self):
-        super(LocatableAxes, self).cla()
+        super().cla()
         self._config_axes()
 
 

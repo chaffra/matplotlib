@@ -1,13 +1,12 @@
 """ A Qt API selector that can be used to switch between PyQt and PySide.
 """
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
 
 import os
+import logging
 import sys
-from matplotlib import rcParams, verbose
+from matplotlib import rcParams
+
+_log = logging.getLogger(__name__)
 
 # Available APIs.
 QT_API_PYQT = 'PyQt4'       # API is not set here; Python 2.x default is V 1
@@ -20,7 +19,7 @@ ETS = dict(pyqt=(QT_API_PYQTv2, 4), pyside=(QT_API_PYSIDE, 4),
            pyqt5=(QT_API_PYQT5, 5), pyside2=(QT_API_PYSIDE2, 5))
 # ETS is a dict of env variable to (QT_API, QT_MAJOR_VERSION)
 # If the ETS QT_API environment variable is set, use it, but only
-# if the varible if of the same major QT version.  Note that
+# if the variable is of the same major QT version.  Note that
 # ETS requires the version 2 of PyQt4, which is not the platform
 # default for Python 2.x.
 
@@ -80,16 +79,16 @@ _fallback_to_qt4 = False
 if QT_API is None:
     # No ETS environment or incompatible so use rcParams.
     if rcParams['backend'] == 'Qt5Agg':
-        QT_API = rcParams['backend.qt5']
+        QT_API = QT_API_PYQT5
     elif rcParams['backend'] == 'Qt4Agg':
-        QT_API = rcParams['backend.qt4']
+        QT_API = QT_API_PYQT
     else:
         # A non-Qt backend was specified, no version of the Qt
         # bindings is imported, but we still got here because a Qt
         # related file was imported. This is allowed, fall back to Qt5
         # using which ever binding the rparams ask for.
         _fallback_to_qt4 = True
-        QT_API = rcParams['backend.qt5']
+        QT_API = QT_API_PYQT5
 
 # We will define an appropriate wrapper for the differing versions
 # of file dialog.
@@ -111,7 +110,7 @@ if QT_API in (QT_API_PYQT, QT_API_PYQTv2, QT_API_PYQT5):
             QT_API = QT_API_PYSIDE
         cond = ("Could not import sip; falling back on PySide\n"
                 "in place of PyQt4 or PyQt5.\n")
-        verbose.report(cond, 'helpful')
+        _log.info(cond)
 
 if _sip_imported:
     if QT_API == QT_API_PYQTv2:
@@ -124,14 +123,14 @@ if _sip_imported:
             sip.setapi('QString', 2)
         except:
             res = 'QString API v2 specification failed. Defaulting to v1.'
-            verbose.report(cond + res, 'helpful')
+            _log.info(cond + res)
             # condition has now been reported, no need to repeat it:
             cond = ""
         try:
             sip.setapi('QVariant', 2)
         except:
             res = 'QVariant API v2 specification failed. Defaulting to v1.'
-            verbose.report(cond + res, 'helpful')
+            _log.info(cond + res)
     if QT_API == QT_API_PYQT5:
         try:
             from PyQt5 import QtCore, QtGui, QtWidgets
@@ -139,7 +138,7 @@ if _sip_imported:
         except ImportError:
             if _fallback_to_qt4:
                 # fell through, tried PyQt5, failed fall back to PyQt4
-                QT_API = rcParams['backend.qt4']
+                QT_API = QT_API_PYQT
                 QT_RC_MAJOR_VERSION = 4
             else:
                 raise

@@ -3,8 +3,7 @@
 Hatch-filled histograms
 =========================
 
-This example showcases the hatching capabilities of matplotlib by plotting
-various histograms.
+Hatching capabilities for plotting histograms.
 """
 
 import itertools
@@ -15,7 +14,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from cycler import cycler
-from six.moves import zip
 
 
 def filled_hist(ax, edges, values, bottoms=None, orientation='v',
@@ -50,7 +48,7 @@ def filled_hist(ax, edges, values, bottoms=None, orientation='v',
         Artist added to the Axes
     """
     print(orientation)
-    if orientation not in set('hv'):
+    if orientation not in 'hv':
         raise ValueError("orientation must be in {{'h', 'v'}} "
                          "not {o}".format(o=orientation))
 
@@ -151,8 +149,8 @@ def stack_hist(ax, stacked_data, sty_cycle, bottoms=None,
             labels = itertools.repeat(None)
 
     if label_data:
-        loop_iter = enumerate((stacked_data[lab], lab, s) for lab, s in
-                              zip(labels, sty_cycle))
+        loop_iter = enumerate((stacked_data[lab], lab, s)
+                              for lab, s in zip(labels, sty_cycle))
     else:
         loop_iter = enumerate(zip(stacked_data, labels, sty_cycle))
 

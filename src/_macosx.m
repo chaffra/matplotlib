@@ -3,13 +3,8 @@
 #include <sys/socket.h>
 #include <Python.h>
 
-#define PYOSINPUTHOOK_REPETITIVE 1 /* Remove this once Python is fixed */
-
-#if PY_MAJOR_VERSION >= 3
-#define PY3K 1
-#else
-#define PY3K 0
-#endif
+/* Remove this once Python is fixed: https://bugs.python.org/issue23237 */
+#define PYOSINPUTHOOK_REPETITIVE 1
 
 /* Proper way to check for the OS X version we are compiling for, from
    http://developer.apple.com/documentation/DeveloperTools/Conceptual/cross_development */
@@ -325,13 +320,8 @@ FigureCanvas_dealloc(FigureCanvas* self)
 static PyObject*
 FigureCanvas_repr(FigureCanvas* self)
 {
-#if PY3K
     return PyUnicode_FromFormat("FigureCanvas object %p wrapping NSView %p",
                                (void*)self, (void*)(self->view));
-#else
-    return PyString_FromFormat("FigureCanvas object %p wrapping NSView %p",
-                               (void*)self, (void*)(self->view));
-#endif
 }
 
 static PyObject*
@@ -348,8 +338,7 @@ FigureCanvas_draw(FigureCanvas* self)
         [pool release];
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -362,8 +351,7 @@ FigureCanvas_invalidate(FigureCanvas* self)
         return NULL;
     }
     [view setNeedsDisplay: YES];
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -376,8 +364,7 @@ FigureCanvas_flush_events(FigureCanvas* self)
         return NULL;
     }
     [view displayIfNeeded];
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -420,8 +407,7 @@ FigureCanvas_set_rubberband(FigureCanvas* self, PyObject *args)
     }
 
     [view setRubberband: rubberband];
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -434,8 +420,7 @@ FigureCanvas_remove_rubberband(FigureCanvas* self)
         return NULL;
     }
     [view removeRubberband];
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static NSImage* _read_ppm_image(PyObject* obj)
@@ -546,8 +531,7 @@ FigureCanvas_start_event_loop(FigureCanvas* self, PyObject* args, PyObject* keyw
     if (error==0) close(channel[1]);
     if (interrupted) raise(SIGINT);
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -563,8 +547,7 @@ FigureCanvas_stop_event_loop(FigureCanvas* self)
                                            data1: 0
                                            data2: 0];
     [NSApp postEvent: event atStart: true];
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyMethodDef FigureCanvas_methods[] = {
@@ -737,13 +720,8 @@ FigureManager_init(FigureManager *self, PyObject *args, PyObject *kwds)
 static PyObject*
 FigureManager_repr(FigureManager* self)
 {
-#if PY3K
     return PyUnicode_FromFormat("FigureManager object %p wrapping NSWindow %p",
                                (void*) self, (void*)(self->window));
-#else
-    return PyString_FromFormat("FigureManager object %p wrapping NSWindow %p",
-                               (void*) self, (void*)(self->window));
-#endif
 }
 
 static void
@@ -770,8 +748,7 @@ FigureManager_show(FigureManager* self)
         [window orderFrontRegardless];
         [pool release];
     }
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -785,8 +762,7 @@ FigureManager_destroy(FigureManager* self)
         [pool release];
         self->window = NULL;
     }
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -808,8 +784,7 @@ FigureManager_set_window_title(FigureManager* self,
         [pool release];
     }
     PyMem_Free(title);
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -830,8 +805,7 @@ FigureManager_get_window_title(FigureManager* self)
     if (result) {
         return result;
     } else {
-        Py_INCREF(Py_None);
-        return Py_None;
+        Py_RETURN_NONE;
     }
 }
 
@@ -1208,11 +1182,7 @@ NavigationToolbar_dealloc(NavigationToolbar *self)
 static PyObject*
 NavigationToolbar_repr(NavigationToolbar* self)
 {
-#if PY3K
     return PyUnicode_FromFormat("NavigationToolbar object %p", (void*)self);
-#else
-    return PyString_FromFormat("NavigationToolbar object %p", (void*)self);
-#endif
 }
 
 static char NavigationToolbar_doc[] =
@@ -1280,8 +1250,7 @@ NavigationToolbar_update (NavigationToolbar* self)
         [button setEnabled: YES];
     }
     [pool release];
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -1319,7 +1288,9 @@ NavigationToolbar_get_active (NavigationToolbar* self)
     }
     Py_ssize_t list_index = 0;
     PyObject* list = PyList_New(m);
-    for (size_t state_index = 0; state_index < n; state_index++)
+
+    size_t state_index;
+    for (state_index = 0; state_index < n; state_index++)
     {
         if(states[state_index]==1)
         {
@@ -1753,11 +1724,7 @@ NavigationToolbar2_dealloc(NavigationToolbar2 *self)
 static PyObject*
 NavigationToolbar2_repr(NavigationToolbar2* self)
 {
-#if PY3K
     return PyUnicode_FromFormat("NavigationToolbar2 object %p", (void*)self);
-#else
-    return PyString_FromFormat("NavigationToolbar2 object %p", (void*)self);
-#endif
 }
 
 static char NavigationToolbar2_doc[] =
@@ -1768,11 +1735,7 @@ NavigationToolbar2_set_message(NavigationToolbar2 *self, PyObject* args)
 {
     const char* message;
 
-#if PY3K
     if(!PyArg_ParseTuple(args, "y", &message)) return NULL;
-#else
-    if(!PyArg_ParseTuple(args, "s", &message)) return NULL;
-#endif
 
     NSText* messagebox = self->messagebox;
 
@@ -1783,8 +1746,7 @@ NavigationToolbar2_set_message(NavigationToolbar2 *self, PyObject* args)
         [pool release];
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyMethodDef NavigationToolbar2_methods[] = {
@@ -1880,16 +1842,11 @@ choose_save_file(PyObject* unused, PyObject* args)
         unsigned int n = [filename length];
         unichar* buffer = malloc(n*sizeof(unichar));
         [filename getCharacters: buffer];
-#if PY3K
-        PyObject* string =  PyUnicode_FromKindAndData(PyUnicode_2BYTE_KIND, buffer, n);
-#else
-        PyObject* string =  PyUnicode_FromUnicode(buffer, n);
-#endif
+        PyObject* string = PyUnicode_FromKindAndData(PyUnicode_2BYTE_KIND, buffer, n);
         free(buffer);
         return string;
     }
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -1902,10 +1859,11 @@ set_cursor(PyObject* unused, PyObject* args)
       case 1: [[NSCursor arrowCursor] set]; break;
       case 2: [[NSCursor crosshairCursor] set]; break;
       case 3: [[NSCursor openHandCursor] set]; break;
+      /* OSX handles busy state itself so no need to set a cursor here */
+      case 4: break;
       default: return NULL;
     }
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 @implementation WindowServerConnectionManager
@@ -2621,8 +2579,11 @@ static int _copy_agg_buffer(CGContextRef cr, PyObject *renderer)
 
     unichar uc = [[event charactersIgnoringModifiers] characterAtIndex:0];
     NSString* specialchar = [specialkeymappings objectForKey:[NSNumber numberWithUnsignedLong:uc]];
-    if (specialchar)
+    if (specialchar){
+        if ([event modifierFlags] & NSShiftKeyMask)
+            [returnkey appendString:@"shift+" ];
         [returnkey appendString:specialchar];
+    }
     else
         [returnkey appendString:[event charactersIgnoringModifiers]];
 
@@ -2843,8 +2804,7 @@ show(PyObject* self)
     Py_BEGIN_ALLOW_THREADS
     [NSApp run];
     Py_END_ALLOW_THREADS
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 typedef struct {
@@ -2864,13 +2824,8 @@ Timer_new(PyTypeObject* type, PyObject *args, PyObject *kwds)
 static PyObject*
 Timer_repr(Timer* self)
 {
-#if PY3K
     return PyUnicode_FromFormat("Timer object %p wrapping CFRunLoopTimerRef %p",
                                (void*) self, (void*)(self->timer));
-#else
-    return PyString_FromFormat("Timer object %p wrapping CFRunLoopTimerRef %p",
-                               (void*) self, (void*)(self->timer));
-#endif
 }
 
 static char Timer_doc[] =
@@ -2881,8 +2836,17 @@ static void timer_callback(CFRunLoopTimerRef timer, void* info)
     PyObject* method = info;
     PyGILState_STATE gstate = PyGILState_Ensure();
     PyObject* result = PyObject_CallFunction(method, NULL);
-    if (result==NULL) PyErr_Print();
+    if (result) {
+        Py_DECREF(result);
+    } else {
+        PyErr_Print();
+    }
     PyGILState_Release(gstate);
+}
+
+static void context_cleanup(const void* info)
+{
+    Py_DECREF((PyObject*)info);
 }
 
 static PyObject*
@@ -2900,10 +2864,6 @@ Timer__timer_start(Timer* self, PyObject* args)
         PyErr_SetString(PyExc_RuntimeError, "Failed to obtain run loop");
         return NULL;
     }
-    context.version = 0;
-    context.retain = 0;
-    context.release = 0;
-    context.copyDescription = 0;
     attribute = PyObject_GetAttrString((PyObject*)self, "_interval");
     if (attribute==NULL)
     {
@@ -2932,6 +2892,7 @@ Timer__timer_start(Timer* self, PyObject* args)
             PyErr_SetString(PyExc_ValueError, "Cannot interpret _single attribute as True of False");
             return NULL;
     }
+    Py_DECREF(attribute);
     attribute = PyObject_GetAttrString((PyObject*)self, "_on_timer");
     if (attribute==NULL)
     {
@@ -2942,6 +2903,10 @@ Timer__timer_start(Timer* self, PyObject* args)
         PyErr_SetString(PyExc_RuntimeError, "_on_timer should be a Python method");
         return NULL;
     }
+    context.version = 0;
+    context.retain = NULL;
+    context.release = context_cleanup;
+    context.copyDescription = NULL;
     context.info = attribute;
     timer = CFRunLoopTimerCreate(kCFAllocatorDefault,
                                  0,
@@ -2951,15 +2916,12 @@ Timer__timer_start(Timer* self, PyObject* args)
                                  timer_callback,
                                  &context);
     if (!timer) {
+        Py_DECREF(attribute);
         PyErr_SetString(PyExc_RuntimeError, "Failed to create timer");
         return NULL;
     }
-    Py_INCREF(attribute);
     if (self->timer) {
-        CFRunLoopTimerGetContext(self->timer, &context);
-        attribute = context.info;
-        Py_DECREF(attribute);
-        CFRunLoopRemoveTimer(runloop, self->timer, kCFRunLoopCommonModes);
+        CFRunLoopTimerInvalidate(self->timer);
         CFRelease(self->timer);
     }
     CFRunLoopAddTimer(runloop, timer, kCFRunLoopCommonModes);
@@ -2967,28 +2929,18 @@ Timer__timer_start(Timer* self, PyObject* args)
      * the timer lost before we have a chance to decrease the reference count
      * of the attribute */
     self->timer = timer;
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static PyObject*
 Timer__timer_stop(Timer* self)
 {
     if (self->timer) {
-        PyObject* attribute;
-        CFRunLoopTimerContext context;
-        CFRunLoopTimerGetContext(self->timer, &context);
-        attribute = context.info;
-        Py_DECREF(attribute);
-        CFRunLoopRef runloop = CFRunLoopGetCurrent();
-        if (runloop) {
-            CFRunLoopRemoveTimer(runloop, self->timer, kCFRunLoopCommonModes);
-        }
+        CFRunLoopTimerInvalidate(self->timer);
         CFRelease(self->timer);
         self->timer = NULL;
     }
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 static void
@@ -3104,8 +3056,6 @@ static struct PyMethodDef methods[] = {
    {NULL,          NULL, 0, NULL}/* sentinel */
 };
 
-#if PY3K
-
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
     "_macosx",
@@ -3119,11 +3069,6 @@ static struct PyModuleDef moduledef = {
 };
 
 PyObject* PyInit__macosx(void)
-
-#else
-
-void init_macosx(void)
-#endif
 {
     PyObject *module;
 
@@ -3132,31 +3077,15 @@ void init_macosx(void)
      || PyType_Ready(&NavigationToolbarType) < 0
      || PyType_Ready(&NavigationToolbar2Type) < 0
      || PyType_Ready(&TimerType) < 0)
-#if PY3K
         return NULL;
-#else
-        return;
-#endif
 
     NSApp = [NSApplication sharedApplication];
 
     if (!verify_framework())
-#if PY3K
         return NULL;
-#else
-        return;
-#endif
 
-#if PY3K
     module = PyModule_Create(&moduledef);
     if (module==NULL) return NULL;
-#else
-    module = Py_InitModule4("_macosx",
-                            methods,
-                            "Mac OS X native backend",
-                            NULL,
-                            PYTHON_API_VERSION);
-#endif
 
     Py_INCREF(&FigureCanvasType);
     Py_INCREF(&FigureManagerType);
@@ -3180,7 +3109,5 @@ void init_macosx(void)
                                name: NSWorkspaceDidLaunchApplicationNotification
                              object: nil];
     [pool release];
-#if PY3K
     return module;
-#endif
 }

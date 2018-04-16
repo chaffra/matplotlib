@@ -10,26 +10,18 @@ Displays Agg images in the browser, with interactivity
 # - `backend_webagg.py` contains a concrete implementation of a basic
 #   application, implemented with tornado.
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
-
+import datetime
 import io
 import json
 import os
-import time
 import warnings
 
 import numpy as np
 import tornado
-import datetime
 
 from matplotlib.backends import backend_agg
 from matplotlib.backend_bases import _Backend
-from matplotlib.figure import Figure
-from matplotlib import backend_bases
-from matplotlib import _png
+from matplotlib import backend_bases, _png
 
 
 # http://www.cambiaresearch.com/articles/15/javascript-char-codes-key-codes
@@ -152,17 +144,11 @@ class FigureCanvasWebAggCore(backend_agg.FigureCanvasAgg):
         show()
 
     def draw(self):
-        renderer = self.get_renderer(cleared=True)
-
         self._png_is_old = True
-
-        backend_agg.RendererAgg.lock.acquire()
         try:
-            self.figure.draw(renderer)
+            super().draw()
         finally:
-            backend_agg.RendererAgg.lock.release()
-            # Swap the frames
-            self.manager.refresh_all()
+            self.manager.refresh_all()  # Swap the frames.
 
     def draw_idle(self):
         self.send_event("draw")
@@ -359,17 +345,6 @@ class FigureCanvasWebAggCore(backend_agg.FigureCanvasAgg):
     def send_event(self, event_type, **kwargs):
         self.manager._send_event(event_type, **kwargs)
 
-    def start_event_loop(self, timeout):
-        backend_bases.FigureCanvasBase.start_event_loop_default(
-            self, timeout)
-    start_event_loop.__doc__ = \
-        backend_bases.FigureCanvasBase.start_event_loop_default.__doc__
-
-    def stop_event_loop(self):
-        backend_bases.FigureCanvasBase.stop_event_loop_default(self)
-    stop_event_loop.__doc__ = \
-        backend_bases.FigureCanvasBase.stop_event_loop_default.__doc__
-
 
 _JQUERY_ICON_CLASSES = {
     'home': 'ui-icon ui-icon-home',
@@ -479,7 +454,7 @@ class FigureManagerWebAgg(backend_bases.FigureManagerBase):
 
         with io.open(os.path.join(
                 os.path.dirname(__file__),
-                "web_backend",
+                "web_backend", "js",
                 "mpl.js"), encoding='utf8') as fd:
             output.write(fd.read())
 
@@ -512,8 +487,7 @@ class FigureManagerWebAgg(backend_bases.FigureManagerBase):
         return os.path.join(os.path.dirname(__file__), 'web_backend')
 
     def _send_event(self, event_type, **kwargs):
-        payload = {'type': event_type}
-        payload.update(kwargs)
+        payload = {'type': event_type, **kwargs}
         for s in self.web_sockets:
             s.send_json(payload)
 

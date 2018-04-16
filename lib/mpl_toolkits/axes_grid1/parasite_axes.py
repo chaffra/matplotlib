@@ -3,24 +3,14 @@ from __future__ import (absolute_import, division, print_function,
 
 import six
 
-import warnings
-
-import matplotlib
-rcParams = matplotlib.rcParams
-import matplotlib.artist as martist
-import matplotlib.transforms as mtransforms
-import matplotlib.collections as mcoll
-import matplotlib.legend as mlegend
-
+from matplotlib import (
+    artist as martist, collections as mcoll, transforms as mtransforms,
+    rcParams)
 from matplotlib.axes import subplot_class_factory
+from matplotlib.transforms import Bbox
 from .mpl_axes import Axes
 
-from matplotlib.transforms import Bbox
-
 import numpy as np
-
-import matplotlib.cbook as cbook
-is_string_like = cbook.is_string_like
 
 
 class ParasiteAxesBase(object):
@@ -31,12 +21,11 @@ class ParasiteAxesBase(object):
 
         return list(images), list(artists - images)
 
-    def __init__(self, parent_axes, **kargs):
-
+    def __init__(self, parent_axes, **kwargs):
         self._parent_axes = parent_axes
-        kargs.update(dict(frameon=False))
-        self._get_base_axes_attr("__init__")(self, parent_axes.figure,
-                                        parent_axes._position, **kargs)
+        kwargs["frameon"] = False
+        self._get_base_axes_attr("__init__")(
+            self, parent_axes.figure, parent_axes._position, **kwargs)
 
     def cla(self):
         self._get_base_axes_attr("cla")(self)
@@ -245,10 +234,8 @@ def _get_handles(ax):
 
 class HostAxesBase(object):
     def __init__(self, *args, **kwargs):
-
         self.parasites = []
         self._get_base_axes_attr("__init__")(self, *args, **kwargs)
-
 
     def get_aux_axes(self, tr, viewlim_mode="equal", axes_class=None):
         parasite_axes_class = parasite_axes_auxtrans_class_factory(axes_class)
@@ -256,11 +243,11 @@ class HostAxesBase(object):
         # note that ax2.transData == tr + ax1.transData
         # Anthing you draw in ax2 will match the ticks and grids of ax1.
         self.parasites.append(ax2)
-        ax2._remove_method = lambda h: self.parasites.remove(h)
+        ax2._remove_method = self.parasites.remove
         return ax2
 
-
     def _get_legend_handles(self, legend_handler_map=None):
+        # don't use this!
         Axes_get_legend_handles = self._get_base_axes_attr("_get_legend_handles")
         all_handles = list(Axes_get_legend_handles(self, legend_handler_map))
 
@@ -268,7 +255,6 @@ class HostAxesBase(object):
             all_handles.extend(ax._get_legend_handles(legend_handler_map))
 
         return all_handles
-
 
     def draw(self, renderer):
 
@@ -298,15 +284,10 @@ class HostAxesBase(object):
         self.artists = orig_artists
         self.images = orig_images
 
-
     def cla(self):
-
         for ax in self.parasites:
             ax.cla()
-
         self._get_base_axes_attr("cla")(self)
-        #super(HostAxes, self).cla()
-
 
     def twinx(self, y_transform=None, axes_class=None,):
         """
@@ -341,19 +322,19 @@ class HostAxesBase(object):
             #                                   viewlim_mode="transform",
             #                                   )
         self.parasites.append(ax2)
+        ax2._remove_method = self._remove_twinx
 
         self.axis["right"].set_visible(False)
 
         ax2.axis["right"].set_visible(True)
         ax2.axis["left", "top", "bottom"].set_visible(False)
 
-        def _remove_method(h):
-            self.parasites.remove(h)
-            self.axis["right"].set_visible(True)
-            self.axis["right"].toggle(ticklabels=False, label=False)
-        ax2._remove_method = _remove_method
-
         return ax2
+
+    def _remove_twinx(self, ax):
+        self.parasites.remove(ax)
+        self.axis["right"].set_visible(True)
+        self.axis["right"].toggle(ticklabels=False, label=False)
 
     def twiny(self, axes_class=None):
         """
@@ -370,20 +351,19 @@ class HostAxesBase(object):
 
         ax2 = parasite_axes_class(self, sharey=self, frameon=False)
         self.parasites.append(ax2)
+        ax2._remove_method = self._remove_twiny
 
         self.axis["top"].set_visible(False)
 
         ax2.axis["top"].set_visible(True)
         ax2.axis["left", "right", "bottom"].set_visible(False)
 
-        def _remove_method(h):
-            self.parasites.remove(h)
-            self.axis["top"].set_visible(True)
-            self.axis["top"].toggle(ticklabels=False, label=False)
-        ax2._remove_method = _remove_method
-
         return ax2
 
+    def _remove_twiny(self, ax):
+        self.parasites.remove(ax)
+        self.axis["top"].set_visible(True)
+        self.axis["top"].toggle(ticklabels=False, label=False)
 
     def twin(self, aux_trans=None, axes_class=None):
         """
@@ -396,18 +376,17 @@ class HostAxesBase(object):
         if axes_class is None:
             axes_class = self._get_base_axes()
 
-        parasite_axes_auxtrans_class = parasite_axes_auxtrans_class_factory(axes_class)
+        parasite_axes_auxtrans_class = \
+            parasite_axes_auxtrans_class_factory(axes_class)
 
         if aux_trans is None:
-            ax2 = parasite_axes_auxtrans_class(self, mtransforms.IdentityTransform(),
-                                               viewlim_mode="equal",
-                                               )
+            ax2 = parasite_axes_auxtrans_class(
+                self, mtransforms.IdentityTransform(), viewlim_mode="equal")
         else:
-            ax2 = parasite_axes_auxtrans_class(self, aux_trans,
-                                               viewlim_mode="transform",
-                                               )
+            ax2 = parasite_axes_auxtrans_class(
+                self, aux_trans, viewlim_mode="transform")
         self.parasites.append(ax2)
-        ax2._remove_method = lambda h: self.parasites.remove(h)
+        ax2._remove_method = self.parasites.remove
 
         self.axis["top", "right"].set_visible(False)
 
@@ -424,7 +403,7 @@ class HostAxesBase(object):
 
     def get_tightbbox(self, renderer, call_axes_locator=True):
 
-        bbs = [ax.get_tightbbox(renderer, call_axes_locator) \
+        bbs = [ax.get_tightbbox(renderer, call_axes_locator)
                for ax in self.parasites]
         get_tightbbox = self._get_base_axes_attr("get_tightbbox")
         bbs.append(get_tightbbox(self, renderer, call_axes_locator))
@@ -432,7 +411,6 @@ class HostAxesBase(object):
         _bbox = Bbox.union([b for b in bbs if b.width!=0 or b.height!=0])
 
         return _bbox
-
 
 
 _host_axes_classes = {}

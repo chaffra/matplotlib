@@ -1,12 +1,8 @@
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
+import numpy as np
 
 from matplotlib.collections import PolyCollection, TriMesh
 from matplotlib.colors import Normalize
 from matplotlib.tri.triangulation import Triangulation
-import numpy as np
 
 
 def tripcolor(ax, *args, **kwargs):
@@ -49,9 +45,6 @@ def tripcolor(ax, *args, **kwargs):
     The remaining kwargs are the same as for
     :meth:`~matplotlib.axes.Axes.pcolor`.
     """
-    if not ax._hold:
-        ax.cla()
-
     alpha = kwargs.pop('alpha', 1.0)
     norm = kwargs.pop('norm', None)
     cmap = kwargs.pop('cmap', None)
@@ -118,8 +111,7 @@ def tripcolor(ax, *args, **kwargs):
     else:
         # Vertices of triangles.
         maskedTris = tri.get_masked_triangles()
-        verts = np.concatenate((tri.x[maskedTris][..., np.newaxis],
-                                tri.y[maskedTris][..., np.newaxis]), axis=2)
+        verts = np.stack((tri.x[maskedTris], tri.y[maskedTris]), axis=-1)
 
         # Color values.
         if facecolors is None:
@@ -133,10 +125,8 @@ def tripcolor(ax, *args, **kwargs):
 
     collection.set_alpha(alpha)
     collection.set_array(C)
-    if norm is not None:
-        if not isinstance(norm, Normalize):
-            msg = "'norm' must be an instance of 'Normalize'"
-            raise ValueError(msg)
+    if norm is not None and not isinstance(norm, Normalize):
+        raise ValueError("'norm' must be an instance of 'Normalize'")
     collection.set_cmap(cmap)
     collection.set_norm(norm)
     if vmin is not None or vmax is not None:

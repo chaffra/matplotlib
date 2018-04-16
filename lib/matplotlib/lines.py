@@ -4,19 +4,19 @@ variety of line styles, markers and colors.
 """
 
 # TODO: expose cap and join style attrs
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from __future__ import absolute_import, division, print_function
 
 import six
 
+from numbers import Number
 import warnings
 
 import numpy as np
 
-from . import artist, colors as mcolors, docstring, rcParams
+from . import artist, cbook, colors as mcolors, docstring, rcParams
 from .artist import Artist, allow_rasterization
 from .cbook import (
-    _to_unmasked_float_array, iterable, is_numlike, ls_mapper, ls_mapper_r,
+    _to_unmasked_float_array, iterable, ls_mapper, ls_mapper_r,
     STEP_LOOKUP_MAP)
 from .markers import MarkerStyle
 from .path import Path
@@ -24,7 +24,6 @@ from .transforms import Bbox, TransformedPath, IdentityTransform
 
 # Imported here for backward compatibility, even though they don't
 # really belong.
-from numpy import ma
 from . import _path
 from .markers import (
     CARETLEFT, CARETRIGHT, CARETUP, CARETDOWN,
@@ -94,25 +93,21 @@ def segment_hits(cx, cy, x, y, radius):
     Lnorm_sq = dx ** 2 + dy ** 2  # Possibly want to eliminate Lnorm==0
     u = ((cx - xr) * dx + (cy - yr) * dy) / Lnorm_sq
     candidates = (u >= 0) & (u <= 1)
-    #if any(candidates): print "candidates",xr[candidates]
 
     # Note that there is a little area near one side of each point
     # which will be near neither segment, and another which will
     # be near both, depending on the angle of the lines.  The
     # following radius test eliminates these ambiguities.
     point_hits = (cx - x) ** 2 + (cy - y) ** 2 <= radius ** 2
-    #if any(point_hits): print "points",xr[candidates]
     candidates = candidates & ~(point_hits[:-1] | point_hits[1:])
 
     # For those candidates which remain, determine how far they lie away
     # from the line.
     px, py = xr + u * dx, yr + u * dy
     line_hits = (cx - px) ** 2 + (cy - py) ** 2 <= radius ** 2
-    #if any(line_hits): print "lines",xr[candidates]
     line_hits = line_hits & candidates
     points, = point_hits.ravel().nonzero()
     lines, = line_hits.ravel().nonzero()
-    #print points,lines
     return np.concatenate((points, lines))
 
 
@@ -166,49 +161,38 @@ def _mark_every_path(markevery, tpath, affine, ax_transform):
                         _slice_or_none(codes, slice(start, None, step)))
 
         elif isinstance(step, float):
-            if not (isinstance(start, int) or
-                    isinstance(start, float)):
-                raise ValueError('`markevery` is a tuple with '
-                    'len 2 and second element is a float, but '
-                    'the first element is not a float or an '
-                    'int; '
+            if not isinstance(start, (int, float)):
+                raise ValueError(
+                    '`markevery` is a tuple with len 2 and second element is '
+                    'a float, but the first element is not a float or an int; '
                     'markevery=%s' % (markevery,))
-            #calc cumulative distance along path (in display
-            # coords):
+            # calc cumulative distance along path (in display coords):
             disp_coords = affine.transform(tpath.vertices)
-            delta = np.empty((len(disp_coords), 2),
-                             dtype=float)
-            delta[0, :] = 0.0
-            delta[1:, :] = (disp_coords[1:, :] -
-                                disp_coords[:-1, :])
+            delta = np.empty((len(disp_coords), 2))
+            delta[0, :] = 0
+            delta[1:, :] = disp_coords[1:, :] - disp_coords[:-1, :]
             delta = np.sum(delta**2, axis=1)
             delta = np.sqrt(delta)
             delta = np.cumsum(delta)
-            #calc distance between markers along path based on
-            # the axes bounding box diagonal being a distance
-            # of unity:
-            scale = ax_transform.transform(
-                np.array([[0, 0], [1, 1]]))
+            # calc distance between markers along path based on the axes
+            # bounding box diagonal being a distance of unity:
+            scale = ax_transform.transform(np.array([[0, 0], [1, 1]]))
             scale = np.diff(scale, axis=0)
             scale = np.sum(scale**2)
             scale = np.sqrt(scale)
-            marker_delta = np.arange(start * scale,
-                                     delta[-1],
-                                     step * scale)
-            #find closest actual data point that is closest to
+            marker_delta = np.arange(start * scale, delta[-1], step * scale)
+            # find closest actual data point that is closest to
             # the theoretical distance along the path:
-            inds = np.abs(delta[np.newaxis, :] -
-                            marker_delta[:, np.newaxis])
+            inds = np.abs(delta[np.newaxis, :] - marker_delta[:, np.newaxis])
             inds = inds.argmin(axis=1)
             inds = np.unique(inds)
             # return, we are done here
             return Path(verts[inds],
                         _slice_or_none(codes, inds))
         else:
-            raise ValueError('`markevery` is a tuple with '
-                'len 2, but its second element is not an int '
-                'or a float; '
-                'markevery=%s' % (markevery,))
+            raise ValueError(
+                '`markevery` is a tuple with len 2, but its second element is '
+                'not an int or a float; markevery=%s' % (markevery,))
 
     elif isinstance(markevery, slice):
         # mazol tov, it's already a slice, just return
@@ -231,15 +215,25 @@ def _mark_every_path(markevery, tpath, affine, ax_transform):
             'markevery=%s' % (markevery,))
 
 
+@cbook._define_aliases({
+    "antialiased": ["aa"],
+    "color": ["c"],
+    "linestyle": ["ls"],
+    "linewidth": ["lw"],
+    "markeredgecolor": ["mec"],
+    "markeredgewidth": ["mew"],
+    "markerfacecolor": ["mfc"],
+    "markerfacecoloralt": ["mfcalt"],
+    "markersize": ["ms"],
+})
 class Line2D(Artist):
     """
     A line - the line can have both a solid linestyle connecting all
     the vertices, and a marker at each vertex.  Additionally, the
     drawing of the solid line is influenced by the drawstyle, e.g., one
     can create "stepped" lines in various styles.
-
-
     """
+
     lineStyles = _lineStyles = {  # hidden names deprecated
         '-':    '_draw_solid',
         '--':   '_draw_dashed',
@@ -262,11 +256,9 @@ class Line2D(Artist):
     }
 
     # drawStyles should now be deprecated.
-    drawStyles = {}
-    drawStyles.update(_drawStyles_l)
-    drawStyles.update(_drawStyles_s)
+    drawStyles = {**_drawStyles_l, **_drawStyles_s}
     # Need a list ordered with long names first:
-    drawStyleKeys = list(_drawStyles_l) + list(_drawStyles_s)
+    drawStyleKeys = [*_drawStyles_l, *_drawStyles_s]
 
     # Referenced here to maintain API.  These are defined in
     # MarkerStyle
@@ -322,7 +314,7 @@ class Line2D(Artist):
 
         %(Line2D)s
 
-        See :meth:`set_linestyle` for a decription of the line styles,
+        See :meth:`set_linestyle` for a description of the line styles,
         :meth:`set_marker` for a description of the markers, and
         :meth:`set_drawstyle` for a description of the draw styles.
 
@@ -342,6 +334,10 @@ class Line2D(Artist):
             linestyle = rcParams['lines.linestyle']
         if marker is None:
             marker = rcParams['lines.marker']
+        if markerfacecolor is None:
+            markerfacecolor = rcParams['lines.markerfacecolor']
+        if markeredgecolor is None:
+            markeredgecolor = rcParams['lines.markeredgecolor']
         if color is None:
             color = rcParams['lines.color']
 
@@ -394,9 +390,9 @@ class Line2D(Artist):
         self._us_dashSeq = None
         self._us_dashOffset = 0
 
+        self.set_linewidth(linewidth)
         self.set_linestyle(linestyle)
         self.set_drawstyle(drawstyle)
-        self.set_linewidth(linewidth)
 
         self._color = None
         self.set_color(color)
@@ -428,9 +424,8 @@ class Line2D(Artist):
         self.update(kwargs)
         self.pickradius = pickradius
         self.ind_offset = 0
-        
-        #self.set_picker(pickradius)
-        if is_numlike(self._picker):
+
+        if isinstance(self._picker, Number):
             self.pickradius = self._picker
 
         self._xorig = np.asarray([])
@@ -465,7 +460,7 @@ class Line2D(Artist):
         if callable(self._contains):
             return self._contains(self, mouseevent)
 
-        if not is_numlike(self.pickradius):
+        if not isinstance(self.pickradius, Number):
             raise ValueError("pick radius should be a distance")
 
         # Make sure we have data to plot
@@ -516,9 +511,14 @@ class Line2D(Artist):
         return self.pickradius
 
     def set_pickradius(self, d):
-        """Sets the pick radius used for containment tests
+        """Set the pick radius used for containment tests.
 
-        ACCEPTS: float distance in points
+        .. ACCEPTS: float distance in points
+
+        Parameters
+        ----------
+        d : float
+            Pick radius, in points.
         """
         self.pickradius = d
 
@@ -548,8 +548,8 @@ class Line2D(Artist):
 
         Parameters
         ----------
-        every: None | int | length-2 tuple of int | slice | list/array of int |
-        float | length-2 tuple of float
+        every: None | int | length-2 tuple of int | slice | list/array of int \
+| float | length-2 tuple of float
             Which markers to plot.
 
             - every=None, every point will be plotted.
@@ -802,19 +802,20 @@ class Line2D(Artist):
             rgbaFace = self._get_rgba_face()
             rgbaFaceAlt = self._get_rgba_face(alt=True)
             edgecolor = self.get_markeredgecolor()
-            if (isinstance(edgecolor, six.string_types)
-                    and edgecolor.lower() == 'none'):
+            if cbook._str_lower_equal(edgecolor, "none"):
                 gc.set_linewidth(0)
                 gc.set_foreground(rgbaFace, isRGBA=True)
             else:
                 gc.set_foreground(edgecolor)
                 gc.set_linewidth(self._markeredgewidth)
                 mec = self._markeredgecolor
-                if (isinstance(mec, six.string_types) and mec == 'auto' and
-                        rgbaFace is not None):
+                if (cbook._str_equal(mec, "auto")
+                        and not cbook._str_lower_equal(
+                            self.get_markerfacecolor(), "none")):
                     gc.set_alpha(rgbaFace[3])
                 else:
                     gc.set_alpha(self.get_alpha())
+            gc.set_antialiased(self._antialiased)
 
             marker = self._marker
             tpath, affine = transf_path.get_transformed_points_and_affine()
@@ -837,8 +838,7 @@ class Line2D(Artist):
                 marker_trans = marker.get_transform()
                 w = renderer.points_to_pixels(self._markersize)
 
-                if (isinstance(marker.get_marker(), six.string_types) and
-                        marker.get_marker() == ','):
+                if cbook._str_equal(marker.get_marker(), ","):
                     gc.set_linewidth(0)
                 else:
                     # Don't scale for pixels, and don't stroke them
@@ -852,8 +852,9 @@ class Line2D(Artist):
                 if alt_marker_path:
                     alt_marker_trans = marker.get_alt_transform()
                     alt_marker_trans = alt_marker_trans.scale(w)
-                    if (isinstance(mec, six.string_types) and mec == 'auto' and
-                            rgbaFaceAlt is not None):
+                    if (cbook._str_equal(mec, "auto")
+                            and not cbook._str_lower_equal(
+                                self.get_markerfacecoloralt(), "none")):
                         gc.set_alpha(rgbaFaceAlt[3])
                     else:
                         gc.set_alpha(self.get_alpha())
@@ -976,9 +977,12 @@ class Line2D(Artist):
 
     def set_antialiased(self, b):
         """
-        True if line should be drawin with antialiased rendering
+        Set whether to use antialiased rendering.
 
-        ACCEPTS: [True | False]
+        Parameters
+        ----------
+        b : bool
+            .. ACCEPTS: bool
         """
         if self._antialiased != b:
             self.stale = True
@@ -1010,6 +1014,8 @@ class Line2D(Artist):
             raise ValueError('Unrecognized drawstyle {!r}'.format(drawstyle))
         if self._drawstyle != drawstyle:
             self.stale = True
+            # invalidate to trigger a recache of the path
+            self._invalidx = True
         self._drawstyle = drawstyle
 
     def set_linewidth(self, w):
@@ -1047,17 +1053,10 @@ class Line2D(Artist):
         ls : str
             The linestyle with the drawstyle (if any) stripped.
         '''
-        ret_ds = None
         for ds in self.drawStyleKeys:  # long names are first in the list
             if ls.startswith(ds):
-                ret_ds = ds
-                if len(ls) > len(ds):
-                    ls = ls[len(ds):]
-                else:
-                    ls = '-'
-                break
-
-        return ret_ds, ls
+                return ds, ls[len(ds):] or '-'
+        return None, ls
 
     def set_linestyle(self, ls):
         """
@@ -1339,89 +1338,10 @@ class Line2D(Artist):
         self._drawstyle = other._drawstyle
 
     def _get_rgba_face(self, alt=False):
-        facecolor = self._get_markerfacecolor(alt=alt)
-        if (isinstance(facecolor, six.string_types)
-                and facecolor.lower() == 'none'):
-            rgbaFace = None
-        else:
-            rgbaFace = mcolors.to_rgba(facecolor, self._alpha)
-        return rgbaFace
+        return mcolors.to_rgba(self._get_markerfacecolor(alt=alt), self._alpha)
 
     def _get_rgba_ln_color(self, alt=False):
         return mcolors.to_rgba(self._color, self._alpha)
-
-    # some aliases....
-    def set_aa(self, val):
-        'alias for set_antialiased'
-        self.set_antialiased(val)
-
-    def set_c(self, val):
-        'alias for set_color'
-        self.set_color(val)
-
-    def set_ls(self, val):
-        """alias for set_linestyle"""
-        self.set_linestyle(val)
-
-    def set_lw(self, val):
-        """alias for set_linewidth"""
-        self.set_linewidth(val)
-
-    def set_mec(self, val):
-        """alias for set_markeredgecolor"""
-        self.set_markeredgecolor(val)
-
-    def set_mew(self, val):
-        """alias for set_markeredgewidth"""
-        self.set_markeredgewidth(val)
-
-    def set_mfc(self, val):
-        """alias for set_markerfacecolor"""
-        self.set_markerfacecolor(val)
-
-    def set_mfcalt(self, val):
-        """alias for set_markerfacecoloralt"""
-        self.set_markerfacecoloralt(val)
-
-    def set_ms(self, val):
-        """alias for set_markersize"""
-        self.set_markersize(val)
-
-    def get_aa(self):
-        """alias for get_antialiased"""
-        return self.get_antialiased()
-
-    def get_c(self):
-        """alias for get_color"""
-        return self.get_color()
-
-    def get_ls(self):
-        """alias for get_linestyle"""
-        return self.get_linestyle()
-
-    def get_lw(self):
-        """alias for get_linewidth"""
-        return self.get_linewidth()
-
-    def get_mec(self):
-        """alias for get_markeredgecolor"""
-        return self.get_markeredgecolor()
-
-    def get_mew(self):
-        """alias for get_markeredgewidth"""
-        return self.get_markeredgewidth()
-
-    def get_mfc(self):
-        """alias for get_markerfacecolor"""
-        return self.get_markerfacecolor()
-
-    def get_mfcalt(self, alt=False):
-        """alias for get_markerfacecoloralt"""
-        return self.get_markerfacecoloralt()
-
-    def get_ms(self):
-        """alias for get_markersize"""
-        return self.get_markersize()
 
     def set_dash_joinstyle(self, s):
         """
@@ -1571,7 +1491,7 @@ class VertexSelector(object):
         pass
 
     def onpick(self, event):
-        """When the line is picked, update the set of selected indicies."""
+        """When the line is picked, update the set of selected indices."""
         if event.artist is not self.line:
             return
         self.ind ^= set(event.ind)

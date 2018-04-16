@@ -1,37 +1,26 @@
 """
 Classes for including text in a figure.
 """
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
 
-import six
-from six.moves import zip
-
+import contextlib
+import logging
 import math
 import warnings
 import weakref
 
-import contextlib
-
 import numpy as np
 
-from matplotlib import cbook
-from matplotlib import rcParams
-import matplotlib.artist as artist
-from matplotlib.artist import Artist
-from matplotlib.cbook import maxdict
-from matplotlib import docstring
-from matplotlib.font_manager import FontProperties
-from matplotlib.patches import FancyBboxPatch
-from matplotlib.patches import FancyArrowPatch, Rectangle
-import matplotlib.transforms as mtransforms
-from matplotlib.transforms import Affine2D, Bbox, Transform
-from matplotlib.transforms import BboxBase, BboxTransformTo
-from matplotlib.lines import Line2D
-from matplotlib.path import Path
-from matplotlib.artist import allow_rasterization
+from . import artist, cbook, docstring, rcParams
+from .artist import Artist
+from .font_manager import FontProperties
+from .lines import Line2D
+from .patches import FancyArrowPatch, FancyBboxPatch, Rectangle
+from .textpath import TextPath  # Unused, but imported by others.
+from .transforms import (
+    Affine2D, Bbox, BboxBase, BboxTransformTo, IdentityTransform, Transform)
 
-from matplotlib.textpath import TextPath
+
+_log = logging.getLogger(__name__)
 
 
 def _process_text_args(override, fontdict=None, **kwargs):
@@ -46,8 +35,7 @@ def _process_text_args(override, fontdict=None, **kwargs):
 
 @contextlib.contextmanager
 def _wrap_text(textobj):
-    """
-    Temporarily inserts newlines to the text if the wrap option is enabled.
+    """Temporarily inserts newlines to the text if the wrap option is enabled.
     """
     if textobj.get_wrap():
         old_text = textobj.get_text()
@@ -71,10 +59,9 @@ def get_rotation(rotation):
     try:
         angle = float(rotation)
     except (ValueError, TypeError):
-        isString = isinstance(rotation, six.string_types)
-        if ((isString and rotation == 'horizontal') or rotation is None):
+        if cbook._str_equal(rotation, 'horizontal') or rotation is None:
             angle = 0.
-        elif (isString and rotation == 'vertical'):
+        elif cbook._str_equal(rotation, 'vertical'):
             angle = 90.
         else:
             raise ValueError("rotation is {0} expected either 'horizontal'"
@@ -82,62 +69,6 @@ def get_rotation(rotation):
                              "None".format(rotation))
 
     return angle % 360
-# these are not available for the object inspector until after the
-# class is build so we define an initial set here for the init
-# function and they will be overridden after object defn
-docstring.interpd.update(Text="""
-    ========================== ================================================
-    Property                   Value
-    ========================== ================================================
-    alpha                      float or None
-    animated                   [True | False]
-    backgroundcolor            any matplotlib color
-    bbox                       rectangle prop dict plus key 'pad' which is a
-                               pad in points; if a boxstyle is supplied as
-                               a string, then pad is instead a fraction
-                               of the font size
-    clip_box                   a matplotlib.transform.Bbox instance
-    clip_on                    [True | False]
-    color                      any matplotlib color
-    family                     ['serif' | 'sans-serif' | 'cursive' |
-                                'fantasy' | 'monospace']
-    figure                     a matplotlib.figure.Figure instance
-    fontproperties             a matplotlib.font_manager.FontProperties
-                               instance
-    horizontalalignment or ha  ['center' | 'right' | 'left']
-    label                      any string
-    linespacing                float
-    lod                        [True | False]
-    multialignment             ['left' | 'right' | 'center' ]
-    name or fontname           string e.g.,
-                               ['Sans' | 'Courier' | 'Helvetica' ...]
-    position                   (x,y)
-    rotation                   [ angle in degrees 'vertical' | 'horizontal'
-    rotation_mode              [ None | 'anchor']
-    size or fontsize           [size in points | relative size e.g., 'smaller',
-                                                                  'x-large']
-    style or fontstyle         [ 'normal' | 'italic' | 'oblique']
-    text                       string
-    transform                  a matplotlib.transform transformation instance
-    usetex                     [True | False | None]
-    variant                    ['normal' | 'small-caps']
-    verticalalignment or va    ['center' | 'top' | 'bottom' | 'baseline' |
-                                'center_baseline' ]
-    visible                    [True | False]
-    weight or fontweight       ['normal' | 'bold' | 'heavy' | 'light' |
-                                'ultrabold' | 'ultralight']
-    wrap                       [True | False]
-    x                          float
-    y                          float
-    zorder                     any number
-    ========================== ===============================================
-    """)
-
-# TODO : This function may move into the Text class as a method. As a
-# matter of fact, The information from the _get_textbox function
-# should be available during the Text._get_layout() call, which is
-# called within the _get_textbox. So, it would better to move this
-# function as a method with some refactoring of _get_layout method.
 
 
 def _get_textbox(text, renderer):
@@ -146,12 +77,17 @@ def _get_textbox(text, renderer):
     :meth:`matplotlib.text.Text.get_extents` method, The bbox size of
     the text before the rotation is calculated.
     """
+    # TODO : This function may move into the Text class as a method. As a
+    # matter of fact, The information from the _get_textbox function
+    # should be available during the Text._get_layout() call, which is
+    # called within the _get_textbox. So, it would better to move this
+    # function as a method with some refactoring of _get_layout method.
 
     projected_xs = []
     projected_ys = []
 
     theta = np.deg2rad(text.get_rotation())
-    tr = mtransforms.Affine2D().rotate(-theta)
+    tr = Affine2D().rotate(-theta)
 
     _, parts, d = text._get_layout(renderer)
 
@@ -168,22 +104,35 @@ def _get_textbox(text, renderer):
     xt_box, yt_box = min(projected_xs), min(projected_ys)
     w_box, h_box = max(projected_xs) - xt_box, max(projected_ys) - yt_box
 
-    tr = mtransforms.Affine2D().rotate(theta)
+    tr = Affine2D().rotate(theta)
 
     x_box, y_box = tr.transform_point((xt_box, yt_box))
 
     return x_box, y_box, w_box, h_box
 
 
+@cbook._define_aliases({
+    "family": ["fontfamily"],
+    "fontproperties": ["font_properties"],
+    "horizontalalignment": ["ha"],
+    "multialignment": ["ma"],
+    "name": ["fontname"],
+    "size": ["fontsize"],
+    "stretch": ["fontstretch"],
+    "style": ["fontstyle"],
+    "variant": ["fontvariant"],
+    "verticalalignment": ["va"],
+    "weight": ["fontweight"],
+})
 class Text(Artist):
     """
     Handle storing and drawing of text in window or data coordinates.
     """
     zorder = 3
-    _cached = maxdict(50)
+    _cached = cbook.maxdict(50)
 
     def __repr__(self):
-        return "Text(%g,%g,%s)" % (self._x, self._y, repr(self._text))
+        return "Text(%s, %s, %s)" % (self._x, self._y, repr(self._text))
 
     def __init__(self,
                  x=0, y=0, text='',
@@ -214,15 +163,16 @@ class Text(Artist):
             color = rcParams['text.color']
         if fontproperties is None:
             fontproperties = FontProperties()
-        elif isinstance(fontproperties, six.string_types):
+        elif isinstance(fontproperties, str):
             fontproperties = FontProperties(fontproperties)
 
+        self._text = ''
         self.set_text(text)
         self.set_color(color)
         self.set_usetex(usetex)
         self.set_wrap(wrap)
-        self._verticalalignment = verticalalignment
-        self._horizontalalignment = horizontalalignment
+        self.set_verticalalignment(verticalalignment)
+        self.set_horizontalalignment(horizontalalignment)
         self._multialignment = multialignment
         self._rotation = rotation
         self._fontproperties = fontproperties
@@ -241,12 +191,12 @@ class Text(Artist):
         # Update bbox last, as it depends on font properties.
         sentinel = object()  # bbox can be None, so use another sentinel.
         bbox = kwargs.pop("bbox", sentinel)
-        super(Text, self).update(kwargs)
+        super().update(kwargs)
         if bbox is not sentinel:
             self.set_bbox(bbox)
 
     def __getstate__(self):
-        d = super(Text, self).__getstate__()
+        d = super().__getstate__()
         # remove the cached _renderer (if it exists)
         d['_renderer'] = None
         return d
@@ -298,11 +248,16 @@ class Text(Artist):
 
     def set_rotation_mode(self, m):
         """
-        set text rotation mode. If "anchor", the un-rotated text
-        will first aligned according to their *ha* and
-        *va*, and then will be rotated with the alignement
-        reference point as a origin. If None (default), the text will be
-        rotated first then will be aligned.
+        Set text rotation mode.
+
+        .. ACCEPTS: [ None | "default" | "anchor" ]
+
+        Parameters
+        ----------
+        m : ``None`` or ``"default"`` or ``"anchor"``
+            If ``None`` or ``"default"``, the text will be first rotated, then
+            aligned according to their horizontal and vertical alignments.  If
+            ``"anchor"``, then alignment occurs before rotation.
         """
         if m is None or m in ["anchor", "default"]:
             self._rotation_mode = m
@@ -507,8 +462,7 @@ class Text(Artist):
                     pad = 0.3
 
             # boxstyle could be a callable or a string
-            if (isinstance(boxstyle, six.string_types)
-                    and "pad" not in boxstyle):
+            if isinstance(boxstyle, str) and "pad" not in boxstyle:
                 boxstyle += ",pad=%0.2f" % pad
 
             bbox_transmuter = props.pop("bbox_transmuter", None)
@@ -518,7 +472,7 @@ class Text(Artist):
                                     1., 1.,
                                     boxstyle=boxstyle,
                                     bbox_transmuter=bbox_transmuter,
-                                    transform=mtransforms.IdentityTransform(),
+                                    transform=IdentityTransform(),
                                     **props)
         else:
             self._bbox_patch = None
@@ -553,7 +507,7 @@ class Text(Artist):
             x_box, y_box, w_box, h_box = _get_textbox(self, renderer)
             self._bbox_patch.set_bounds(0., 0., w_box, h_box)
             theta = np.deg2rad(self.get_rotation())
-            tr = mtransforms.Affine2D().rotate(theta)
+            tr = Affine2D().rotate(theta)
             tr = tr.translate(posx + x_box, posy + y_box)
             self._bbox_patch.set_transform(tr)
             fontsize_in_pixel = renderer.points_to_pixels(self.get_size())
@@ -568,7 +522,7 @@ class Text(Artist):
         x_box, y_box, w_box, h_box = _get_textbox(self, renderer)
         self._bbox_patch.set_bounds(0., 0., w_box, h_box)
         theta = np.deg2rad(self.get_rotation())
-        tr = mtransforms.Affine2D().rotate(theta)
+        tr = Affine2D().rotate(theta)
         tr = tr.translate(posx + x_box, posy + y_box)
         self._bbox_patch.set_transform(tr)
         fontsize_in_pixel = renderer.points_to_pixels(self.get_size())
@@ -589,7 +543,7 @@ class Text(Artist):
 
         ACCEPTS: a :class:`matplotlib.transforms.Bbox` instance
         """
-        super(Text, self).set_clip_box(clipbox)
+        super().set_clip_box(clipbox)
         self._update_clip_properties()
 
     def set_clip_path(self, path, transform=None):
@@ -613,30 +567,35 @@ class Text(Artist):
         :class:`~matplotlib.transforms.Transform`) |
         :class:`~matplotlib.patches.Patch` | None ]
         """
-        super(Text, self).set_clip_path(path, transform)
+        super().set_clip_path(path, transform)
         self._update_clip_properties()
 
     def set_clip_on(self, b):
         """
         Set whether artist uses clipping.
 
-        When False artists will be visible out side of the axes which
-        can lead to unexpected results.
+        When False, artists will be visible outside of the axes, which can lead
+        to unexpected results.
 
-        ACCEPTS: [True | False]
+        Parameters
+        ----------
+        b : bool
+            .. ACCEPTS: bool
         """
-        super(Text, self).set_clip_on(b)
+        super().set_clip_on(b)
         self._update_clip_properties()
 
     def get_wrap(self):
-        """
-        Returns the wrapping state for the text.
-        """
+        """Returns the wrapping state for the text."""
         return self._wrap
 
     def set_wrap(self, wrap):
-        """
-        Sets the wrapping state for the text.
+        """Sets the wrapping state for the text.
+
+        Parameters
+        ----------
+        wrap : bool
+            .. ACCEPTS: bool
         """
         self._wrap = wrap
 
@@ -737,7 +696,7 @@ class Text(Artist):
 
         return wrapped_str + line
 
-    @allow_rasterization
+    @artist.allow_rasterization
     def draw(self, renderer):
         """
         Draws the :class:`Text` object to the given *renderer*.
@@ -759,9 +718,10 @@ class Text(Artist):
             # position in Text, and dash position in TextWithDash:
             posx = float(textobj.convert_xunits(textobj._x))
             posy = float(textobj.convert_yunits(textobj._y))
-            if not np.isfinite(posx) or not np.isfinite(posy):
-                raise ValueError("posx and posy should be finite values")
             posx, posy = trans.transform_point((posx, posy))
+            if not np.isfinite(posx) or not np.isfinite(posy):
+                _log.warning("posx and posy should be finite values")
+                return
             canvasw, canvash = renderer.get_canvas_width_height()
 
             # draw the FancyBboxPatch
@@ -814,17 +774,9 @@ class Text(Artist):
         "Return the :class:`~font_manager.FontProperties` object"
         return self._fontproperties
 
-    def get_font_properties(self):
-        'alias for get_fontproperties'
-        return self.get_fontproperties()
-
     def get_family(self):
         "Return the list of font families used for font lookup"
         return self._fontproperties.get_family()
-
-    def get_fontfamily(self):
-        'alias for get_family'
-        return self.get_family()
 
     def get_name(self):
         "Return the font name as string"
@@ -842,41 +794,13 @@ class Text(Artist):
         "Return the font variant as a string"
         return self._fontproperties.get_variant()
 
-    def get_fontvariant(self):
-        'alias for get_variant'
-        return self.get_variant()
-
     def get_weight(self):
         "Get the font weight as string or number"
         return self._fontproperties.get_weight()
 
-    def get_fontname(self):
-        'alias for get_name'
-        return self.get_name()
-
-    def get_fontstyle(self):
-        'alias for get_style'
-        return self.get_style()
-
-    def get_fontsize(self):
-        'alias for get_size'
-        return self.get_size()
-
-    def get_fontweight(self):
-        'alias for get_weight'
-        return self.get_weight()
-
     def get_stretch(self):
         'Get the font stretch as a string or number'
         return self._fontproperties.get_stretch()
-
-    def get_fontstretch(self):
-        'alias for get_stretch'
-        return self.get_stretch()
-
-    def get_ha(self):
-        'alias for get_horizontalalignment'
-        return self.get_horizontalalignment()
 
     def get_horizontalalignment(self):
         """
@@ -888,7 +812,7 @@ class Text(Artist):
     def get_unitless_position(self):
         "Return the unitless position of the text as a tuple (*x*, *y*)"
         # This will get the position with all unit information stripped away.
-        # This is here for convienience since it is done in several locations.
+        # This is here for convenience since it is done in several locations.
         x = float(self.convert_xunits(self._x))
         y = float(self.convert_yunits(self._y))
         return x, y
@@ -920,10 +844,6 @@ class Text(Artist):
     def get_text(self):
         "Get the text as string"
         return self._text
-
-    def get_va(self):
-        'alias for :meth:`getverticalalignment`'
-        return self.get_verticalalignment()
 
     def get_verticalalignment(self):
         """
@@ -1008,10 +928,6 @@ class Text(Artist):
         self._color = color
         self.stale = True
 
-    def set_ha(self, align):
-        'alias for set_horizontalalignment'
-        self.set_horizontalalignment(align)
-
     def set_horizontalalignment(self, align):
         """
         Set the horizontal alignment to one of
@@ -1024,10 +940,6 @@ class Text(Artist):
                              str(legal))
         self._horizontalalignment = align
         self.stale = True
-
-    def set_ma(self, align):
-        'alias for set_verticalalignment'
-        self.set_multialignment(align)
 
     def set_multialignment(self, align):
         """
@@ -1057,11 +969,10 @@ class Text(Artist):
 
     def set_family(self, fontname):
         """
-        Set the font family.  May be either a single string, or a list
-        of strings in decreasing priority.  Each string may be either
-        a real font name or a generic font class name.  If the latter,
-        the specific font names will be looked up in the
-        :file:`matplotlibrc` file.
+        Set the font family.  May be either a single string, or a list of
+        strings in decreasing priority.  Each string may be either a real font
+        name or a generic font class name.  If the latter, the specific font
+        names will be looked up in the corresponding rcParams.
 
         ACCEPTS: [FONTNAME | 'serif' | 'sans-serif' | 'cursive' | 'fantasy' |
                   'monospace' ]
@@ -1078,18 +989,6 @@ class Text(Artist):
         self._fontproperties.set_variant(variant)
         self.stale = True
 
-    def set_fontvariant(self, variant):
-        'alias for set_variant'
-        return self.set_variant(variant)
-
-    def set_name(self, fontname):
-        """alias for set_family"""
-        return self.set_family(fontname)
-
-    def set_fontname(self, fontname):
-        """alias for set_family"""
-        self.set_family(fontname)
-
     def set_style(self, fontstyle):
         """
         Set the font style.
@@ -1098,10 +997,6 @@ class Text(Artist):
         """
         self._fontproperties.set_style(fontstyle)
         self.stale = True
-
-    def set_fontstyle(self, fontstyle):
-        'alias for set_style'
-        return self.set_style(fontstyle)
 
     def set_size(self, fontsize):
         """
@@ -1113,10 +1008,6 @@ class Text(Artist):
         """
         self._fontproperties.set_size(fontsize)
         self.stale = True
-
-    def set_fontsize(self, fontsize):
-        'alias for set_size'
-        return self.set_size(fontsize)
 
     def set_weight(self, weight):
         """
@@ -1130,10 +1021,6 @@ class Text(Artist):
         self._fontproperties.set_weight(weight)
         self.stale = True
 
-    def set_fontweight(self, weight):
-        'alias for set_weight'
-        return self.set_weight(weight)
-
     def set_stretch(self, stretch):
         """
         Set the font stretch (horizontal condensation or expansion).
@@ -1145,10 +1032,6 @@ class Text(Artist):
         """
         self._fontproperties.set_stretch(stretch)
         self.stale = True
-
-    def set_fontstretch(self, stretch):
-        'alias for set_stretch'
-        return self.set_stretch(stretch)
 
     def set_position(self, xy):
         """
@@ -1186,17 +1069,14 @@ class Text(Artist):
         self._rotation = s
         self.stale = True
 
-    def set_va(self, align):
-        'alias for set_verticalalignment'
-        self.set_verticalalignment(align)
-
     def set_verticalalignment(self, align):
         """
         Set the vertical alignment
 
-        ACCEPTS: [ 'center' | 'top' | 'bottom' | 'baseline' ]
+        ACCEPTS: [ 'center' | 'top' | 'bottom' | 'baseline' |
+                   'center_baseline' ]
         """
-        legal = ('top', 'bottom', 'center', 'baseline')
+        legal = ('top', 'bottom', 'center', 'baseline', 'center_baseline')
         if align not in legal:
             raise ValueError('Vertical alignment must be one of %s' %
                              str(legal))
@@ -1206,14 +1086,18 @@ class Text(Artist):
 
     def set_text(self, s):
         """
-        Set the text string *s*
+        Set the text string *s*.
 
         It may contain newlines (``\\n``) or math in LaTeX syntax.
 
-        ACCEPTS: string or anything printable with '%s' conversion.
+        ACCEPTS: string or object castable to string, except
+        ``None``, which is set to an empty string.
         """
-        self._text = '%s' % (s,)
-        self.stale = True
+        if s is None:
+            s = ''
+        if s != self._text:
+            self._text = '%s' % (s,)
+            self.stale = True
 
     @staticmethod
     def is_math_text(s, usetex=None):
@@ -1245,21 +1129,20 @@ class Text(Artist):
 
         ACCEPTS: a :class:`matplotlib.font_manager.FontProperties` instance
         """
-        if isinstance(fp, six.string_types):
+        if isinstance(fp, str):
             fp = FontProperties(fp)
         self._fontproperties = fp.copy()
         self.stale = True
 
-    def set_font_properties(self, fp):
-        'alias for set_fontproperties'
-        self.set_fontproperties(fp)
-
     def set_usetex(self, usetex):
         """
-        Set this `Text` object to render using TeX (or not).
+        Parameters
+        ----------
+        usetex : bool or None
+            Whether to render using TeX, ``None`` means to use
+            :rc:`text.usetex`.
 
-        If `None` is given, the option will be reset to use the value of
-        `rcParams['text.usetex']`
+            .. ACCEPTS: bool or None
         """
         if usetex is None:
             self._usetex = rcParams['text.usetex']
@@ -1269,15 +1152,20 @@ class Text(Artist):
 
     def get_usetex(self):
         """
-        Return whether this `Text` object will render using TeX.
+        Return whether this `Text` object uses TeX for rendering.
 
-        If the user has not manually set this value, it will default to
-        the value of `rcParams['text.usetex']`
+        If the user has not manually set this value, it defaults to
+        :rc:`text.usetex`.
         """
         if self._usetex is None:
             return rcParams['text.usetex']
         else:
             return self._usetex
+
+    def set_name(self, fontname):  # One-way alias only: the getter differs.
+        """alias for set_family"""
+        return self.set_family(fontname)
+
 
 docstring.interpd.update(Text=artist.kwdoc(Text))
 docstring.dedent_interpd(Text.__init__)
@@ -1388,7 +1276,7 @@ class TextWithDash(Text):
     def get_unitless_position(self):
         "Return the unitless position of the text as a tuple (*x*, *y*)"
         # This will get the position with all unit information stripped away.
-        # This is here for convienience since it is done in several locations.
+        # This is here for convenience since it is done in several locations.
         x = float(self.convert_xunits(self._dashx))
         y = float(self.convert_yunits(self._dashy))
         return x, y
@@ -1803,8 +1691,8 @@ class _AnnotationBase(object):
             return BboxTransformTo(s)
         elif isinstance(s, Transform):
             return s
-        elif not isinstance(s, six.string_types):
-            raise RuntimeError("unknown coordinate type : %s" % (s,))
+        elif not isinstance(s, str):
+            raise RuntimeError("unknown coordinate type : %s" % s)
 
         if s == 'data':
             return self.axes.transData
@@ -1867,20 +1755,18 @@ class _AnnotationBase(object):
         return x, y (in display coordinate) that is to be used for a reference
         of any offset coordinate
         """
+        def is_offset(s):
+            return isinstance(s, str) and s.split()[0] == "offset"
 
         if isinstance(self.xycoords, tuple):
             s1, s2 = self.xycoords
-            if ((isinstance(s1, six.string_types)
-                 and s1.split()[0] == "offset")
-                    or (isinstance(s2, six.string_types)
-                        and s2.split()[0] == "offset")):
+            if is_offset(s1) or is_offset(s2):
                 raise ValueError("xycoords should not be an offset coordinate")
             x, y = self.xy
             x1, y1 = self._get_xy(renderer, x, y, s1)
             x2, y2 = self._get_xy(renderer, x, y, s2)
             return x1, y2
-        elif (isinstance(self.xycoords, six.string_types) and
-              self.xycoords.split()[0] == "offset"):
+        elif is_offset(self.xycoords):
             raise ValueError("xycoords should not be an offset coordinate")
         else:
             x, y = self.xy
@@ -2157,8 +2043,6 @@ class Annotation(Text, _AnnotationBase):
 
         self.arrowprops = arrowprops
 
-        self.arrow = None
-
         if arrowprops is not None:
             if "arrowstyle" in arrowprops:
                 arrowprops = self.arrowprops.copy()
@@ -2178,9 +2062,6 @@ class Annotation(Text, _AnnotationBase):
 
     def contains(self, event):
         contains, tinfo = Text.contains(self, event)
-        if self.arrow is not None:
-            in_arrow, _ = self.arrow.contains(event)
-            contains = contains or in_arrow
         if self.arrow_patch is not None:
             in_patch, _ = self.arrow_patch.contains(event)
             contains = contains or in_patch
@@ -2204,9 +2085,6 @@ class Annotation(Text, _AnnotationBase):
         self._textcoords = coords
 
     def set_figure(self, fig):
-
-        if self.arrow is not None:
-            self.arrow.set_figure(fig)
         if self.arrow_patch is not None:
             self.arrow_patch.set_figure(fig)
         Artist.set_figure(self, fig)
@@ -2287,7 +2165,7 @@ class Annotation(Text, _AnnotationBase):
 
             # The arrow will be drawn from (ox0, oy0) to (ox1,
             # oy1). It will be first clipped by patchA and patchB.
-            # Then it will be shrunk by shirnkA and shrinkB
+            # Then it will be shrunk by shrinkA and shrinkB
             # (in points). If patch A is not set, self.bbox_patch
             # is used.
 
@@ -2314,12 +2192,12 @@ class Annotation(Text, _AnnotationBase):
                                   width=w,
                                   height=h,
                                   )
-                    r.set_transform(mtransforms.IdentityTransform())
+                    r.set_transform(IdentityTransform())
                     r.set_clip_on(False)
 
                     self.arrow_patch.set_patchA(r)
 
-    @allow_rasterization
+    @artist.allow_rasterization
     def draw(self, renderer):
         """
         Draw the :class:`Annotation` object to the given *renderer*.
@@ -2363,18 +2241,19 @@ class Annotation(Text, _AnnotationBase):
         '''
         if not self.get_visible():
             return Bbox.unit()
-        arrow = self.arrow
-        arrow_patch = self.arrow_patch
 
         text_bbox = Text.get_window_extent(self, renderer=renderer)
         bboxes = [text_bbox]
 
-        if self.arrow is not None:
-            bboxes.append(arrow.get_window_extent(renderer=renderer))
-        elif self.arrow_patch is not None:
-            bboxes.append(arrow_patch.get_window_extent(renderer=renderer))
+        if self.arrow_patch is not None:
+            bboxes.append(
+                self.arrow_patch.get_window_extent(renderer=renderer))
 
         return Bbox.union(bboxes)
+
+    arrow = property(
+        fget=cbook.deprecated("3.0")(lambda self: None),
+        fset=cbook.deprecated("3.0")(lambda self, value: None))
 
 
 docstring.interpd.update(Annotation=Annotation.__init__.__doc__)

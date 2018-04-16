@@ -1,8 +1,3 @@
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
-import six
-
 from .geo import AitoffAxes, HammerAxes, LambertAxes, MollweideAxes
 from .polar import PolarAxes
 from matplotlib import axes
@@ -67,15 +62,11 @@ def get_projection_class(projection=None):
 
 def process_projection_requirements(figure, *args, **kwargs):
     """
-    Handle the args/kwargs to for add_axes/add_subplot/gca,
-    returning::
+    Handle the args/kwargs to add_axes/add_subplot/gca, returning::
 
         (axes_proj_class, proj_class_kwargs, proj_stack_key)
 
-    Which can be used for new axes initialization/identification.
-
-    .. note:: **kwargs** is modified in place.
-
+    which can be used for new axes initialization/identification.
     """
     ispolar = kwargs.pop('polar', False)
     projection = kwargs.pop('projection', None)
@@ -87,14 +78,14 @@ def process_projection_requirements(figure, *args, **kwargs):
                 projection)
         projection = 'polar'
 
-    if isinstance(projection, six.string_types) or projection is None:
+    if isinstance(projection, str) or projection is None:
         projection_class = get_projection_class(projection)
     elif hasattr(projection, '_as_mpl_axes'):
         projection_class, extra_kwargs = projection._as_mpl_axes()
         kwargs.update(**extra_kwargs)
     else:
         raise TypeError('projection must be a string, None or implement a '
-                            '_as_mpl_axes method. Got %r' % projection)
+                        '_as_mpl_axes method. Got %r' % projection)
 
     # Make the key without projection kwargs, this is used as a unique
     # lookup for axes instances

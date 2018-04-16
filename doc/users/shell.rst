@@ -34,7 +34,7 @@ IPython to the rescue
     shadow python built-in and can lead to hard to track bugs. To get IPython
     integration without imports the use of the  `%matplotlib` magic is
     preferred. See
-    `ipython documentation <http://ipython.org/ipython-doc/stable/interactive/reference.html#plotting-with-matplotlib>`_
+    `ipython documentation <https://ipython.readthedocs.io/en/stable/interactive/reference.html#plotting-with-matplotlib>`_
     .
 
 Fortunately, `ipython <http://ipython.org/>`_, an enhanced
@@ -100,7 +100,7 @@ up python.  Then::
   >>> xlabel('hi mom')
 
 should work out of the box.  This is also likely to work with recent
-versions of the qt4agg and gtkagg backends, and with the macosx backend
+versions of the qt4agg and gtk3agg backends, and with the macosx backend
 on the Macintosh. Note, in batch mode,
 i.e. when making
 figures from scripts, interactive mode can be slow since it redraws

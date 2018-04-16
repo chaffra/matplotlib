@@ -1,12 +1,9 @@
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+import collections
+import inspect
+from unittest import mock
 
-try:
-    # mock in python 3.3+
-    from unittest import mock
-except ImportError:
-    import mock
 import numpy as np
+import pytest
 
 from matplotlib.testing.decorators import image_comparison
 import matplotlib.pyplot as plt
@@ -14,6 +11,24 @@ import matplotlib as mpl
 import matplotlib.transforms as mtransforms
 import matplotlib.collections as mcollections
 from matplotlib.legend_handler import HandlerTuple
+import matplotlib.legend as mlegend
+
+
+def test_legend_ordereddict():
+    # smoketest that ordereddict inputs work...
+
+    X = np.random.randn(10)
+    Y = np.random.randn(10)
+    labels = ['a'] * 5 + ['b'] * 5
+    colors = ['r'] * 5 + ['g'] * 5
+
+    fig, ax = plt.subplots()
+    for x, y, label, color in zip(X, Y, labels, colors):
+        ax.scatter(x, y, label=label, c=color)
+
+    handles, labels = ax.get_legend_handles_labels()
+    legend = collections.OrderedDict(zip(labels, handles))
+    ax.legend(legend.values(), legend.keys(), loc=6, bbox_to_anchor=(1, .5))
 
 
 @image_comparison(baseline_images=['legend_auto1'], remove_text=True)
@@ -57,7 +72,7 @@ def test_various_labels():
     fig = plt.figure()
     ax = fig.add_subplot(121)
     ax.plot(np.arange(4), 'o', label=1)
-    ax.plot(np.linspace(4, 4.1), 'o', label='D\xe9velopp\xe9s')
+    ax.plot(np.linspace(4, 4.1), 'o', label='Développés')
     ax.plot(np.arange(4, 1, -1), 'o', label='__nolegend__')
     ax.legend(numpoints=1, loc=0)
 
@@ -233,13 +248,19 @@ class TestLegendFunction(object):
             plt.legend(['foobar'])
         Legend.assert_called_with(plt.gca(), lines, ['foobar'])
 
+    def test_legend_three_args(self):
+        lines = plt.plot(range(10), label='hello world')
+        with mock.patch('matplotlib.legend.Legend') as Legend:
+            plt.legend(lines, ['foobar'], loc='right')
+        Legend.assert_called_with(plt.gca(), lines, ['foobar'], loc='right')
+
     def test_legend_handler_map(self):
         lines = plt.plot(range(10), label='hello world')
-        with mock.patch('matplotlib.axes.Axes.'
-                        'get_legend_handles_labels') as handles_labels:
+        with mock.patch('matplotlib.legend.'
+                        '_get_legend_handles_labels') as handles_labels:
             handles_labels.return_value = lines, ['hello world']
             plt.legend(handler_map={'1': 2})
-        handles_labels.assert_called_with({'1': 2})
+        handles_labels.assert_called_with([plt.gca()], {'1': 2})
 
     def test_kwargs(self):
         fig, ax = plt.subplots(1, 1)
@@ -247,7 +268,7 @@ class TestLegendFunction(object):
         lns, = ax.plot(th, np.sin(th), label='sin', lw=5)
         lnc, = ax.plot(th, np.cos(th), label='cos', lw=5)
         with mock.patch('matplotlib.legend.Legend') as Legend:
-            ax.legend(handles=(lnc, lns), labels=('a', 'b'))
+            ax.legend(labels=('a', 'b'), handles=(lnc, lns))
         Legend.assert_called_with(ax, (lnc, lns), ('a', 'b'))
 
     def test_warn_args_kwargs(self):
@@ -259,7 +280,80 @@ class TestLegendFunction(object):
             ax.legend((lnc, lns), labels=('a', 'b'))
 
         warn.assert_called_with("You have mixed positional and keyword "
-                                "arguments, some input will be "
+                                "arguments, some input may be "
+                                "discarded.")
+
+    def test_parasite(self):
+        from mpl_toolkits.axes_grid1 import host_subplot
+
+        host = host_subplot(111)
+        par = host.twinx()
+
+        p1, = host.plot([0, 1, 2], [0, 1, 2], label="Density")
+        p2, = par.plot([0, 1, 2], [0, 3, 2], label="Temperature")
+
+        with mock.patch('matplotlib.legend.Legend') as Legend:
+            leg = plt.legend()
+        Legend.assert_called_with(host, [p1, p2],
+                ['Density', 'Temperature'])
+
+
+class TestLegendFigureFunction(object):
+    # Tests the legend function for figure
+    def test_legend_handle_label(self):
+        fig, ax = plt.subplots()
+        lines = ax.plot(range(10))
+        with mock.patch('matplotlib.legend.Legend') as Legend:
+            fig.legend(lines, ['hello world'])
+        Legend.assert_called_with(fig, lines, ['hello world'])
+
+    def test_legend_no_args(self):
+        fig, ax = plt.subplots()
+        lines = ax.plot(range(10), label='hello world')
+        with mock.patch('matplotlib.legend.Legend') as Legend:
+            fig.legend()
+        Legend.assert_called_with(fig, lines, ['hello world'])
+
+    def test_legend_label_arg(self):
+        fig, ax = plt.subplots()
+        lines = ax.plot(range(10))
+        with mock.patch('matplotlib.legend.Legend') as Legend:
+            fig.legend(['foobar'])
+        Legend.assert_called_with(fig, lines, ['foobar'])
+
+    def test_legend_label_three_args(self):
+        fig, ax = plt.subplots()
+        lines = ax.plot(range(10))
+        with mock.patch('matplotlib.legend.Legend') as Legend:
+            fig.legend(lines, ['foobar'], 'right')
+        Legend.assert_called_with(fig, lines, ['foobar'], 'right')
+
+    def test_legend_label_three_args_pluskw(self):
+        # test that third argument and loc=  called together give
+        # Exception
+        fig, ax = plt.subplots()
+        lines = ax.plot(range(10))
+        with pytest.raises(Exception):
+            fig.legend(lines, ['foobar'], 'right', loc='left')
+
+    def test_legend_kw_args(self):
+        fig, axs = plt.subplots(1, 2)
+        lines = axs[0].plot(range(10))
+        lines2 = axs[1].plot(np.arange(10) * 2.)
+        with mock.patch('matplotlib.legend.Legend') as Legend:
+            fig.legend(loc='right', labels=('a', 'b'),
+                    handles=(lines, lines2))
+        Legend.assert_called_with(fig, (lines, lines2), ('a', 'b'),
+                loc='right')
+
+    def test_warn_args_kwargs(self):
+        fig, axs = plt.subplots(1, 2)
+        lines = axs[0].plot(range(10))
+        lines2 = axs[1].plot(np.arange(10) * 2.)
+        with mock.patch('warnings.warn') as warn:
+            fig.legend((lines, lines2), labels=('a', 'b'))
+        warn.assert_called_with("You have mixed positional and keyword "
+                                "arguments, some input may be "
                                 "discarded.")
 
 
@@ -305,6 +399,21 @@ def test_nanscatter():
 
     ax.legend()
     ax.grid(True)
+
+
+def test_legend_repeatcheckok():
+    fig, ax = plt.subplots()
+    ax.scatter(0.0, 1.0, color='k', marker='o', label='test')
+    ax.scatter(0.5, 0.0, color='r', marker='v', label='test')
+    hl = ax.legend()
+    hand, lab = mlegend._get_legend_handles_labels([ax])
+    assert len(lab) == 2
+    fig, ax = plt.subplots()
+    ax.scatter(0.0, 1.0, color='k', marker='o', label='test')
+    ax.scatter(0.5, 0.0, color='k', marker='v', label='test')
+    hl = ax.legend()
+    hand, lab = mlegend._get_legend_handles_labels([ax])
+    assert len(lab) == 2
 
 
 @image_comparison(baseline_images=['not_covering_scatter'], extensions=['png'])
@@ -368,3 +477,28 @@ def test_shadow_framealpha():
     ax.plot(range(100), label="test")
     leg = ax.legend(shadow=True, facecolor='w')
     assert leg.get_frame().get_alpha() == 1
+
+
+def test_legend_title_empty():
+    # test that if we don't set the legend title, that
+    # it comes back as an empty string, and that it is not
+    # visible:
+    fig, ax = plt.subplots()
+    ax.plot(range(10))
+    leg = ax.legend()
+    assert leg.get_title().get_text() == ""
+    assert leg.get_title().get_visible() is False
+
+
+def test_legend_proper_window_extent():
+    # test that legend returns the expected extent under various dpi...
+    fig, ax = plt.subplots(dpi=100)
+    ax.plot(range(10), label='Aardvark')
+    leg = ax.legend()
+    x01 = leg.get_window_extent(fig.canvas.get_renderer()).x0
+
+    fig, ax = plt.subplots(dpi=200)
+    ax.plot(range(10), label='Aardvark')
+    leg = ax.legend()
+    x02 = leg.get_window_extent(fig.canvas.get_renderer()).x0
+    assert pytest.approx(x01*2, 0.1) == x02

@@ -1,15 +1,10 @@
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
 from collections import OrderedDict
-
-import six
-from six.moves import xrange
-
 import itertools
-import warnings
+import logging
 import math
 from operator import attrgetter
+import types
+import warnings
 
 import numpy as np
 
@@ -33,18 +28,14 @@ import matplotlib.text as mtext
 import matplotlib.image as mimage
 from matplotlib.offsetbox import OffsetBox
 from matplotlib.artist import allow_rasterization
+from matplotlib.legend import Legend
 
 from matplotlib.rcsetup import cycler
 from matplotlib.rcsetup import validate_axisbelow
 
+_log = logging.getLogger(__name__)
+
 rcParams = matplotlib.rcParams
-
-is_string_like = cbook.is_string_like
-is_sequence_of_strings = cbook.is_sequence_of_strings
-
-_hold_msg = """axes.hold is deprecated.
-    See the API Changes document (http://matplotlib.org/api/api_changes.html)
-    for more details."""
 
 
 def _process_plot_format(fmt):
@@ -61,7 +52,7 @@ def _process_plot_format(fmt):
     .. seealso::
 
         :func:`~matplotlib.Line2D.lineStyles` and
-        :func:`~matplotlib.pyplot.colors`
+        :attr:`~matplotlib.colors.cnames`
             for all possible styles and color format string.
     """
 
@@ -157,7 +148,7 @@ class _process_plot_var_args(object):
         self.set_prop_cycle()
 
     def __getstate__(self):
-        # note: it is not possible to pickle a itertools.cycle instance
+        # note: it is not possible to pickle a generator (and thus a cycler).
         return {'axes': self.axes, 'command': self.command}
 
     def __setstate__(self, state):
@@ -165,6 +156,7 @@ class _process_plot_var_args(object):
         self.set_prop_cycle()
 
     def set_prop_cycle(self, *args, **kwargs):
+        # Can't do `args == (None,)` as that crashes cycler.
         if not (args or kwargs) or (len(args) == 1 and args[0] is None):
             prop_cycler = rcParams['axes.prop_cycle']
         else:
@@ -196,12 +188,10 @@ class _process_plot_var_args(object):
         return ret
 
     def get_next_color(self):
-        """
-        Return the next color in the cycle.
-        """
+        """Return the next color in the cycle."""
         if 'color' not in self._prop_keys:
             return 'k'
-        return six.next(self.prop_cycler)['color']
+        return next(self.prop_cycler)['color']
 
     def set_lineprops(self, line, **kwargs):
         assert self.command == 'plot', 'set_lineprops only works with "plot"'
@@ -274,7 +264,7 @@ class _process_plot_var_args(object):
                for k in prop_keys):
             # Need to copy this dictionary or else the next time around
             # in the cycle, the dictionary could be missing entries.
-            default_dict = six.next(self.prop_cycler).copy()
+            default_dict = next(self.prop_cycler).copy()
             for p in ignore:
                 default_dict.pop(p, None)
         else:
@@ -294,8 +284,7 @@ class _process_plot_var_args(object):
                     kw[k] = defaults[k]
 
     def _makeline(self, x, y, kw, kwargs):
-        kw = kw.copy()  # Don't modify the original kw.
-        kw.update(kwargs)
+        kw = {**kw, **kwargs}  # Don't modify the original kw.
         default_dict = self._getdefaults(None, kw)
         self._setdefaults(default_dict, kw)
         seg = mlines.Line2D(x, y, **kw)
@@ -316,7 +305,7 @@ class _process_plot_var_args(object):
         ignores = {'marker', 'markersize', 'markeredgecolor',
                    'markerfacecolor', 'markeredgewidth'}
         # Also ignore anything provided by *kwargs*.
-        for k, v in six.iteritems(kwargs):
+        for k, v in kwargs.items():
             if v is not None:
                 ignores.add(k)
 
@@ -342,8 +331,7 @@ class _process_plot_var_args(object):
         # modify the kwargs dictionary.
         self._setdefaults(default_dict, kwargs)
 
-        seg = mpatches.Polygon(np.hstack((x[:, np.newaxis],
-                                          y[:, np.newaxis])),
+        seg = mpatches.Polygon(np.column_stack((x, y)),
                                facecolor=facecolor,
                                fill=kwargs.get('fill', True),
                                closed=kw['closed'])
@@ -352,7 +340,7 @@ class _process_plot_var_args(object):
 
     def _plot_args(self, tup, kwargs):
         ret = []
-        if len(tup) > 1 and isinstance(tup[-1], six.string_types):
+        if len(tup) > 1 and isinstance(tup[-1], str):
             linestyle, marker, color = _process_plot_format(tup[-1])
             tup = tup[:-1]
         elif len(tup) == 3:
@@ -390,7 +378,10 @@ class _process_plot_var_args(object):
             func = self._makefill
 
         ncx, ncy = x.shape[1], y.shape[1]
-        for j in xrange(max(ncx, ncy)):
+        if ncx > 1 and ncy > 1 and ncx != ncy:
+            cbook.warn_deprecated("2.2", "cycling among columns of inputs "
+                                  "with non-matching shapes is deprecated.")
+        for j in range(max(ncx, ncy)):
             seg = func(x[:, j % ncx], y[:, j % ncy], kw, kwargs)
             ret.append(seg)
         return ret
@@ -398,11 +389,10 @@ class _process_plot_var_args(object):
     def _grab_next_args(self, *args, **kwargs):
         while args:
             this, args = args[:2], args[2:]
-            if args and isinstance(args[0], six.string_types):
+            if args and isinstance(args[0], str):
                 this += args[0],
                 args = args[1:]
-            for seg in self._plot_args(this, kwargs):
-                yield seg
+            yield from self._plot_args(this, kwargs)
 
 
 class _AxesBase(martist.Artist):
@@ -412,6 +402,7 @@ class _AxesBase(martist.Artist):
 
     _shared_x_axes = cbook.Grouper()
     _shared_y_axes = cbook.Grouper()
+    _twinned_axes = cbook.Grouper()
 
     def __str__(self):
         return "{0}({1[0]:g},{1[1]:g};{1[2]:g}x{1[3]:g})".format(
@@ -425,7 +416,6 @@ class _AxesBase(martist.Artist):
                  label='',
                  xscale=None,
                  yscale=None,
-                 axisbg=None,  # This will be removed eventually
                  **kwargs
                  ):
         """
@@ -439,22 +429,21 @@ class _AxesBase(martist.Artist):
           ================   =========================================
           Keyword            Description
           ================   =========================================
-          *adjustable*       [ 'box' | 'datalim' | 'box-forced']
+          *adjustable*       [ 'box' | 'datalim' ]
           *alpha*            float: the alpha transparency (can be None)
           *anchor*           [ 'C', 'SW', 'S', 'SE', 'E', 'NE', 'N',
                                'NW', 'W' ]
           *aspect*           [ 'auto' | 'equal' | aspect_ratio ]
-          *autoscale_on*     [ *True* | *False* ] whether or not to
-                             autoscale the *viewlim*
-          *axisbelow*        [ *True* | *False* | 'line'] draw the grids
+          *autoscale_on*     bool; whether to autoscale the *viewlim*
+          *axisbelow*        [ bool | 'line' ] draw the grids
                              and ticks below or above most other artists,
                              or below lines but above patches
           *cursor_props*     a (*float*, *color*) tuple
           *figure*           a :class:`~matplotlib.figure.Figure`
                              instance
-          *frame_on*         a boolean - draw the axes frame
+          *frame_on*         bool; whether to draw the axes frame
           *label*            the axes label
-          *navigate*         [ *True* | *False* ]
+          *navigate*         bool
           *navigate_mode*    [ 'PAN' | 'ZOOM' | None ] the navigation
                              toolbar button status
           *position*         [left, bottom, width, height] in
@@ -464,8 +453,7 @@ class _AxesBase(martist.Artist):
           *sharey*           an class:`~matplotlib.axes.Axes` instance
                              to share the y-axis with
           *title*            the title string
-          *visible*          [ *True* | *False* ] whether the axes is
-                             visible
+          *visible*          bool, whether the axes is visible
           *xlabel*           the xlabel
           *xlim*             (*xmin*, *xmax*) view limits
           *xscale*           [%(scale)s]
@@ -489,25 +477,15 @@ class _AxesBase(martist.Artist):
         self._originalPosition = self._position.frozen()
         # self.set_axes(self)
         self.axes = self
-        self.set_aspect('auto')
+        self._aspect = 'auto'
         self._adjustable = 'box'
-        self.set_anchor('C')
+        self._anchor = 'C'
         self._sharex = sharex
         self._sharey = sharey
         if sharex is not None:
             self._shared_x_axes.join(self, sharex)
-            if sharex._adjustable == 'box':
-                sharex._adjustable = 'datalim'
-                # warnings.warn(
-                #    'shared axes: "adjustable" is being changed to "datalim"')
-            self._adjustable = 'datalim'
         if sharey is not None:
             self._shared_y_axes.join(self, sharey)
-            if sharey._adjustable == 'box':
-                sharey._adjustable = 'datalim'
-                # warnings.warn(
-                #    'shared axes: "adjustable" is being changed to "datalim"')
-            self._adjustable = 'datalim'
         self.set_label(label)
         self.set_figure(fig)
 
@@ -517,14 +495,6 @@ class _AxesBase(martist.Artist):
 
         # this call may differ for non-sep axes, e.g., polar
         self._init_axis()
-        if axisbg is not None and facecolor is not None:
-            raise TypeError('Both axisbg and facecolor are not None. '
-                            'These keywords are aliases, only one may be '
-                            'provided.')
-        if axisbg is not None:
-            cbook.warn_deprecated(
-                '2.0', name='axisbg', alternative='facecolor')
-            facecolor = axisbg
         if facecolor is None:
             facecolor = rcParams['axes.facecolor']
         self._facecolor = facecolor
@@ -532,13 +502,9 @@ class _AxesBase(martist.Artist):
         self._axisbelow = rcParams['axes.axisbelow']
 
         self._rasterization_zorder = None
-
-        self._hold = rcParams['axes.hold']
-        if self._hold is None:
-            self._hold = True
-
         self._connected = {}  # a dict from events to (id, func)
         self.cla()
+
         # funcs used to format x and y - fall back on major formatters
         self.fmt_xdata = None
         self.fmt_ydata = None
@@ -552,8 +518,7 @@ class _AxesBase(martist.Artist):
         if yscale:
             self.set_yscale(yscale)
 
-        if len(kwargs):
-            self.update(kwargs)
+        self.update(kwargs)
 
         if self.xaxis is not None:
             self._xcid = self.xaxis.callbacks.connect(
@@ -566,33 +531,51 @@ class _AxesBase(martist.Artist):
         self.tick_params(
             top=rcParams['xtick.top'] and rcParams['xtick.minor.top'],
             bottom=rcParams['xtick.bottom'] and rcParams['xtick.minor.bottom'],
+            labeltop=(rcParams['xtick.labeltop'] and
+                      rcParams['xtick.minor.top']),
+            labelbottom=(rcParams['xtick.labelbottom'] and
+                         rcParams['xtick.minor.bottom']),
             left=rcParams['ytick.left'] and rcParams['ytick.minor.left'],
             right=rcParams['ytick.right'] and rcParams['ytick.minor.right'],
+            labelleft=(rcParams['ytick.labelleft'] and
+                       rcParams['ytick.minor.left']),
+            labelright=(rcParams['ytick.labelright'] and
+                        rcParams['ytick.minor.right']),
             which='minor')
 
         self.tick_params(
             top=rcParams['xtick.top'] and rcParams['xtick.major.top'],
             bottom=rcParams['xtick.bottom'] and rcParams['xtick.major.bottom'],
+            labeltop=(rcParams['xtick.labeltop'] and
+                      rcParams['xtick.major.top']),
+            labelbottom=(rcParams['xtick.labelbottom'] and
+                         rcParams['xtick.major.bottom']),
             left=rcParams['ytick.left'] and rcParams['ytick.major.left'],
             right=rcParams['ytick.right'] and rcParams['ytick.major.right'],
+            labelleft=(rcParams['ytick.labelleft'] and
+                       rcParams['ytick.major.left']),
+            labelright=(rcParams['ytick.labelright'] and
+                        rcParams['ytick.major.right']),
             which='major')
+
+        self._layoutbox = None
+        self._poslayoutbox = None
 
     def __getstate__(self):
         # The renderer should be re-created by the figure, and then cached at
         # that point.
-        state = super(_AxesBase, self).__getstate__()
+        state = super().__getstate__()
         state['_cachedRenderer'] = None
+        state.pop('_layoutbox')
+        state.pop('_poslayoutbox')
+
         return state
 
     def __setstate__(self, state):
         self.__dict__ = state
-        # put the _remove_method back on all artists contained within the axes
-        for container_name in ['lines', 'collections', 'tables', 'patches',
-                               'texts', 'images']:
-            container = getattr(self, container_name)
-            for artist in container:
-                artist._remove_method = container.remove
         self._stale = True
+        self._layoutbox = None
+        self._poslayoutbox = None
 
     def get_window_extent(self, *args, **kwargs):
         """
@@ -617,9 +600,13 @@ class _AxesBase(martist.Artist):
 
     def set_figure(self, fig):
         """
-        Set the class:`~matplotlib.axes.Axes` figure
+        Set the `.Figure` for this `.Axes`.
 
-        accepts a class:`~matplotlib.figure.Figure` instance
+        .. ACCEPTS: `.Figure`
+
+        Parameters
+        ----------
+        fig : `.Figure`
         """
         martist.Artist.set_figure(self, fig)
 
@@ -635,8 +622,7 @@ class _AxesBase(martist.Artist):
 
     def _set_lim_and_transforms(self):
         """
-        set the *dataLim* and *viewLim*
-        :class:`~matplotlib.transforms.Bbox` attributes and the
+        set the *_xaxis_transform*, *_yaxis_transform*,
         *transScale*, *transData*, *transLimits* and *transAxes*
         transformations.
 
@@ -722,7 +708,7 @@ class _AxesBase(martist.Artist):
         labels_align = matplotlib.rcParams["xtick.alignment"]
 
         return (self.get_xaxis_transform(which='tick1') +
-                mtransforms.ScaledTranslation(0, -1 * pad_points / 72.0,
+                mtransforms.ScaledTranslation(0, -1 * pad_points / 72,
                                               self.figure.dpi_scale_trans),
                 "top", labels_align)
 
@@ -749,7 +735,7 @@ class _AxesBase(martist.Artist):
         """
         labels_align = matplotlib.rcParams["xtick.alignment"]
         return (self.get_xaxis_transform(which='tick2') +
-                mtransforms.ScaledTranslation(0, pad_points / 72.0,
+                mtransforms.ScaledTranslation(0, pad_points / 72,
                                               self.figure.dpi_scale_trans),
                 "bottom", labels_align)
 
@@ -801,7 +787,7 @@ class _AxesBase(martist.Artist):
         """
         labels_align = matplotlib.rcParams["ytick.alignment"]
         return (self.get_yaxis_transform(which='tick1') +
-                mtransforms.ScaledTranslation(-1 * pad_points / 72.0, 0,
+                mtransforms.ScaledTranslation(-1 * pad_points / 72, 0,
                                               self.figure.dpi_scale_trans),
                 labels_align, "right")
 
@@ -829,7 +815,7 @@ class _AxesBase(martist.Artist):
         labels_align = matplotlib.rcParams["ytick.alignment"]
 
         return (self.get_yaxis_transform(which='tick2') +
-                mtransforms.ScaledTranslation(pad_points / 72.0, 0,
+                mtransforms.ScaledTranslation(pad_points / 72, 0,
                                               self.figure.dpi_scale_trans),
                 labels_align, "left")
 
@@ -837,73 +823,105 @@ class _AxesBase(martist.Artist):
         self.transScale.set(
             mtransforms.blended_transform_factory(
                 self.xaxis.get_transform(), self.yaxis.get_transform()))
-        if hasattr(self, "lines"):
-            for line in self.lines:
-                try:
-                    line._transformed_path.invalidate()
-                except AttributeError:
-                    pass
+        for line in getattr(self, "lines", []):  # Not set during init.
+            try:
+                line._transformed_path.invalidate()
+            except AttributeError:
+                pass
 
     def get_position(self, original=False):
-        'Return the a copy of the axes rectangle as a Bbox'
+        """
+        Get a copy of the axes rectangle as a `.Bbox`.
+
+        Parameters
+        ----------
+        original : bool
+            If ``True``, return the original position. Otherwise return the
+            active position. For an explanation of the positions see
+            `.set_position`.
+
+        Returns
+        -------
+        pos : `.Bbox`
+
+        """
         if original:
             return self._originalPosition.frozen()
         else:
+            self.apply_aspect()
             return self._position.frozen()
 
     def set_position(self, pos, which='both'):
-        """Set the axes position
+        """
+        Set the axes position.
 
-        The expected shape of ``pos`` is::
+        Axes have two position attributes. The 'original' position is the
+        position allocated for the Axes. The 'active' position is the
+        position the Axes is actually drawn at. These positions are usually
+        the same unless a fixed aspect is set to the Axes. See `.set_aspect`
+        for details.
 
-          pos = [left, bottom, width, height]
+        Parameters
+        ----------
+        pos : [left, bottom, width, height] or `~matplotlib.transforms.Bbox`
+            The new position of the in `.Figure` coordinates.
 
-        in relative 0,1 coords, or *pos* can be a
-        :class:`~matplotlib.transforms.Bbox`
+        which : ['both' | 'active' | 'original'], optional
+            Determines which position variables to change.
 
-        There are two position variables: one which is ultimately
-        used, but which may be modified by :meth:`apply_aspect`, and a
-        second which is the starting point for :meth:`apply_aspect`.
+        """
+        self._set_position(pos, which='both')
+        # because this is being called externally to the library we
+        # zero the constrained layout parts.
+        self._layoutbox = None
+        self._poslayoutbox = None
 
-
-        Optional keyword arguments:
-          *which*
-
-            ==========   ====================
-            value        description
-            ==========   ====================
-            'active'     to change the first
-            'original'   to change the second
-            'both'       to change both
-            ==========   ====================
-
+    def _set_position(self, pos, which='both'):
+        """
+        private version of set_position.  Call this internally
+        to get the same functionality of `get_position`, but not
+        to take the axis out of the constrained_layout
+        hierarchy.
         """
         if not isinstance(pos, mtransforms.BboxBase):
             pos = mtransforms.Bbox.from_bounds(*pos)
-        if which in ('both', 'active'):
-            self._position.set(pos)
-        if which in ('both', 'original'):
-            self._originalPosition.set(pos)
+        for ax in self._twinned_axes.get_siblings(self):
+            if which in ('both', 'active'):
+                ax._position.set(pos)
+            if which in ('both', 'original'):
+                ax._originalPosition.set(pos)
         self.stale = True
 
     def reset_position(self):
-        """Make the original position the active position"""
-        pos = self.get_position(original=True)
-        self.set_position(pos, which='active')
+        """
+        Reset the active position to the original position.
+
+        This resets the a possible position change due to aspect constraints.
+        For an explanation of the positions see `.set_position`.
+        """
+        for ax in self._twinned_axes.get_siblings(self):
+            pos = ax.get_position(original=True)
+            ax.set_position(pos, which='active')
 
     def set_axes_locator(self, locator):
         """
-        set axes_locator
+        Set the axes locator.
 
-        ACCEPT: a callable object which takes an axes instance and renderer and
-                 returns a bbox.
+        .. ACCEPTS: a callable object which takes an axes instance and
+           renderer and returns a bbox.
+
+        Parameters
+        ----------
+        locator : callable
+            A locator function, which takes an axes and a renderer and returns
+            a bbox.
         """
         self._axes_locator = locator
         self.stale = True
 
     def get_axes_locator(self):
         """
-        return axes_locator
+        Return the axes_locator.
         """
         return self._axes_locator
 
@@ -947,11 +965,8 @@ class _AxesBase(martist.Artist):
             Intended to be overridden by new projection types.
 
         """
-        return OrderedDict([
-            ('left', mspines.Spine.linear_spine(self, 'left')),
-            ('right', mspines.Spine.linear_spine(self, 'right')),
-            ('bottom', mspines.Spine.linear_spine(self, 'bottom')),
-            ('top', mspines.Spine.linear_spine(self, 'top'))])
+        return OrderedDict((side, mspines.Spine.linear_spine(self, side))
+                           for side in ['left', 'right', 'bottom', 'top'])
 
     def cla(self):
         """Clear the current axes."""
@@ -968,19 +983,21 @@ class _AxesBase(martist.Artist):
 
         self.xaxis.cla()
         self.yaxis.cla()
-        for name, spine in six.iteritems(self.spines):
+
+        for name, spine in self.spines.items():
             spine.cla()
 
         self.ignore_existing_data_limits = True
         self.callbacks = cbook.CallbackRegistry()
 
         if self._sharex is not None:
-            # major and minor are class instances with
+            # major and minor are axis.Ticker class instances with
             # locator and formatter attributes
             self.xaxis.major = self._sharex.xaxis.major
             self.xaxis.minor = self._sharex.xaxis.minor
             x0, x1 = self._sharex.get_xlim()
-            self.set_xlim(x0, x1, emit=False, auto=None)
+            self.set_xlim(x0, x1, emit=False,
+                          auto=self._sharex.get_autoscalex_on())
             self.xaxis._scale = mscale.scale_factory(
                     self._sharex.xaxis.get_scale(), self.xaxis)
         else:
@@ -994,7 +1011,8 @@ class _AxesBase(martist.Artist):
             self.yaxis.major = self._sharey.yaxis.major
             self.yaxis.minor = self._sharey.yaxis.minor
             y0, y1 = self._sharey.get_ylim()
-            self.set_ylim(y0, y1, emit=False, auto=None)
+            self.set_ylim(y0, y1, emit=False,
+                          auto=self._sharey.get_autoscaley_on())
             self.yaxis._scale = mscale.scale_factory(
                     self._sharey.yaxis.get_scale(), self.yaxis)
         else:
@@ -1003,7 +1021,6 @@ class _AxesBase(martist.Artist):
                 self.set_ylim(0, 1)
             except TypeError:
                 pass
-
         # update the minor locator for x and y axis based on rcParams
         if (rcParams['xtick.minor.visible']):
             self.xaxis.set_minor_locator(mticker.AutoMinorLocator())
@@ -1011,8 +1028,10 @@ class _AxesBase(martist.Artist):
         if (rcParams['ytick.minor.visible']):
             self.yaxis.set_minor_locator(mticker.AutoMinorLocator())
 
-        self._autoscaleXon = True
-        self._autoscaleYon = True
+        if self._sharex is None:
+            self._autoscaleXon = True
+        if self._sharey is None:
+            self._autoscaleYon = True
         self._xmargin = rcParams['axes.xmargin']
         self._ymargin = rcParams['axes.ymargin']
         self._tight = None
@@ -1042,10 +1061,6 @@ class _AxesBase(martist.Artist):
             size=rcParams['axes.titlesize'],
             weight=rcParams['axes.titleweight'])
 
-        title_offset_points = rcParams['axes.titlepad']
-        self.titleOffsetTrans = mtransforms.ScaledTranslation(
-            0.0, title_offset_points / 72.0,
-            self.figure.dpi_scale_trans)
         self.title = mtext.Text(
             x=0.5, y=1.0, text='',
             fontproperties=props,
@@ -1063,10 +1078,14 @@ class _AxesBase(martist.Artist):
             verticalalignment='baseline',
             horizontalalignment='right',
             )
+        title_offset_points = rcParams['axes.titlepad']
+        # refactor this out so it can be called in ax.set_title if
+        # pad argument used...
+        self._set_title_offset_trans(title_offset_points)
+        # determine if the title position has been set manually:
+        self._autotitlepos = None
 
         for _title in (self.title, self._left_title, self._right_title):
-            _title.set_transform(self.transAxes + self.titleOffsetTrans)
-            _title.set_clip_box(None)
             self._set_artist_props(_title)
 
         # The patch draws the background of the axes.  We want this to be below
@@ -1096,64 +1115,100 @@ class _AxesBase(martist.Artist):
 
         self.stale = True
 
-    @cbook.deprecated("2.1", alternative="Axes.patch")
-    def axesPatch(self):
-        return self.patch
-
     def clear(self):
-        """clear the axes"""
+        """Clear the axes."""
         self.cla()
 
     def get_facecolor(self):
+        """Get the Axes facecolor."""
         return self.patch.get_facecolor()
     get_fc = get_facecolor
 
     def set_facecolor(self, color):
+        """Set the Axes facecolor.
+
+        .. ACCEPTS: color
+
+        Parameters
+        ----------
+        color : color
+        """
         self._facecolor = color
         return self.patch.set_facecolor(color)
     set_fc = set_facecolor
 
+    def _set_title_offset_trans(self, title_offset_points):
+        """
+        Set the offset for the title either from rcParams['axes.titlepad']
+        or from set_title kwarg ``pad``.
+        """
+        self.titleOffsetTrans = mtransforms.ScaledTranslation(
+                0.0, title_offset_points / 72,
+                self.figure.dpi_scale_trans)
+        for _title in (self.title, self._left_title, self._right_title):
+            _title.set_transform(self.transAxes + self.titleOffsetTrans)
+            _title.set_clip_box(None)
+
     def set_prop_cycle(self, *args, **kwargs):
         """
-        Set the property cycle for any future plot commands on this Axes.
+        Set the property cycle of the Axes.
 
-        set_prop_cycle(arg)
-        set_prop_cycle(label, itr)
-        set_prop_cycle(label1=itr1[, label2=itr2[, ...]])
+        The property cycle controls the style properties such as color,
+        marker and linestyle of future plot commands. The style properties
+        of data already added to the Axes are not modified.
+
+        Call signatures::
+
+          set_prop_cycle(cycler)
+          set_prop_cycle(label, values)
+          set_prop_cycle(label=values[, label2=values2[, ...]])
 
         Form 1 simply sets given `Cycler` object.
 
-        Form 2 creates and sets  a `Cycler` from a label and an iterable.
+        Form 2 creates and sets a `Cycler` from a label and an iterable.
 
-        Form 3 composes and sets  a `Cycler` as an inner product of the
+        Form 3 composes and sets a `Cycler` as an inner product of the
         pairs of keyword arguments. In other words, all of the
         iterables are cycled simultaneously, as if through zip().
 
         Parameters
         ----------
-        arg : Cycler
-            Set the given Cycler.
-            Can also be `None` to reset to the cycle defined by the
+        cycler : Cycler
+            Set the given Cycler. *None* resets to the cycle defined by the
             current style.
 
         label : str
-            The property key. Must be a valid `Artist` property.
+            The property key. Must be a valid `.Artist` property.
             For example, 'color' or 'linestyle'. Aliases are allowed,
             such as 'c' for 'color' and 'lw' for 'linewidth'.
 
-        itr : iterable
+        values : iterable
             Finite-length iterable of the property values. These values
             are validated and will raise a ValueError if invalid.
 
+        Examples
+        --------
+        Setting the property cycle for a single property:
+
+        >>> ax.set_prop_cycle(color=['red', 'green', 'blue'])  # or
+        >>> ax.set_prop_cycle('color', ['red', 'green', 'blue'])
+
+        Setting the property cycle for simultaneously cycling over multiple
+        properties (e.g. red circle, green plus, blue cross):
+
+        >>> ax.set_prop_cycle(color=['red', 'green', 'blue'],
+        ...                   marker=['o', '+', 'x'])
+
         See Also
         --------
-            :func:`cycler`      Convenience function for creating your
-                                own cyclers.
+        matplotlib.rcsetup.cycler
+            Convenience function for creating your own cyclers.
 
         """
         if args and kwargs:
             raise TypeError("Cannot supply both positional and keyword "
                             "arguments to this method.")
+        # Can't do `args == (None,)` as that crashes cycler.
         if len(args) == 1 and args[0] is None:
             prop_cycle = None
         else:
@@ -1161,166 +1216,199 @@ class _AxesBase(martist.Artist):
         self._get_lines.set_prop_cycle(prop_cycle)
         self._get_patches_for_fill.set_prop_cycle(prop_cycle)
 
-    def set_color_cycle(self, clist):
-        """
-        Set the color cycle for any future plot commands on this Axes.
-
-        *clist* is a list of mpl color specifiers.
-
-        .. deprecated:: 1.5
-        """
-        cbook.warn_deprecated(
-            '1.5', name='set_color_cycle', alternative='set_prop_cycle')
-        if clist is None:
-            # Calling set_color_cycle() or set_prop_cycle() with None
-            # effectively resets the cycle, but you can't do
-            # set_prop_cycle('color', None). So we are special-casing this.
-            self.set_prop_cycle(None)
-        else:
-            self.set_prop_cycle('color', clist)
-
-    @cbook.deprecated("2.0")
-    def ishold(self):
-        """return the HOLD status of the axes
-
-        The `hold` mechanism is deprecated and will be removed in
-        v3.0.
-        """
-
-        return self._hold
-
-    @cbook.deprecated("2.0", message=_hold_msg)
-    def hold(self, b=None):
-        """
-        Set the hold state
-
-        The ``hold`` mechanism is deprecated and will be removed in
-        v3.0.  The behavior will remain consistent with the
-        long-time default value of True.
-
-        If *hold* is *None* (default), toggle the *hold* state.  Else
-        set the *hold* state to boolean value *b*.
-
-        Examples::
-
-          # toggle hold
-          hold()
-
-          # turn hold on
-          hold(True)
-
-          # turn hold off
-          hold(False)
-
-        When hold is *True*, subsequent plot commands will be added to
-        the current axes.  When hold is *False*, the current axes and
-        figure will be cleared on the next plot command
-
-        """
-        if b is None:
-            self._hold = not self._hold
-        else:
-            self._hold = b
-
     def get_aspect(self):
         return self._aspect
 
-    def set_aspect(self, aspect, adjustable=None, anchor=None):
+    def set_aspect(self, aspect, adjustable=None, anchor=None, share=False):
         """
-        *aspect*
+        Set the aspect of the axis scaling, i.e. the ratio of y-unit to x-unit.
 
-          ========   ================================================
-          value      description
-          ========   ================================================
-          'auto'     automatic; fill position rectangle with data
-          'equal'    same scaling from data to plot units for x and y
-           num       a circle will be stretched such that the height
-                     is num times the width. aspect=1 is the same as
-                     aspect='equal'.
-          ========   ================================================
+        Parameters
+        ----------
+        aspect : ['auto' | 'equal'] or num
+            Possible values:
 
-        *adjustable*
+            ========   ================================================
+            value      description
+            ========   ================================================
+            'auto'     automatic; fill the position rectangle with data
+            'equal'    same scaling from data to plot units for x and y
+             num       a circle will be stretched such that the height
+                       is num times the width. aspect=1 is the same as
+                       aspect='equal'.
+            ========   ================================================
 
-          ============   =====================================
-          value          description
-          ============   =====================================
-          'box'          change physical size of axes
-          'datalim'      change xlim or ylim
-          'box-forced'   same as 'box', but axes can be shared
-          ============   =====================================
+        adjustable : None or ['box' | 'datalim'], optional
+            If not ``None``, this defines which parameter will be adjusted to
+            meet the required aspect. See `.set_adjustable` for further
+            details.
 
-        'box' does not allow axes sharing, as this can cause
-        unintended side effect. For cases when sharing axes is
-        fine, use 'box-forced'.
+        anchor : None or str or 2-tuple of float, optional
+            If not ``None``, this defines where the Axes will be drawn if there
+            is extra space due to aspect constraints. The most common way to
+            to specify the anchor are abbreviations of cardinal directions:
 
-        *anchor*
+            =====   =====================
+            value   description
+            =====   =====================
+            'C'     centered
+            'SW'    lower left corner
+            'S'     middle of bottom edge
+            'SE'    lower right corner
+            etc.
+            =====   =====================
 
-          =====   =====================
-          value   description
-          =====   =====================
-          'C'     centered
-          'SW'    lower left corner
-          'S'     middle of bottom edge
-          'SE'    lower right corner
-          etc.
-          =====   =====================
+            See `.set_anchor` for further details.
+
+        share : bool, optional
+            If ``True``, apply the settings to all shared Axes.
+            Default is ``False``.
+
+        See Also
+        --------
+        matplotlib.axes.Axes.set_adjustable
+            defining the parameter to adjust in order to meet the required
+            aspect.
+        matplotlib.axes.Axes.set_anchor
+            defining the position in case of extra space.
         """
-        if (isinstance(aspect, six.string_types)
-                and aspect in ('equal', 'auto')):
-            self._aspect = aspect
+        if not (isinstance(aspect, str) and aspect in ('equal', 'auto')):
+            aspect = float(aspect)  # raise ValueError if necessary
+        if share:
+            axes = set(self._shared_x_axes.get_siblings(self)
+                       + self._shared_y_axes.get_siblings(self))
         else:
-            self._aspect = float(aspect)  # raise ValueError if necessary
+            axes = [self]
+        for ax in axes:
+            ax._aspect = aspect
 
-        if adjustable is not None:
-            self.set_adjustable(adjustable)
+        if adjustable is None:
+            adjustable = self._adjustable
+        self.set_adjustable(adjustable, share=share)  # Handle sharing.
+
         if anchor is not None:
-            self.set_anchor(anchor)
+            self.set_anchor(anchor, share=share)
         self.stale = True
 
     def get_adjustable(self):
         return self._adjustable
 
-    def set_adjustable(self, adjustable):
+    def set_adjustable(self, adjustable, share=False):
         """
-        ACCEPTS: [ 'box' | 'datalim' | 'box-forced']
+        Define which parameter the Axes will change to achieve a given aspect.
+
+        Parameters
+        ----------
+        adjustable : ['box' | 'datalim']
+            If 'box', change the physical dimensions of the Axes.
+            If 'datalim', change the ``x`` or ``y`` data limits.
+
+        share : bool, optional
+            If ``True``, apply the settings to all shared Axes.
+            Default is ``False``.
+
+        .. ACCEPTS: [ 'box' | 'datalim']
+
+        See Also
+        --------
+        matplotlib.axes.Axes.set_aspect
+            for a description of aspect handling.
+
+        Notes
+        -----
+        Shared Axes (of which twinned Axes are a special case)
+        impose restrictions on how aspect ratios can be imposed.
+        For twinned Axes, use 'datalim'.  For Axes that share both
+        x and y, use 'box'.  Otherwise, either 'datalim' or 'box'
+        may be used.  These limitations are partly a requirement
+        to avoid over-specification, and partly a result of the
+        particular implementation we are currently using, in
+        which the adjustments for aspect ratios are done sequentially
+        and independently on each Axes as it is drawn.
         """
-        if adjustable in ('box', 'datalim', 'box-forced'):
-            if self in self._shared_x_axes or self in self._shared_y_axes:
-                if adjustable == 'box':
-                    raise ValueError(
-                        'adjustable must be "datalim" for shared axes')
-            self._adjustable = adjustable
+        if adjustable == 'box-forced':
+            warnings.warn("The 'box-forced' keyword argument is deprecated"
+                          " since 2.2.", cbook.mplDeprecation)
+        if adjustable not in ('box', 'datalim', 'box-forced'):
+            raise ValueError("argument must be 'box', or 'datalim'")
+        if share:
+            axes = set(self._shared_x_axes.get_siblings(self)
+                       + self._shared_y_axes.get_siblings(self))
         else:
-            raise ValueError('argument must be "box", or "datalim"')
+            axes = [self]
+        for ax in axes:
+            ax._adjustable = adjustable
         self.stale = True
 
     def get_anchor(self):
+        """
+        Get the anchor location.
+
+        See Also
+        --------
+        matplotlib.axes.Axes.set_anchor
+            for a description of the anchor.
+        matplotlib.axes.Axes.set_aspect
+            for a description of aspect handling.
+        """
         return self._anchor
 
-    def set_anchor(self, anchor):
+    def set_anchor(self, anchor, share=False):
         """
-        *anchor*
+        Define the anchor location.
 
-          =====  ============
-          value  description
-          =====  ============
-          'C'    Center
-          'SW'   bottom left
-          'S'    bottom
-          'SE'   bottom right
-          'E'    right
-          'NE'   top right
-          'N'    top
-          'NW'   top left
-          'W'    left
-          =====  ============
+        The actual drawing area (active position) of the Axes may be smaller
+        than the Bbox (original position) when a fixed aspect is required. The
+        anchor defines where the drawing area will be located within the
+        available space.
 
+        .. ACCEPTS: [ 'C' | 'SW' | 'S' | 'SE' | 'E' | 'NE' | 'N' | 'NW' | 'W' ]
+
+        Parameters
+        ----------
+        anchor : str or 2-tuple of floats
+            The anchor position may be either:
+
+            - a sequence (*cx*, *cy*). *cx* and *cy* may range from 0
+              to 1, where 0 is left or bottom and 1 is right or top.
+
+            - a string using cardinal directions as abbreviation:
+
+              - 'C' for centered
+              - 'S' (south) for bottom-center
+              - 'SW' (south west) for bottom-left
+              - etc.
+
+              Here is an overview of the possible positions:
+
+              +------+------+------+
+              | 'NW' | 'N'  | 'NE' |
+              +------+------+------+
+              | 'W'  | 'C'  | 'E'  |
+              +------+------+------+
+              | 'SW' | 'S'  | 'SE' |
+              +------+------+------+
+
+        share : bool, optional
+            If ``True``, apply the settings to all shared Axes.
+            Default is ``False``.
+
+        See Also
+        --------
+        matplotlib.axes.Axes.set_aspect
+            for a description of aspect handling.
         """
-        if anchor in mtransforms.Bbox.coefs or len(anchor) == 2:
-            self._anchor = anchor
-        else:
+        if not (anchor in mtransforms.Bbox.coefs or len(anchor) == 2):
             raise ValueError('argument must be among %s' %
                              ', '.join(mtransforms.Bbox.coefs))
+        if share:
+            axes = set(self._shared_x_axes.get_siblings(self)
+                       + self._shared_y_axes.get_siblings(self))
+        else:
+            axes = [self]
+        for ax in axes:
+            ax._anchor = anchor
+
         self.stale = True
 
     def get_data_ratio(self):
@@ -1353,8 +1441,27 @@ class _AxesBase(martist.Artist):
 
     def apply_aspect(self, position=None):
         """
-        Use :meth:`_aspect` and :meth:`_adjustable` to modify the
-        axes box or the view limits.
+        Adjust the Axes for a specified data aspect ratio.
+
+        Depending on `.get_adjustable` this will modify either the Axes box
+        (position) or the view limits. In the former case, `.get_anchor`
+        will affect the position.
+
+        Notes
+        -----
+        This is called automatically when each Axes is drawn.  You may need
+        to call it yourself if you need to update the Axes position and/or
+        view limits before the Figure is drawn.
+
+        See Also
+        --------
+        matplotlib.axes.Axes.set_aspect
+            for a description of aspect ratio handling.
+        matplotlib.axes.Axes.set_adjustable
+            defining the parameter to adjust in order to meet the required
+            aspect.
+        matplotlib.axes.Axes.set_anchor
+            defining the position in case of extra space.
         """
         if position is None:
             position = self.get_position(original=True)
@@ -1380,7 +1487,7 @@ class _AxesBase(martist.Artist):
             aspect_scale_mode = "linear"
 
         if aspect == 'auto':
-            self.set_position(position, which='active')
+            self._set_position(position, which='active')
             return
 
         if aspect == 'equal':
@@ -1388,29 +1495,24 @@ class _AxesBase(martist.Artist):
         else:
             A = aspect
 
-        # Ensure at drawing time that any Axes involved in axis-sharing
-        # does not have its position changed.
-        if self in self._shared_x_axes or self in self._shared_y_axes:
-            if self._adjustable == 'box':
-                self._adjustable = 'datalim'
-                warnings.warn(
-                    'shared axes: "adjustable" is being changed to "datalim"')
-
         figW, figH = self.get_figure().get_size_inches()
         fig_aspect = figH / figW
         if self._adjustable in ['box', 'box-forced']:
+            if self in self._twinned_axes:
+                raise RuntimeError("Adjustable 'box' is not allowed in a"
+                                   " twinned Axes.  Use 'datalim' instead.")
             if aspect_scale_mode == "log":
                 box_aspect = A * self.get_data_ratio_log()
             else:
                 box_aspect = A * self.get_data_ratio()
             pb = position.frozen()
             pb1 = pb.shrunk_to_aspect(box_aspect, pb, fig_aspect)
-            self.set_position(pb1.anchored(self.get_anchor(), pb), 'active')
+            self._set_position(pb1.anchored(self.get_anchor(), pb), 'active')
             return
 
         # reset active to original in case it had been changed
         # by prior use of 'box'
-        self.set_position(position, which='active')
+        self._set_position(position, which='active')
 
         xmin, xmax = self.get_xbound()
         ymin, ymax = self.get_ybound()
@@ -1453,15 +1555,15 @@ class _AxesBase(martist.Artist):
         xm = 0
         ym = 0
 
-        changex = (self in self._shared_y_axes and
-                   self not in self._shared_x_axes)
-        changey = (self in self._shared_x_axes and
-                   self not in self._shared_y_axes)
-        if changex and changey:
-            warnings.warn("adjustable='datalim' cannot work with shared "
-                          "x and y axes")
-            return
-        if changex:
+        shared_x = self in self._shared_x_axes
+        shared_y = self in self._shared_y_axes
+        # Not sure whether we need this check:
+        if shared_x and shared_y:
+            raise RuntimeError("adjustable='datalim' is not allowed when both"
+                               " axes are shared.")
+
+        # If y is shared, then we are only allowed to change x, etc.
+        if shared_y:
             adjust_y = False
         else:
             if xmarg > xm and ymarg > ym:
@@ -1469,7 +1571,8 @@ class _AxesBase(martist.Artist):
                         (Xmarg < 0 and y_expander > 0))
             else:
                 adjy = y_expander > 0
-            adjust_y = changey or adjy  # (Ymarg > xmarg)
+            adjust_y = shared_x or adjy  # (Ymarg > xmarg)
+
         if adjust_y:
             yc = 0.5 * (ymin + ymax)
             y0 = yc - Ysize / 2.0
@@ -1541,7 +1644,7 @@ class _AxesBase(martist.Artist):
 
         emit = kwargs.get('emit', True)
 
-        if len(v) == 1 and isinstance(v[0], six.string_types):
+        if len(v) == 1 and isinstance(v[0], str):
             s = v[0].lower()
             if s == 'on':
                 self.set_axis_on()
@@ -1610,9 +1713,7 @@ class _AxesBase(martist.Artist):
         return v
 
     def get_legend(self):
-        """
-        Return the legend.Legend instance, or None if no legend is defined
-        """
+        """Return the `Legend` instance, or None if no legend is defined."""
         return self.legend_
 
     def get_images(self):
@@ -1624,30 +1725,30 @@ class _AxesBase(martist.Artist):
         return cbook.silent_list('Line2D', self.lines)
 
     def get_xaxis(self):
-        """Return the XAxis instance"""
+        """Return the XAxis instance."""
         return self.xaxis
 
     def get_xgridlines(self):
-        """Get the x grid lines as a list of Line2D instances"""
+        """Get the x grid lines as a list of `Line2D` instances."""
         return cbook.silent_list('Line2D xgridline',
                                  self.xaxis.get_gridlines())
 
     def get_xticklines(self):
-        """Get the xtick lines as a list of Line2D instances"""
-        return cbook.silent_list('Text xtickline',
+        """Get the x tick lines as a list of `Line2D` instances."""
+        return cbook.silent_list('Line2D xtickline',
                                  self.xaxis.get_ticklines())
 
     def get_yaxis(self):
-        """Return the YAxis instance"""
+        """Return the YAxis instance."""
         return self.yaxis
 
     def get_ygridlines(self):
-        """Get the y grid lines as a list of Line2D instances"""
+        """Get the y grid lines as a list of `Line2D` instances."""
         return cbook.silent_list('Line2D ygridline',
                                  self.yaxis.get_gridlines())
 
     def get_yticklines(self):
-        """Get the ytick lines as a list of Line2D instances"""
+        """Get the y tick lines as a list of `Line2D` instances."""
         return cbook.silent_list('Line2D ytickline',
                                  self.yaxis.get_ticklines())
 
@@ -1693,17 +1794,17 @@ class _AxesBase(martist.Artist):
         """Add any :class:`~matplotlib.artist.Artist` to the axes.
 
         Use `add_artist` only for artists for which there is no dedicated
-        "add" method; and if necessary, use a method such as
-        `update_datalim` or `update_datalim_numerix` to manually update the
-        dataLim if the artist is to be included in autoscaling.
+        "add" method; and if necessary, use a method such as `update_datalim`
+        to manually update the dataLim if the artist is to be included in
+        autoscaling.
 
         Returns the artist.
         """
         a.axes = self
         self.artists.append(a)
+        a._remove_method = self.artists.remove
         self._set_artist_props(a)
         a.set_clip_path(self.patch)
-        a._remove_method = lambda h: self.artists.remove(h)
         self.stale = True
         return a
 
@@ -1718,6 +1819,7 @@ class _AxesBase(martist.Artist):
         if not label:
             collection.set_label('_collection%d' % len(self.collections))
         self.collections.append(collection)
+        collection._remove_method = self.collections.remove
         self._set_artist_props(collection)
 
         if collection.get_clip_path() is None:
@@ -1726,7 +1828,6 @@ class _AxesBase(martist.Artist):
         if autolim:
             self.update_datalim(collection.get_datalim(self.transData))
 
-        collection._remove_method = lambda h: self.collections.remove(h)
         self.stale = True
         return collection
 
@@ -1740,9 +1841,13 @@ class _AxesBase(martist.Artist):
         if not image.get_label():
             image.set_label('_image%d' % len(self.images))
         self.images.append(image)
-        image._remove_method = lambda h: self.images.remove(h)
+        image._remove_method = self.images.remove
         self.stale = True
         return image
+
+    def _update_image_limits(self, image):
+        xmin, xmax, ymin, ymax = image.get_extent()
+        self.axes.update_datalim(((xmin, ymin), (xmax, ymax)))
 
     def add_line(self, line):
         """
@@ -1759,7 +1864,7 @@ class _AxesBase(martist.Artist):
         if not line.get_label():
             line.set_label('_line%d' % len(self.lines))
         self.lines.append(line)
-        line._remove_method = lambda h: self.lines.remove(h)
+        line._remove_method = self.lines.remove
         self.stale = True
         return line
 
@@ -1769,7 +1874,7 @@ class _AxesBase(martist.Artist):
         """
         self._set_artist_props(txt)
         self.texts.append(txt)
-        txt._remove_method = lambda h: self.texts.remove(h)
+        txt._remove_method = self.texts.remove
         self.stale = True
         return txt
 
@@ -1831,11 +1936,8 @@ class _AxesBase(martist.Artist):
         if p.get_clip_path() is None:
             p.set_clip_path(self.patch)
         self._update_patch_limits(p)
-        if self.name != 'rectilinear':
-            path = p.get_path()
-            path._interpolation_steps = max(path._interpolation_steps, 100)
         self.patches.append(p)
-        p._remove_method = lambda h: self.patches.remove(h)
+        p._remove_method = self.patches.remove
         return p
 
     def _update_patch_limits(self, patch):
@@ -1866,15 +1968,22 @@ class _AxesBase(martist.Artist):
 
     def add_table(self, tab):
         """
-        Add a :class:`~matplotlib.tables.Table` instance to the
+        Add a :class:`~matplotlib.table.Table` instance to the
         list of axes tables
 
-        Returns the table.
+        Parameters
+        ----------
+        tab: `matplotlib.table.Table`
+            Table instance
+
+        Returns
+        -------
+        `matplotlib.table.Table`: the table.
         """
         self._set_artist_props(tab)
         self.tables.append(tab)
         tab.set_clip_path(self.patch)
-        tab._remove_method = lambda h: self.tables.remove(h)
+        tab._remove_method = self.tables.remove
         return tab
 
     def add_container(self, container):
@@ -1888,7 +1997,7 @@ class _AxesBase(martist.Artist):
         if not label:
             container.set_label('_container%d' % len(self.containers))
         self.containers.append(container)
-        container.set_remove_method(lambda h: self.containers.remove(h))
+        container._remove_method = self.containers.remove
         return container
 
     def _on_units_changed(self, scalex=False, scaley=False):
@@ -1923,6 +2032,10 @@ class _AxesBase(martist.Artist):
             if not visible_only or p.get_visible():
                 self._update_patch_limits(p)
 
+        for image in self.images:
+            if not visible_only or image.get_visible():
+                self._update_image_limits(image)
+
     def update_datalim(self, xys, updatex=True, updatey=True):
         """
         Update the data lim bbox with seq of xy tups or equiv. 2-D array
@@ -1938,20 +2051,6 @@ class _AxesBase(martist.Artist):
                                          updatex=updatex, updatey=updatey)
         self.ignore_existing_data_limits = False
 
-    @cbook.deprecated('2.0', alternative='update_datalim')
-    def update_datalim_numerix(self, x, y):
-        """
-        Update the data lim bbox with seq of xy tups
-        """
-        # if no data is set currently, the bbox will ignore it's
-        # limits and set the bound to be the bounds of the xydata.
-        # Otherwise, it will compute the bounds of it's current data
-        # and the data in xydata
-        if iterable(x) and not len(x):
-            return
-        self.dataLim.update_from_data(x, y, self.ignore_existing_data_limits)
-        self.ignore_existing_data_limits = False
-
     def update_datalim_bounds(self, bounds):
         """
         Update the datalim to include the given
@@ -1962,40 +2061,33 @@ class _AxesBase(martist.Artist):
     def _process_unit_info(self, xdata=None, ydata=None, kwargs=None):
         """Look for unit *kwargs* and update the axis instances as necessary"""
 
-        if self.xaxis is None or self.yaxis is None:
-            return
+        def _process_single_axis(data, axis, unit_name, kwargs):
+            # Return if there's no axis set
+            if axis is None:
+                return kwargs
 
-        if xdata is not None:
-            # we only need to update if there is nothing set yet.
-            if not self.xaxis.have_units():
-                self.xaxis.update_units(xdata)
+            if data is not None:
+                # We only need to update if there is nothing set yet.
+                if not axis.have_units():
+                    axis.update_units(data)
 
-        if ydata is not None:
-            # we only need to update if there is nothing set yet.
-            if not self.yaxis.have_units():
-                self.yaxis.update_units(ydata)
+            # Check for units in the kwargs, and if present update axis
+            if kwargs is not None:
+                units = kwargs.pop(unit_name, axis.units)
+                if self.name == 'polar':
+                    polar_units = {'xunits': 'thetaunits', 'yunits': 'runits'}
+                    units = kwargs.pop(polar_units[unit_name], units)
 
-        # process kwargs 2nd since these will override default units
-        if kwargs is not None:
-            xunits = kwargs.pop('xunits', self.xaxis.units)
-            if self.name == 'polar':
-                xunits = kwargs.pop('thetaunits', xunits)
-            if xunits != self.xaxis.units:
-                self.xaxis.set_units(xunits)
-                # If the units being set imply a different converter,
-                # we need to update.
-                if xdata is not None:
-                    self.xaxis.update_units(xdata)
+                if units != axis.units:
+                    axis.set_units(units)
+                    # If the units being set imply a different converter,
+                    # we need to update.
+                    if data is not None:
+                        axis.update_units(data)
+            return kwargs
 
-            yunits = kwargs.pop('yunits', self.yaxis.units)
-            if self.name == 'polar':
-                yunits = kwargs.pop('runits', yunits)
-            if yunits != self.yaxis.units:
-                self.yaxis.set_units(yunits)
-                # If the units being set imply a different converter,
-                # we need to update.
-                if ydata is not None:
-                    self.yaxis.update_units(ydata)
+        kwargs = _process_single_axis(xdata, self.xaxis, 'xunits', kwargs)
+        kwargs = _process_single_axis(ydata, self.yaxis, 'yunits', kwargs)
         return kwargs
 
     def in_axes(self, mouseevent):
@@ -2027,7 +2119,11 @@ class _AxesBase(martist.Artist):
         """
         Set whether autoscaling is applied on plot commands
 
-        accepts: [ *True* | *False* ]
+        .. ACCEPTS: bool
+
+        Parameters
+        ----------
+        b : bool
         """
         self._autoscaleXon = b
         self._autoscaleYon = b
@@ -2036,7 +2132,11 @@ class _AxesBase(martist.Artist):
         """
         Set whether autoscaling for the x-axis is applied on plot commands
 
-        accepts: [ *True* | *False* ]
+        .. ACCEPTS: bool
+
+        Parameters
+        ----------
+        b : bool
         """
         self._autoscaleXon = b
 
@@ -2044,7 +2144,11 @@ class _AxesBase(martist.Artist):
         """
         Set whether autoscaling for the y-axis is applied on plot commands
 
-        accepts: [ *True* | *False* ]
+        .. ACCEPTS: bool
+
+        Parameters
+        ----------
+        b : bool
         """
         self._autoscaleYon = b
 
@@ -2076,11 +2180,21 @@ class _AxesBase(martist.Artist):
 
         *m* times the data interval will be added to each
         end of that interval before it is used in autoscaling.
+        For example, if your data is in the range [0, 2], a factor of
+        ``m = 0.1`` will result in a range [-0.2, 2.2].
 
-        accepts: float in range 0 to 1
+        Negative values -0.5 < m < 0 will result in clipping of the data range.
+        I.e. for a data range [0, 2], a factor of ``m = -0.1`` will result in
+        a range [0.2, 1.8].
+
+        .. ACCEPTS: float greater than -0.5
+
+        Parameters
+        ----------
+        m : float greater than -0.5
         """
-        if m < 0 or m > 1:
-            raise ValueError("margin must be in range 0 to 1")
+        if m <= -0.5:
+            raise ValueError("margin must be greater than -0.5")
         self._xmargin = m
         self.stale = True
 
@@ -2090,11 +2204,21 @@ class _AxesBase(martist.Artist):
 
         *m* times the data interval will be added to each
         end of that interval before it is used in autoscaling.
+        For example, if your data is in the range [0, 2], a factor of
+        ``m = 0.1`` will result in a range [-0.2, 2.2].
 
-        accepts: float in range 0 to 1
+        Negative values -0.5 < m < 0 will result in clipping of the data range.
+        I.e. for a data range [0, 2], a factor of ``m = -0.1`` will result in
+        a range [0.2, 1.8].
+
+        .. ACCEPTS: float greater than -0.5
+
+        Parameters
+        ----------
+        m : float greater than -0.5
         """
-        if m < 0 or m > 1:
-            raise ValueError("margin must be in range 0 to 1")
+        if m <= -0.5:
+            raise ValueError("margin must be greater than -0.5")
         self._ymargin = m
         self.stale = True
 
@@ -2120,11 +2244,14 @@ class _AxesBase(martist.Artist):
 
         All three forms above set the xmargin and ymargin parameters.
         All keyword parameters are optional.  A single argument
-        specifies both xmargin and ymargin.  The *tight* parameter
-        is passed to :meth:`autoscale_view`, which is executed after
-        a margin is changed; the default here is *True*, on the
-        assumption that when margins are specified, no additional
-        padding to match tick marks is usually desired.  Setting
+        specifies both xmargin and ymargin. The padding added to the end of
+        each interval is *margin* times the data interval. The *margin* must
+        be a float in the range [0, 1].
+
+        The *tight* parameter is passed to :meth:`autoscale_view`
+        , which is executed after a margin is changed; the default here is
+        *True*, on the assumption that when margins are specified, no
+        additional padding to match tick marks is usually desired.  Setting
         *tight* to *None* will preserve the previous setting.
 
         Specifying any margin changes only the autoscaling; for example,
@@ -2157,17 +2284,19 @@ class _AxesBase(martist.Artist):
 
     def set_rasterization_zorder(self, z):
         """
-        Set zorder value below which artists will be rasterized.  Set
-        to `None` to disable rasterizing of artists below a particular
-        zorder.
+        Parameters
+        ----------
+        z : float or None
+            zorder below which artists are rasterized.  ``None`` means that
+            artists do not get rasterized based on zorder.
+
+            .. ACCEPTS: float or None
         """
         self._rasterization_zorder = z
         self.stale = True
 
     def get_rasterization_zorder(self):
-        """
-        Get zorder value below which artists will be rasterized
-        """
+        """Return the zorder value below which artists will be rasterized."""
         return self._rasterization_zorder
 
     def autoscale(self, enable=True, axis='both', tight=None):
@@ -2179,14 +2308,16 @@ class _AxesBase(martist.Artist):
         if autoscaling for either axis is on, it performs
         the autoscaling on the specified axis or axes.
 
-        *enable*: [True | False | None]
+        Parameters
+        ----------
+        enable : bool or None, optional
             True (default) turns autoscaling on, False turns it off.
             None leaves the autoscaling state unchanged.
 
-        *axis*: ['x' | 'y' | 'both']
+        axis : ['both' | 'x' | 'y'], optional
             which axis to operate on; default is 'both'
 
-        *tight*: [True | False | None]
+        tight: bool or None, optional
             If True, set view limits to data limits;
             if False, let the locator and margins expand the view limits;
             if None, use tight scaling if the only artist is an image,
@@ -2194,8 +2325,6 @@ class _AxesBase(martist.Artist):
             The *tight* setting is retained for future autoscaling
             until it is explicitly changed.
 
-
-        Returns None.
         """
         if enable is None:
             scalex = True
@@ -2217,8 +2346,9 @@ class _AxesBase(martist.Artist):
 
     def autoscale_view(self, tight=None, scalex=True, scaley=True):
         """
-        Autoscale the view limits using the data limits. You can
-        selectively autoscale only a single axis, e.g., the xaxis by
+        Autoscale the view limits using the data limits.
+
+        You can selectively autoscale only a single axis, e.g., the xaxis by
         setting *scaley* to *False*.  The autoscaling preserves any
         axis direction reversal that has already been done.
 
@@ -2317,6 +2447,50 @@ class _AxesBase(martist.Artist):
     def _get_axis_list(self):
         return (self.xaxis, self.yaxis)
 
+    def _update_title_position(self, renderer):
+        """
+        Update the title position based on the bounding box enclosing
+        all the ticklabels and x-axis spine and xlabel...
+        """
+        _log.debug('update_title_pos')
+
+        if self._autotitlepos is not None and not self._autotitlepos:
+            _log.debug('title position was updated manually, not adjusting')
+            return
+
+        titles = (self.title, self._left_title, self._right_title)
+
+        if self._autotitlepos is None:
+            for title in titles:
+                x, y = title.get_position()
+                if not np.isclose(y, 1.0):
+                    self._autotitlepos = False
+                    _log.debug('not adjusting title pos because title was'
+                             ' already placed manually: %f', y)
+                    return
+            self._autotitlepos = True
+
+        for title in titles:
+            x, y0 = title.get_position()
+            y = 1.0
+            # need to check all our twins too...
+            axs = self._twinned_axes.get_siblings(self)
+
+            for ax in axs:
+                try:
+                    if (ax.xaxis.get_label_position() == 'top'
+                            or ax.xaxis.get_ticks_position() == 'top'):
+                        bb = ax.xaxis.get_tightbbox(renderer)
+                        top = bb.ymax
+                        # we don't need to pad because the padding is already
+                        # in __init__: titleOffsetTrans
+                        yn = self.transAxes.inverted().transform((0., top))[1]
+                        y = max(y, yn)
+                except AttributeError:
+                    pass
+
+            title.set_position((x, y))
+
     # Drawing
 
     @allow_rasterization
@@ -2330,6 +2504,7 @@ class _AxesBase(martist.Artist):
         if not self.get_visible():
             return
         renderer.open_group('axes')
+
         # prevent triggering call backs during the draw process
         self._stale = True
         locator = self.get_axes_locator()
@@ -2347,8 +2522,10 @@ class _AxesBase(martist.Artist):
         # frame in the foreground. Do this before drawing the axis
         # objects so that the spine has the opportunity to update them.
         if not (self.axison and self._frameon):
-            for spine in six.itervalues(self.spines):
+            for spine in self.spines.values():
                 artists.remove(spine)
+
+        self._update_title_position(renderer)
 
         if self.axison and not inframe:
             if self._axisbelow is True:
@@ -2378,6 +2555,7 @@ class _AxesBase(martist.Artist):
         # rasterize artists with negative zorder
         # if the minimum zorder is negative, start rasterization
         rasterization_zorder = self._rasterization_zorder
+
         if (rasterization_zorder is not None and
                 artists and artists[0].zorder < rasterization_zorder):
             renderer.start_rasterizing()
@@ -2411,9 +2589,8 @@ class _AxesBase(martist.Artist):
         data (axis ticks, labels, etc are not updated)
         """
         if self._cachedRenderer is None:
-            msg = ('draw_artist can only be used after an initial draw which'
-                   ' caches the render')
-            raise AttributeError(msg)
+            raise AttributeError("draw_artist can only be used after an "
+                                 "initial draw which caches the renderer")
         a.draw(self._cachedRenderer)
 
     def redraw_in_frame(self):
@@ -2423,9 +2600,8 @@ class _AxesBase(martist.Artist):
         data (axis ticks, labels, etc are not updated)
         """
         if self._cachedRenderer is None:
-            msg = ('redraw_in_frame can only be used after an initial draw'
-                   ' which caches the render')
-            raise AttributeError(msg)
+            raise AttributeError("redraw_in_frame can only be used after an "
+                                 "initial draw which caches the renderer")
         self.draw(self._cachedRenderer, inframe=True)
 
     def get_renderer_cache(self):
@@ -2435,31 +2611,38 @@ class _AxesBase(martist.Artist):
 
     def get_frame_on(self):
         """
-        Get whether the axes rectangle patch is drawn
+        Get whether the axes rectangle patch is drawn.
         """
         return self._frameon
 
     def set_frame_on(self, b):
         """
-        Set whether the axes rectangle patch is drawn
+        Set whether the axes rectangle patch is drawn.
 
-        ACCEPTS: [ *True* | *False* ]
+        .. ACCEPTS: bool
+
+        Parameters
+        ----------
+        b : bool
         """
         self._frameon = b
         self.stale = True
 
     def get_axisbelow(self):
         """
-        Get whether axis below is true or not
+        Get whether axis ticks and gridlines are above or below most artists.
         """
         return self._axisbelow
 
     def set_axisbelow(self, b):
         """
-        Set whether the axis ticks and gridlines are above or below most
-        artists
+        Set whether axis ticks and gridlines are above or below most artists.
 
-        ACCEPTS: [ *True* | *False* | 'line' ]
+        .. ACCEPTS: [ bool | 'line' ]
+
+        Parameters
+        ----------
+        b : bool or 'line'
         """
         self._axisbelow = validate_axisbelow(b)
         self.stale = True
@@ -2469,8 +2652,7 @@ class _AxesBase(martist.Artist):
         """
         Turn the axes grids on or off.
 
-        Set the axes grids on or off; *b* is a boolean.  (For MATLAB
-        compatibility, *b* may also be a string, 'on' or 'off'.)
+        Set the axes grids on or off; *b* is a boolean.
 
         If *b* is *None* and ``len(kwargs)==0``, toggle the grid state.  If
         *kwargs* are supplied, it is assumed that you want a grid and *b*
@@ -2518,7 +2700,7 @@ class _AxesBase(martist.Artist):
                            be used for numbers outside the range
                            10`m`:sup: to 10`n`:sup:.
                            Use (0,0) to include all numbers.
-          *useOffset*      [True | False | offset]; if True,
+          *useOffset*      [ bool | offset ]; if True,
                            the offset will be calculated as needed;
                            if False, no offset will be used; if a
                            numeric offset is specified, it will be
@@ -2598,18 +2780,20 @@ class _AxesBase(martist.Artist):
         """
         Control behavior of tick locators.
 
-        Keyword arguments:
+        Parameters
+        ----------
+        axis : ['both' | 'x' | 'y'], optional
+            The axis on which to operate.
 
-        *axis*
-            ['x' | 'y' | 'both']  Axis on which to operate;
-            default is 'both'.
-
-        *tight*
-            [True | False | None] Parameter passed to :meth:`autoscale_view`.
+        tight : bool or None, optional
+            Parameter passed to :meth:`autoscale_view`.
             Default is None, for no change.
 
-        Remaining keyword arguments are passed to directly to the
-        :meth:`~matplotlib.ticker.MaxNLocator.set_params` method.
+        Other Parameters
+        ----------------
+        **kw :
+            Remaining keyword arguments are passed to directly to the
+            :meth:`~matplotlib.ticker.MaxNLocator.set_params` method.
 
         Typically one might want to reduce the maximum number
         of ticks and use tight bounds when plotting small
@@ -2634,7 +2818,7 @@ class _AxesBase(martist.Artist):
         self.autoscale_view(tight=tight, scalex=_x, scaley=_y)
 
     def tick_params(self, axis='both', **kwargs):
-        """Change the appearance of ticks and tick labels.
+        """Change the appearance of ticks, tick labels, and gridlines.
 
         Parameters
         ----------
@@ -2683,26 +2867,38 @@ class _AxesBase(martist.Artist):
         zorder : float
             Tick and label zorder.
 
-        bottom, top, left, right : bool or  {'on', 'off'}
-            controls whether to draw the respective ticks.
+        bottom, top, left, right : bool
+            Whether to draw the respective ticks.
 
-        labelbottom, labeltop, labelleft, labelright : bool or  {'on', 'off'}
-            controls whether to draw the
-            respective tick labels.
+        labelbottom, labeltop, labelleft, labelright : bool
+            Whether to draw the respective tick labels.
 
         labelrotation : float
             Tick label rotation
+
+        grid_color : color
+            Changes the gridline color to the given mpl color spec.
+
+        grid_alpha : float
+            Transparency of gridlines: 0 (transparent) to 1 (opaque).
+
+        grid_linewidth : float
+            Width of gridlines in points.
+
+        grid_linestyle : string
+            Any valid :class:`~matplotlib.lines.Line2D` line style spec.
 
         Examples
         --------
 
         Usage ::
 
-            ax.tick_params(direction='out', length=6, width=2, colors='r')
+            ax.tick_params(direction='out', length=6, width=2, colors='r',
+                           grid_color='r', grid_alpha=0.5)
 
         This will make all major ticks be red, pointing out of the box,
         and with dimensions 6 points by 2 points.  Tick labels will
-        also be red.
+        also be red.  Gridlines will be red and translucent.
 
         """
         if axis in ['x', 'both']:
@@ -2721,53 +2917,28 @@ class _AxesBase(martist.Artist):
             self.yaxis.set_tick_params(**ykw)
 
     def set_axis_off(self):
-        """turn off the axis"""
+        """Turn off the axis."""
         self.axison = False
         self.stale = True
 
     def set_axis_on(self):
-        """turn on the axis"""
+        """Turn on the axis."""
         self.axison = True
         self.stale = True
 
-    @cbook.deprecated('2.0', alternative='get_facecolor')
-    def get_axis_bgcolor(self):
-        """Return the axis background color"""
-        return self.get_facecolor()
-
-    @cbook.deprecated('2.0', alternative='set_facecolor')
-    def set_axis_bgcolor(self, color):
-        """
-        set the axes background color
-
-        ACCEPTS: any matplotlib color - see
-        :func:`~matplotlib.pyplot.colors`
-        """
-        return self.set_facecolor(color)
     # data limits, ticks, tick labels, and formatting
 
     def invert_xaxis(self):
-        "Invert the x-axis."
-        left, right = self.get_xlim()
-        self.set_xlim(right, left, auto=None)
+        """Invert the x-axis."""
+        self.set_xlim(self.get_xlim()[::-1], auto=None)
 
     def xaxis_inverted(self):
-        """Returns *True* if the x-axis is inverted."""
+        """Return whether the x-axis is inverted."""
         left, right = self.get_xlim()
         return right < left
 
     def get_xbound(self):
-        """Returns the x-axis numerical bounds
-
-        This always returns::
-
-          lowerBound < upperBound
-
-        Returns
-        -------
-        lowerBound, upperBound : float
-
-        """
+        """Return the lower and upper x-axis bounds, in increasing order."""
         left, right = self.get_xlim()
         if left < right:
             return left, right
@@ -2777,8 +2948,11 @@ class _AxesBase(martist.Artist):
     def set_xbound(self, lower=None, upper=None):
         """
         Set the lower and upper numerical bounds of the x-axis.
+
         This method will honor axes inversion regardless of parameter order.
         It will not change the _autoscaleXon attribute.
+
+        .. ACCEPTS: (lower: float, upper: float)
         """
         if upper is None and iterable(lower):
             lower, upper = lower
@@ -2841,6 +3015,8 @@ class _AxesBase(martist.Artist):
     def set_xlim(self, left=None, right=None, emit=True, auto=False, **kw):
         """
         Set the data limits for the x-axis
+
+        .. ACCEPTS: (left: float, right: float)
 
         Parameters
         ----------
@@ -2950,7 +3126,9 @@ class _AxesBase(martist.Artist):
 
     def set_xscale(self, value, **kwargs):
         """
-        Set the x-axis scale
+        Set the x-axis scale.
+
+        .. ACCEPTS: [ 'linear' | 'log' | 'symlog' | 'logit' | ... ]
 
         Parameters
         ----------
@@ -2964,7 +3142,7 @@ class _AxesBase(martist.Artist):
 
         See also
         --------
-        matplotlib.scale.LinearScale : linear transfrom
+        matplotlib.scale.LinearScale : linear transform
 
         matplotlib.scale.LogTransform : log transform
 
@@ -2972,11 +3150,6 @@ class _AxesBase(martist.Artist):
 
         matplotlib.scale.LogisticTransform : logit transform
         """
-        # If the scale is being set to log, mask nonposx to prevent headaches
-        # around zero
-        if value.lower() == 'log' and 'nonposx' not in kwargs:
-            kwargs['nonposx'] = 'mask'
-
         g = self.get_shared_x_axes()
         for ax in g.get_siblings(self):
             ax.xaxis._set_scale(value, **kwargs)
@@ -2993,7 +3166,16 @@ class _AxesBase(martist.Artist):
         """
         Set the x ticks with list of *ticks*
 
-        ACCEPTS: sequence of floats
+        .. ACCEPTS: list of tick locations.
+
+        Parameters
+        ----------
+        ticks : list
+            List of x-axis tick locations.
+
+        minor : bool, optional
+            If ``False`` sets major ticks, if ``True`` sets minor ticks.
+            Default is ``False``.
         """
         ret = self.xaxis.set_ticks(ticks, minor=minor)
         self.stale = True
@@ -3001,16 +3183,24 @@ class _AxesBase(martist.Artist):
 
     def get_xmajorticklabels(self):
         """
-        Get the xtick labels as a list of :class:`~matplotlib.text.Text`
-        instances.
+        Get the major x tick labels.
+
+        Returns
+        -------
+        labels : list
+            List of :class:`~matplotlib.text.Text` instances
         """
         return cbook.silent_list('Text xticklabel',
                                  self.xaxis.get_majorticklabels())
 
     def get_xminorticklabels(self):
         """
-        Get the x minor tick labels as a list of
-        :class:`matplotlib.text.Text` instances.
+        Get the minor x tick labels.
+
+        Returns
+        -------
+        labels : list
+            List of :class:`~matplotlib.text.Text` instances
         """
         return cbook.silent_list('Text xticklabel',
                                  self.xaxis.get_minorticklabels())
@@ -3042,33 +3232,34 @@ class _AxesBase(martist.Artist):
 
     def set_xticklabels(self, labels, fontdict=None, minor=False, **kwargs):
         """
-        Set the xtick labels with list of string labels
+        Set the x-tick labels with list of string labels.
+
+        .. ACCEPTS: list of string labels
 
         Parameters
         ----------
         labels : list of str
-            list of string labels
+            List of string labels.
 
         fontdict : dict, optional
-            A dictionary controlling the appearance of the ticklabels,
-            the default `fontdict` is:
+            A dictionary controlling the appearance of the ticklabels.
+            The default `fontdict` is::
 
                {'fontsize': rcParams['axes.titlesize'],
-                'fontweight' : rcParams['axes.titleweight'],
+                'fontweight': rcParams['axes.titleweight'],
                 'verticalalignment': 'baseline',
                 'horizontalalignment': loc}
 
         minor : bool, optional
-            If True select the minor ticklabels,
-            else select the minor ticklabels
+            Whether to set the minor ticklabels rather than the major ones.
 
         Returns
         -------
-        A list of `~matplotlib.text.Text` instances
+        A list of `~.text.Text` instances.
 
         Other Parameters
         -----------------
-        **kwargs : `~matplotlib.text.Text` properties.
+        **kwargs : `~.text.Text` properties.
         """
         if fontdict is not None:
             kwargs.update(fontdict)
@@ -3078,22 +3269,16 @@ class _AxesBase(martist.Artist):
         return ret
 
     def invert_yaxis(self):
-        """
-        Invert the y-axis.
-        """
-        bottom, top = self.get_ylim()
-        self.set_ylim(top, bottom, auto=None)
+        """Invert the y-axis."""
+        self.set_ylim(self.get_ylim()[::-1], auto=None)
 
     def yaxis_inverted(self):
-        """Returns *True* if the y-axis is inverted."""
+        """Return whether the y-axis is inverted."""
         bottom, top = self.get_ylim()
         return top < bottom
 
     def get_ybound(self):
-        """
-        Return y-axis numerical bounds in the form of
-        ``lowerBound < upperBound``
-        """
+        """Return the lower and upper y-axis bounds, in increasing order."""
         bottom, top = self.get_ylim()
         if bottom < top:
             return bottom, top
@@ -3105,6 +3290,8 @@ class _AxesBase(martist.Artist):
         Set the lower and upper numerical bounds of the y-axis.
         This method will honor axes inversion regardless of parameter order.
         It will not change the _autoscaleYon attribute.
+
+        .. ACCEPTS: (lower: float, upper: float)
         """
         if upper is None and iterable(lower):
             lower, upper = lower
@@ -3148,6 +3335,8 @@ class _AxesBase(martist.Artist):
     def set_ylim(self, bottom=None, top=None, emit=True, auto=False, **kw):
         """
         Set the data limits for the y-axis
+
+        .. ACCEPTS: (bottom: float, top: float)
 
         Parameters
         ----------
@@ -3257,7 +3446,9 @@ class _AxesBase(martist.Artist):
 
     def set_yscale(self, value, **kwargs):
         """
-        Set the y-axis scale
+        Set the y-axis scale.
+
+        .. ACCEPTS: [ 'linear' | 'log' | 'symlog' | 'logit' | ... ]
 
         Parameters
         ----------
@@ -3271,7 +3462,7 @@ class _AxesBase(martist.Artist):
 
         See also
         --------
-        matplotlib.scale.LinearScale : linear transfrom
+        matplotlib.scale.LinearScale : linear transform
 
         matplotlib.scale.LogTransform : log transform
 
@@ -3279,11 +3470,6 @@ class _AxesBase(martist.Artist):
 
         matplotlib.scale.LogisticTransform : logit transform
         """
-        # If the scale is being set to log, mask nonposy to prevent headaches
-        # around zero
-        if value.lower() == 'log' and 'nonposy' not in kwargs:
-            kwargs['nonposy'] = 'mask'
-
         g = self.get_shared_y_axes()
         for ax in g.get_siblings(self):
             ax.yaxis._set_scale(value, **kwargs)
@@ -3299,35 +3485,47 @@ class _AxesBase(martist.Artist):
         """
         Set the y ticks with list of *ticks*
 
-        ACCEPTS: sequence of floats
+        .. ACCEPTS: list of tick locations.
 
-        Keyword arguments:
+        Parameters
+        ----------
+        ticks : sequence
+            List of y-axis tick locations
 
-          *minor*: [ *False* | *True* ]
-            Sets the minor ticks if *True*
+        minor : bool, optional
+            If ``False`` sets major ticks, if ``True`` sets minor ticks.
+            Default is ``False``.
         """
         ret = self.yaxis.set_ticks(ticks, minor=minor)
         return ret
 
     def get_ymajorticklabels(self):
         """
-        Get the major y tick labels as a list of
-        :class:`~matplotlib.text.Text` instances.
+        Get the major y tick labels.
+
+        Returns
+        -------
+        labels : list
+            List of :class:`~matplotlib.text.Text` instances
         """
         return cbook.silent_list('Text yticklabel',
                                  self.yaxis.get_majorticklabels())
 
     def get_yminorticklabels(self):
         """
-        Get the minor y tick labels as a list of
-        :class:`~matplotlib.text.Text` instances.
+        Get the minor y tick labels.
+
+        Returns
+        -------
+        labels : list
+            List of :class:`~matplotlib.text.Text` instances
         """
         return cbook.silent_list('Text yticklabel',
                                  self.yaxis.get_minorticklabels())
 
     def get_yticklabels(self, minor=False, which=None):
         """
-        Get the x tick labels as a list of :class:`~matplotlib.text.Text`
+        Get the y tick labels as a list of :class:`~matplotlib.text.Text`
         instances.
 
         Parameters
@@ -3352,7 +3550,9 @@ class _AxesBase(martist.Artist):
 
     def set_yticklabels(self, labels, fontdict=None, minor=False, **kwargs):
         """
-        Set the y-tick labels with list of strings labels
+        Set the y-tick labels with list of strings labels.
+
+        .. ACCEPTS: list of string labels
 
         Parameters
         ----------
@@ -3360,25 +3560,24 @@ class _AxesBase(martist.Artist):
             list of string labels
 
         fontdict : dict, optional
-            A dictionary controlling the appearance of the ticklabels,
-            the default `fontdict` is::
+            A dictionary controlling the appearance of the ticklabels.
+            The default `fontdict` is::
 
                {'fontsize': rcParams['axes.titlesize'],
-                'fontweight' : rcParams['axes.titleweight'],
+                'fontweight': rcParams['axes.titleweight'],
                 'verticalalignment': 'baseline',
                 'horizontalalignment': loc}
 
         minor : bool, optional
-            If True select the minor ticklabels,
-            else select the minor ticklabels
+            Whether to set the minor ticklabels rather than the major ones.
 
         Returns
         -------
-        A list of `~matplotlib.text.Text` instances.
+        A list of `~.text.Text` instances.
 
         Other Parameters
         ----------------
-        **kwargs : `~matplotlib.text.Text` properties.
+        **kwargs : `~.text.Text` properties.
         """
         if fontdict is not None:
             kwargs.update(fontdict)
@@ -3389,8 +3588,10 @@ class _AxesBase(martist.Artist):
         """
         Sets up x-axis ticks and labels that treat the x data as dates.
 
-        *tz* is a timezone string or :class:`tzinfo` instance.
-        Defaults to rc value.
+        Parameters
+        ----------
+        tz : string or :class:`tzinfo` instance, optional
+            Timezone string or timezone. Defaults to rc value.
         """
         # should be enough to inform the unit conversion interface
         # dates are coming in
@@ -3400,8 +3601,10 @@ class _AxesBase(martist.Artist):
         """
         Sets up y-axis ticks and labels that treat the y data as dates.
 
-        *tz* is a timezone string or :class:`tzinfo` instance.
-        Defaults to rc value.
+        Parameters
+        ----------
+        tz : string or :class:`tzinfo` instance, optional
+            Timezone string or timezone. Defaults to rc value.
         """
         self.yaxis.axis_date(tz)
 
@@ -3486,7 +3689,11 @@ class _AxesBase(martist.Artist):
         """
         Set whether the axes responds to navigation toolbar commands
 
-        ACCEPTS: [ *True* | *False* ]
+        .. ACCEPTS: bool
+
+        Parameters
+        ----------
+        b : bool
         """
         self._navigate = b
 
@@ -3612,8 +3819,9 @@ class _AxesBase(martist.Artist):
                     xzc + xwidth/2./scl, yzc + ywidth/2./scl]
         elif len(bbox) != 4:
             # should be len 3 or 4 but nothing else
-            warnings.warn('Warning in _set_view_from_bbox: bounding box is not a\
-                  tuple of length 3 or 4. Ignoring the view change...')
+            warnings.warn(
+                "Warning in _set_view_from_bbox: bounding box is not a tuple "
+                "of length 3 or 4. Ignoring the view change.")
             return
 
         # Just grab bounding box
@@ -3718,7 +3926,7 @@ class _AxesBase(martist.Artist):
             Intended to be overridden by new projection types.
 
         """
-        self._pan_start = cbook.Bunch(
+        self._pan_start = types.SimpleNamespace(
             lim=self.viewLim.frozen(),
             trans=self.transData.frozen(),
             trans_inverse=self.transData.inverted().frozen(),
@@ -3776,70 +3984,41 @@ class _AxesBase(martist.Artist):
                     dy = dy / abs(dy) * abs(dx)
                 else:
                     dx = dx / abs(dx) * abs(dy)
-            return (dx, dy)
+            return dx, dy
 
         p = self._pan_start
         dx = x - p.x
         dy = y - p.y
-        if dx == 0 and dy == 0:
+        if dx == dy == 0:
             return
         if button == 1:
             dx, dy = format_deltas(key, dx, dy)
-            result = p.bbox.translated(-dx, -dy) \
-                .transformed(p.trans_inverse)
+            result = p.bbox.translated(-dx, -dy).transformed(p.trans_inverse)
         elif button == 3:
             try:
-                dx = -dx / float(self.bbox.width)
-                dy = -dy / float(self.bbox.height)
+                dx = -dx / self.bbox.width
+                dy = -dy / self.bbox.height
                 dx, dy = format_deltas(key, dx, dy)
                 if self.get_aspect() != 'auto':
-                    dx = 0.5 * (dx + dy)
-                    dy = dx
-
+                    dx = dy = 0.5 * (dx + dy)
                 alpha = np.power(10.0, (dx, dy))
                 start = np.array([p.x, p.y])
                 oldpoints = p.lim.transformed(p.trans)
                 newpoints = start + alpha * (oldpoints - start)
-                result = mtransforms.Bbox(newpoints) \
-                    .transformed(p.trans_inverse)
+                result = (mtransforms.Bbox(newpoints)
+                          .transformed(p.trans_inverse))
             except OverflowError:
                 warnings.warn('Overflow while panning')
                 return
-
-        self.set_xlim(*result.intervalx)
-        self.set_ylim(*result.intervaly)
-
-    @cbook.deprecated("2.1")
-    def get_cursor_props(self):
-        """
-        Return the cursor propertiess as a (*linewidth*, *color*)
-        tuple, where *linewidth* is a float and *color* is an RGBA
-        tuple
-        """
-        return self._cursorProps
-
-    @cbook.deprecated("2.1")
-    def set_cursor_props(self, *args):
-        """Set the cursor property as
-
-        Call signature ::
-
-          ax.set_cursor_props(linewidth, color)
-
-        or::
-
-          ax.set_cursor_props((linewidth, color))
-
-        ACCEPTS: a (*float*, *color*) tuple
-        """
-        if len(args) == 1:
-            lw, c = args[0]
-        elif len(args) == 2:
-            lw, c = args
         else:
-            raise ValueError('args must be a (linewidth, color) tuple')
-        c = mcolors.to_rgba(c)
-        self._cursorProps = lw, c
+            return
+
+        valid = np.isfinite(result.transformed(p.trans))
+        points = result.get_points().astype(object)
+        # Just ignore invalid limits (typically, underflow in log-scale).
+        points[~valid] = None
+        self.set_xlim(points[:, 0])
+        self.set_ylim(points[:, 1])
 
     def get_children(self):
         """return a list of child artists"""
@@ -3849,7 +4028,7 @@ class _AxesBase(martist.Artist):
         children.extend(self.lines)
         children.extend(self.texts)
         children.extend(self.artists)
-        children.extend(six.itervalues(self.spines))
+        children.extend(self.spines.values())
         children.append(self.xaxis)
         children.append(self.yaxis)
         children.append(self.title)
@@ -3921,6 +4100,12 @@ class _AxesBase(martist.Artist):
         else:
             self.apply_aspect()
 
+        bb_xaxis = self.xaxis.get_tightbbox(renderer)
+        if bb_xaxis:
+            bb.append(bb_xaxis)
+
+        self._update_title_position(renderer)
+
         bb.append(self.get_window_extent(renderer))
 
         if self.title.get_visible():
@@ -3930,10 +4115,6 @@ class _AxesBase(martist.Artist):
         if self._right_title.get_visible():
             bb.append(self._right_title.get_window_extent(renderer))
 
-        bb_xaxis = self.xaxis.get_tightbbox(renderer)
-        if bb_xaxis:
-            bb.append(bb_xaxis)
-
         bb_yaxis = self.yaxis.get_tightbbox(renderer)
         if bb_yaxis:
             bb.append(bb_yaxis)
@@ -3941,6 +4122,8 @@ class _AxesBase(martist.Artist):
         for child in self.get_children():
             if isinstance(child, OffsetBox) and child.get_visible():
                 bb.append(child.get_window_extent(renderer))
+            elif isinstance(child, Legend) and child.get_visible():
+                bb.append(child._legend_box.get_window_extent(renderer))
 
         _bbox = mtransforms.Bbox.union(
             [b for b in bb if b.width != 0 or b.height != 0])
@@ -3949,9 +4132,16 @@ class _AxesBase(martist.Artist):
 
     def _make_twin_axes(self, *kl, **kwargs):
         """
-        make a twinx axes of self. This is used for twinx and twiny.
+        Make a twinx axes of self. This is used for twinx and twiny.
         """
+        # Typically, SubplotBase._make_twin_axes is called instead of this.
+        # There is also an override in axes_grid1/axes_divider.py.
+        if 'sharex' in kwargs and 'sharey' in kwargs:
+            raise ValueError("Twinned Axes may share only one axis.")
         ax2 = self.figure.add_axes(self.get_position(True), *kl, **kwargs)
+        self.set_adjustable('datalim')
+        ax2.set_adjustable('datalim')
+        self._twinned_axes.join(self, ax2)
         return ax2
 
     def twinx(self):
@@ -4004,6 +4194,7 @@ class _AxesBase(martist.Artist):
         For those who are 'picking' artists while using twiny, pick
         events are only called for the artists in the top-most axes.
         """
+
         ax2 = self._make_twin_axes(sharey=self)
         ax2.xaxis.tick_top()
         ax2.xaxis.set_label_position('top')
@@ -4014,9 +4205,9 @@ class _AxesBase(martist.Artist):
         return ax2
 
     def get_shared_x_axes(self):
-        'Return a copy of the shared axes Grouper object for x axes'
+        """Return a reference to the shared axes Grouper object for x axes."""
         return self._shared_x_axes
 
     def get_shared_y_axes(self):
-        'Return a copy of the shared axes Grouper object for y axes'
+        """Return a reference to the shared axes Grouper object for y axes."""
         return self._shared_y_axes
